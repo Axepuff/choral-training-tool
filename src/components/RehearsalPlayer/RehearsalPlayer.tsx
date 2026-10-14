@@ -1,13 +1,15 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { TrackControls } from '../TrackControls/TrackControls';
 import type { TrackTone } from '../TrackControls/TrackControls';
-import { barDuration, duration, formatTime, mockScore, mockTracks } from './mockScore';
+import { barDuration, formatTime, mockScore, mockTracks } from './mockScore';
 import type { MockTrack } from './mockScore';
 import { PlayerIcon } from './PlayerIcon';
 import styles from './RehearsalPlayer.module.css';
 
 export interface RehearsalPlayerProps {
+  /** Длина демонстрационного фрагмента. */
+  bars?: 4 | 16;
   /** Начальная позиция демонстрационного курсора в секундах. */
   initialTime?: number;
   /** Запускает только визуальное воспроизведение, без аудио. */
@@ -17,8 +19,10 @@ export interface RehearsalPlayerProps {
 }
 
 /** Мобильный макет репетиции. Приложение и Storybook используют этот же компонент. */
-export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initialLoop = false }: RehearsalPlayerProps) {
+export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initialLoop = false, bars = 4 }: RehearsalPlayerProps) {
   const positionId = useId();
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const duration = bars * barDuration;
   const [tracks, setTracks] = useState(mockTracks);
   const [time, setTime] = useState(() => Math.min(duration, Math.max(0, initialTime)));
   const [playing, setPlaying] = useState(initialPlaying);
@@ -44,7 +48,16 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
       });
     }, 50);
     return () => window.clearInterval(timer);
-  }, [isPlaying, loop, loopEnd, loopStart]);
+  }, [isPlaying, loop, loopEnd, loopStart, duration]);
+
+  useEffect(() => {
+    const viewport = timelineRef.current;
+    if (!viewport) return;
+    const cursor = time / duration * viewport.scrollWidth;
+    if (cursor < viewport.scrollLeft || cursor > viewport.scrollLeft + viewport.clientWidth - 12) {
+      viewport.scrollLeft = Math.max(0, cursor - viewport.clientWidth / 4);
+    }
+  }, [time, duration]);
 
   function updateTrack(id: TrackTone, patch: Partial<Pick<MockTrack, 'volume' | 'muted' | 'solo'>>) {
     setTracks((current) => current.map((track) => track.id === id ? { ...track, ...patch } : track));
@@ -56,8 +69,11 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   }
 
   const gridStyle = {
-    '--bars': mockScore.bars,
-    '--beats': mockScore.bars * mockScore.beatsPerBar,
+    '--bars': bars,
+    '--timeline-width': `${bars * 76}px`,
+    '--loop-left': `${100 / bars}%`,
+    '--loop-width': `${200 / bars}%`,
+    '--beats': bars * mockScore.beatsPerBar,
     '--position': `${time / duration * 100}%`,
   } as CSSProperties;
 
@@ -76,7 +92,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
           <div className={styles.metadata}>
             <span className={styles.pill}>{mockScore.bpm} BPM</span>
             <span className={styles.pill}>{mockScore.beatsPerBar}/4</span>
-            <span className={styles.subtitle}>{mockScore.subtitle}</span>
+            <span className={styles.subtitle}>{`Учебный фрагмент · ${bars} ${bars === 4 ? 'такта' : 'тактов'}`}</span>
           </div>
         </header>
 
@@ -101,7 +117,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
             </button>
           </div>
           <div className={styles.transportStatus}>
-            <span>{loop ? 'Повтор: такты 2–3' : 'Все партии · 4 такта'}</span>
+            <span>{loop ? 'Повтор: такты 2–3' : `Все партии · ${bars} ${bars === 4 ? 'такта' : 'тактов'}`}</span>
             {metronome && <span className={styles.beats} aria-label="Визуальный метроном">
               {Array.from({ length: mockScore.beatsPerBar }, (_, index) => <i key={index} data-active={isPlaying && index === currentBeat} />)}
             </span>}
@@ -109,15 +125,18 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
         </div>
 
         <section className={styles.timeline} style={gridStyle} aria-label="Общий таймлайн партий">
+          <div className={styles.timelineViewport} ref={timelineRef} tabIndex={0} role="region" aria-label="Прокрутка тактов">
+          <div className={styles.timelineContent}>
           <div className={styles.barNumbers} aria-hidden="true">
-            {Array.from({ length: mockScore.bars }, (_, index) => <span key={index}>{index + 1}</span>)}
+            {Array.from({ length: bars }, (_, index) => <span key={index}>{index + 1}</span>)}
           </div>
           <div className={styles.waveStack}>
             <svg className={styles.waves} viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true">
               {tracks.map((track) => {
                 const quiet = track.muted || track.volume === 0 || (hasSolo && !track.solo);
-                const upper = track.waveform.map((height, index) => `${index / (track.waveform.length - 1) * 1000},${50 - height * 0.46}`).join(' ');
-                const lower = track.waveform.map((height, index) => `${index / (track.waveform.length - 1) * 1000},${50 + height * 0.46}`).reverse().join(' ');
+                const waveform = Array.from({ length: 24 * bars }, (_, index) => (track.waveform[index % track.waveform.length] ?? 0));
+                const upper = waveform.map((height, index) => `${index / (waveform.length - 1) * 1000},${50 - height * 0.46}`).join(' ');
+                const lower = waveform.map((height, index) => `${index / (waveform.length - 1) * 1000},${50 + height * 0.46}`).reverse().join(' ');
                 return <polygon key={track.id} points={`${upper} ${lower}`} data-quiet={quiet} data-track={track.id}
                   style={{ '--wave-color': `var(--color-${track.id})` } as CSSProperties}
                   vectorEffect="non-scaling-stroke" />;
@@ -125,6 +144,8 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
             </svg>
             {loop && <div className={styles.loopRegion} aria-hidden="true" />}
             <div className={styles.cursor} aria-hidden="true"><span /></div>
+          </div>
+          </div>
           </div>
           <label className="visually-hidden" htmlFor={positionId}>Позиция воспроизведения</label>
           <input className={styles.seek} id={positionId} type="range" min="0" max={duration} step="0.01" value={time}

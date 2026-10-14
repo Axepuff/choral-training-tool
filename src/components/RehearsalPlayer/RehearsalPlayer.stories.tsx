@@ -51,3 +51,23 @@ export const Desktop: Story = {
   name: 'Десктоп · 1280 px',
   globals: { viewport: { value: 'desktop1280', isRotated: false } },
 };
+
+export const SixteenBars: Story = {
+  name: '16 тактов · горизонтальная прокрутка',
+  args: { bars: 16 },
+  globals: { viewport: { value: 'mobile360', isRotated: false } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = canvas.getByRole('region', { name: 'Прокрутка тактов' });
+    await expect(viewport.scrollWidth).toBeGreaterThan(viewport.clientWidth);
+    viewport.scrollLeft = viewport.scrollWidth;
+    await expect(viewport.scrollLeft).toBeGreaterThan(0);
+    const position = canvas.getByRole('slider', { name: 'Позиция воспроизведения' });
+    position.focus();
+    await userEvent.keyboard('{End}');
+    await expect(Number((position as HTMLInputElement).value)).toBeGreaterThan(45);
+    await userEvent.click(canvas.getByRole('button', { name: 'Вернуться к началу' }));
+    await expect(position).toHaveValue('0');
+    await expect(viewport.scrollLeft).toBe(0);
+  },
+};
