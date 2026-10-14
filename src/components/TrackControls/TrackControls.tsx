@@ -1,0 +1,64 @@
+import { useId } from 'react';
+import type { CSSProperties } from 'react';
+import styles from './TrackControls.module.css';
+
+export type TrackTone = 'soprano' | 'alto' | 'tenor' | 'bass' | 'backing';
+
+export interface TrackControlsProps {
+  /** Название партии, используемое также в доступных именах элементов. */
+  name: string;
+  /** Громкость от 0 до 100. */
+  volume: number;
+  /** Выключает партию, сохраняя её громкость. */
+  muted: boolean;
+  /** Выделяет партию для репетиции. Несколько партий могут быть Solo. */
+  solo: boolean;
+  /** Блокирует управление и показывает состояние загрузки. */
+  loading?: boolean;
+  /** Цветовой маркер партии. */
+  tone?: TrackTone;
+  onVolumeChange: (volume: number) => void;
+  onMuteChange: (muted: boolean) => void;
+  onSoloChange: (solo: boolean) => void;
+}
+
+/** Управление одной партией. Состояние принадлежит приложению или story. */
+export function TrackControls({
+  name, volume, muted, solo, loading = false, tone = 'soprano',
+  onVolumeChange, onMuteChange, onSoloChange,
+}: TrackControlsProps) {
+  const volumeId = useId();
+  const safeVolume = Math.min(100, Math.max(0, volume));
+  const rangeStyle = { '--volume': `${safeVolume}%` } as CSSProperties;
+
+  return (
+    <div className={styles.controls} data-tone={tone} aria-busy={loading}>
+      <div className={styles.heading}>
+        <span className={styles.dot} aria-hidden="true" />
+        <span className={styles.name}>{name}</span>
+        {loading && <span className={styles.loading} role="status" aria-label={`Загрузка: ${name}`} />}
+      </div>
+      <div className={styles.actions}>
+        <button
+          type="button" className={`${styles.toggle} ${styles.solo}`}
+          aria-label={`Solo: ${name}`} aria-pressed={solo}
+          title={`Solo — слушать только выбранные партии (${name})`}
+          disabled={loading} onClick={() => onSoloChange(!solo)}
+        >S</button>
+        <button
+          type="button" className={`${styles.toggle} ${styles.mute}`}
+          aria-label={`Mute: ${name}`} aria-pressed={muted}
+          title={`Mute — выключить партию (${name})`}
+          disabled={loading} onClick={() => onMuteChange(!muted)}
+        >M</button>
+        <label className="visually-hidden" htmlFor={volumeId}>Громкость: {name}</label>
+        <input
+          id={volumeId} className={styles.volume} type="range" min="0" max="100" step="1"
+          value={safeVolume} aria-valuetext={`${safeVolume}%`} disabled={loading}
+          style={rangeStyle} onChange={(event) => onVolumeChange(Number(event.currentTarget.value))}
+        />
+        <output className={styles.value} htmlFor={volumeId}>{safeVolume}<span className="visually-hidden">%</span></output>
+      </div>
+    </div>
+  );
+}
