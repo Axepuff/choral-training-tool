@@ -40,15 +40,14 @@
 }
 .waves { display: block; width: 100%; height: 100%; }
 .waves polygon { fill: var(--wave-color); fill-opacity: 0.06; stroke: var(--wave-color); stroke-width: 1.4px; opacity: 0.85; transition: opacity 150ms; }
+.waves polygon[data-track='backing'] { opacity: 0.12; fill: none; }
+.waves polygon[data-track='backing'][data-quiet='true'] { opacity: 0.03; }
 .waves polygon[data-quiet='true'] { opacity: 0.09; }
 .cursor { position: absolute; inset-block: 0; left: var(--position); width: 2px; transform: translateX(-1px); background: var(--color-accent); pointer-events: none; }
 .cursor > span { display: block; width: 8px; height: 8px; transform: translate(-3px, -2px) rotate(45deg); border-radius: 2px; background: var(--color-accent); }
 .loopRegion { position: absolute; inset-block: 0; left: 25%; width: 50%; background: rgb(81 70 200 / 7%); border-inline: 1px dashed var(--color-accent); pointer-events: none; }
 .seek { display: block; width: 100%; height: 44px; margin: 0; accent-color: var(--color-accent); }
 .mixerSection { border-top: 1px solid var(--color-border); padding-top: 10px; }
-.mixerHeading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-.mixerHeading h2 { margin: 0; font-size: 13px; font-weight: 650; }
-.mixerHeading > span { font-size: 10px; color: var(--color-text-muted); }
 .mixer { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
 .channel { min-width: 0; border-right: 1px solid var(--color-border); }
 .channel:last-child { border-right: 0; }

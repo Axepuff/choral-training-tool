@@ -9,7 +9,6 @@
 .controls[data-tone='bass'] { --track-color: var(--color-bass); }
 .controls[data-tone='backing'] { --track-color: var(--color-backing); }
 .heading { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--track-color); flex-shrink: 0; }
 .name { font-size: var(--font-sm); font-weight: 650; overflow-wrap: anywhere; }
 .actions { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
 .toggle {

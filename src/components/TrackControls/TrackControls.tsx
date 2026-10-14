@@ -15,7 +15,7 @@ export interface TrackControlsProps {
   solo: boolean;
   /** Блокирует управление и показывает состояние загрузки. */
   loading?: boolean;
-  /** Цветовой маркер партии. */
+  /** Цвет фейдера партии. */
   tone?: TrackTone;
   /** Вертикальный фейдер для компактного микшера или горизонтальный ползунок. */
   orientation?: 'horizontal' | 'vertical';
@@ -36,7 +36,6 @@ export function TrackControls({
   return (
     <div className={styles.controls} data-tone={tone} data-orientation={orientation} aria-busy={loading}>
       <div className={styles.heading}>
-        <span className={styles.dot} aria-hidden="true" />
         <span className={styles.name}>{name}</span>
         {loading && <span className={styles.loading} role="status" aria-label={`Загрузка: ${name}`} />}
       </div>
@@ -45,13 +44,13 @@ export function TrackControls({
           type="button" className={`${styles.toggle} ${styles.solo}`}
           aria-label={`Solo: ${name}`} aria-pressed={solo}
           title={`Solo — слушать только выбранные партии (${name})`}
-          disabled={loading} onClick={() => onSoloChange(!solo)}
+          disabled={loading} onClick={() => { if (!solo && muted) onMuteChange(false); onSoloChange(!solo); }}
         >S</button>
         <button
           type="button" className={`${styles.toggle} ${styles.mute}`}
           aria-label={`Mute: ${name}`} aria-pressed={muted}
           title={`Mute — выключить партию (${name})`}
-          disabled={loading} onClick={() => onMuteChange(!muted)}
+          disabled={loading} onClick={() => { if (!muted && solo) onSoloChange(false); onMuteChange(!muted); }}
         >M</button>
         <label className="visually-hidden" htmlFor={volumeId}>Громкость: {name}</label>
         <input

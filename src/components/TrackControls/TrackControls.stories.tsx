@@ -8,7 +8,7 @@ const meta = {
   id: 'components-track-controls',
   title: 'Компоненты/TrackControls',
   component: TrackControls,
-  parameters: { docs: { description: { component: 'Управление партией: S — Solo, M — Mute. Кнопки и ползунок имеют области касания не меньше 44 px. Состояния независимы; Mute имеет приоритет над Solo.' } } },
+  parameters: { docs: { description: { component: 'Управление партией: S — Solo, M — Mute. Кнопки и ползунок имеют области касания не меньше 44 px. Solo и Mute взаимоисключающие: включение одного отключает другое.' } } },
   args: {
     name: 'Сопрано', volume: 80, muted: false, solo: false, loading: false, tone: 'soprano',
     onVolumeChange: fn(), onMuteChange: fn(), onSoloChange: fn(),
@@ -44,10 +44,14 @@ export const Default: Story = {
     await userEvent.click(solo);
     await expect(solo).toHaveAttribute('aria-pressed', 'true');
     await expect(args.onSoloChange).toHaveBeenCalledWith(true);
-    await userEvent.click(solo);
     await userEvent.click(mute);
+    await expect(solo).toHaveAttribute('aria-pressed', 'false');
     await expect(mute).toHaveAttribute('aria-pressed', 'true');
-    await userEvent.click(mute);
+    await userEvent.click(solo);
+    await expect(mute).toHaveAttribute('aria-pressed', 'false');
+    await expect(solo).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(solo);
+    await expect(solo).toHaveAttribute('aria-pressed', 'false');
     const volume = canvas.getByRole('slider', { name: 'Громкость: Сопрано' });
     volume.focus();
     await userEvent.keyboard('{ArrowRight}');

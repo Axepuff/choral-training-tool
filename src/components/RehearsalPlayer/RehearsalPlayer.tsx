@@ -118,7 +118,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
                 const quiet = track.muted || track.volume === 0 || (hasSolo && !track.solo);
                 const upper = track.waveform.map((height, index) => `${index / (track.waveform.length - 1) * 1000},${50 - height * 0.46}`).join(' ');
                 const lower = track.waveform.map((height, index) => `${index / (track.waveform.length - 1) * 1000},${50 + height * 0.46}`).reverse().join(' ');
-                return <polygon key={track.id} points={`${upper} ${lower}`} data-quiet={quiet}
+                return <polygon key={track.id} points={`${upper} ${lower}`} data-quiet={quiet} data-track={track.id}
                   style={{ '--wave-color': `var(--color-${track.id})` } as CSSProperties}
                   vectorEffect="non-scaling-stroke" />;
               })}
@@ -133,7 +133,6 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
         </section>
 
         <section className={styles.mixerSection} aria-label="Микшер партий">
-          <div className={styles.mixerHeading}><h2>Партии</h2><span>Громкость · Solo · Mute</span></div>
           <div className={styles.mixer}>
             {tracks.map((track) => (
               <div className={styles.channel} key={track.id} role="group" aria-label={`Партия: ${track.name}`}>
