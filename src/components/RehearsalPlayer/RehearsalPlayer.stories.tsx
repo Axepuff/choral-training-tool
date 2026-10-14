@@ -8,7 +8,7 @@ const meta = {
   component: RehearsalPlayer,
   parameters: {
     layout: 'fullscreen',
-    docs: { description: { component: 'Пять дорожек на общей сетке из четырёх тактов 4/4. Курсор, Solo/Mute, громкость, повтор тактов 2–3 и визуальный метроном работают на локальных моках. Звук не воспроизводится.' } },
+    docs: { description: { component: 'Общий таймлайн с наложением пяти цветных волн, верхний транспорт и пять колонок микшера с вертикальными фейдерами. Курсор, Solo/Mute, громкость, повтор тактов 2–3 и визуальный метроном работают на локальных моках. Звук не воспроизводится.' } },
   },
   args: { initialTime: 0, initialPlaying: false, initialLoop: false },
 } satisfies Meta<typeof RehearsalPlayer>;
@@ -21,6 +21,9 @@ export const Default: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getAllByRole('group', { name: /^Партия:/ })).toHaveLength(5);
+    for (const slider of canvas.getAllByRole('slider', { name: /^Громкость:/ })) {
+      await expect(slider).toHaveAttribute('aria-orientation', 'vertical');
+    }
     await userEvent.click(canvas.getByRole('button', { name: 'Воспроизвести' }));
     await expect(canvas.getByRole('button', { name: 'Пауза' })).toBeVisible();
     await userEvent.click(canvas.getByRole('button', { name: 'Пауза' }));

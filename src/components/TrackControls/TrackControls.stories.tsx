@@ -20,7 +20,7 @@ const meta = {
   render: function Render(args) {
     const [, updateArgs] = useArgs<TrackControlsProps>();
     return (
-      <div style={{ width: '100%', maxWidth: 360, padding: 16, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
+      <div style={{ width: '100%', maxWidth: args.orientation === 'vertical' ? 88 : 360, padding: 16, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
         <TrackControls {...args}
           onVolumeChange={(volume) => { args.onVolumeChange(volume); updateArgs({ volume }); }}
           onMuteChange={(muted) => { args.onMuteChange(muted); updateArgs({ muted }); }}
@@ -91,5 +91,20 @@ export const Loading: Story = {
     await expect(canvas.getByRole('button', { name: 'Mute: Сопрано' })).toBeDisabled();
     await userEvent.click(solo);
     await expect(args.onSoloChange).not.toHaveBeenCalled();
+  },
+};
+
+export const Vertical: Story = {
+  name: 'Вертикальный фейдер', args: { orientation: 'vertical' },
+  play: async ({ canvasElement, args }) => {
+    const volume = within(canvasElement).getByRole('slider', { name: 'Громкость: Сопрано' });
+    await expect(volume).toHaveAttribute('aria-orientation', 'vertical');
+    volume.focus();
+    await userEvent.keyboard('{ArrowUp}');
+    await expect(volume).toHaveValue('81');
+    await expect(args.onVolumeChange).toHaveBeenCalledWith(81);
+    await userEvent.keyboard('{ArrowDown}');
+    await expect(volume).toHaveValue('80');
+    volume.blur();
   },
 };

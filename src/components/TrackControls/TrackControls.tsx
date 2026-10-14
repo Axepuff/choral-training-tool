@@ -17,6 +17,8 @@ export interface TrackControlsProps {
   loading?: boolean;
   /** Цветовой маркер партии. */
   tone?: TrackTone;
+  /** Вертикальный фейдер для компактного микшера или горизонтальный ползунок. */
+  orientation?: 'horizontal' | 'vertical';
   onVolumeChange: (volume: number) => void;
   onMuteChange: (muted: boolean) => void;
   onSoloChange: (solo: boolean) => void;
@@ -24,7 +26,7 @@ export interface TrackControlsProps {
 
 /** Управление одной партией. Состояние принадлежит приложению или story. */
 export function TrackControls({
-  name, volume, muted, solo, loading = false, tone = 'soprano',
+  name, volume, muted, solo, loading = false, tone = 'soprano', orientation = 'horizontal',
   onVolumeChange, onMuteChange, onSoloChange,
 }: TrackControlsProps) {
   const volumeId = useId();
@@ -32,7 +34,7 @@ export function TrackControls({
   const rangeStyle = { '--volume': `${safeVolume}%` } as CSSProperties;
 
   return (
-    <div className={styles.controls} data-tone={tone} aria-busy={loading}>
+    <div className={styles.controls} data-tone={tone} data-orientation={orientation} aria-busy={loading}>
       <div className={styles.heading}>
         <span className={styles.dot} aria-hidden="true" />
         <span className={styles.name}>{name}</span>
@@ -54,7 +56,7 @@ export function TrackControls({
         <label className="visually-hidden" htmlFor={volumeId}>Громкость: {name}</label>
         <input
           id={volumeId} className={styles.volume} type="range" min="0" max="100" step="1"
-          value={safeVolume} aria-valuetext={`${safeVolume}%`} disabled={loading}
+          value={safeVolume} aria-valuetext={`${safeVolume}%`} aria-orientation={orientation} disabled={loading}
           style={rangeStyle} onChange={(event) => onVolumeChange(Number(event.currentTarget.value))}
         />
         <output className={styles.value} htmlFor={volumeId}>{safeVolume}<span className="visually-hidden">%</span></output>

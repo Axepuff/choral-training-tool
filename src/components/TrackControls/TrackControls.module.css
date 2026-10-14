@@ -76,3 +76,51 @@
   border-top-color: var(--color-accent); border-radius: 50%; animation: spin 1s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.controls[data-orientation='vertical'] {
+  justify-items: center;
+  gap: 8px;
+}
+.controls[data-orientation='vertical'] .heading {
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+}
+.controls[data-orientation='vertical'] .name { font-size: 11px; white-space: nowrap; }
+.controls[data-orientation='vertical'] .actions { flex-direction: column; flex-wrap: nowrap; gap: 4px; }
+.controls[data-orientation='vertical'] .toggle { width: 44px; height: 44px; }
+.controls[data-orientation='vertical'] .volume {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  flex: none;
+  width: 44px;
+  height: 96px;
+  margin: 6px 0 2px;
+  touch-action: none;
+  accent-color: var(--track-color);
+}
+.controls[data-orientation='vertical'] .volume::-webkit-slider-runnable-track {
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(to top, var(--track-color) var(--volume), var(--color-border) var(--volume));
+}
+.controls[data-orientation='vertical'] .volume::-webkit-slider-thumb {
+  width: 20px;
+  height: 12px;
+  margin: 0 0 0 -8px;
+  border: 2px solid white;
+  border-radius: 4px;
+  background: var(--track-color);
+  box-shadow: 0 0 0 1px var(--track-color);
+}
+.controls[data-orientation='vertical'] .volume::-moz-range-track { width: 4px; height: 100%; }
+.controls[data-orientation='vertical'] .volume::-moz-range-progress { background: var(--track-color); }
+.controls[data-orientation='vertical'] .volume::-moz-range-thumb {
+  width: 16px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--track-color);
+  box-shadow: 0 0 0 1px var(--track-color);
+}
+.controls[data-orientation='vertical'] .value { width: auto; text-align: center; }
+.controls[data-orientation='vertical'] .loading { position: absolute; top: -2px; right: -12px; }

@@ -80,47 +80,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
           </div>
         </header>
 
-        <div className={styles.mixer} style={gridStyle}>
-          <div className={styles.ruler}>
-            <span className={styles.rulerLabel}>Партии</span>
-            <div className={styles.barNumbers} aria-hidden="true">
-              {Array.from({ length: mockScore.bars }, (_, index) => <span key={index}>{index + 1}</span>)}
-            </div>
-          </div>
-          <div className={styles.timelineOverlay} aria-hidden="true">
-            {loop && <div className={styles.loopRegion}><span>2–3</span></div>}
-            <div className={styles.cursor}><span /></div>
-          </div>
-
-          {tracks.map((track) => {
-            const quiet = track.muted || track.volume === 0 || (hasSolo && !track.solo);
-            const waveStyle = { '--wave-color': `var(--color-${track.id})` } as CSSProperties;
-            return (
-              <div className={styles.trackRow} key={track.id} role="group" aria-label={`Партия: ${track.name}`}>
-                <TrackControls
-                  name={track.name} volume={track.volume} muted={track.muted} solo={track.solo} tone={track.id}
-                  onVolumeChange={(volume) => updateTrack(track.id, { volume })}
-                  onMuteChange={(muted) => updateTrack(track.id, { muted })}
-                  onSoloChange={(solo) => updateTrack(track.id, { solo })}
-                />
-                <div className={styles.waveform} data-quiet={quiet} style={waveStyle} aria-hidden="true">
-                  {track.waveform.map((height, index) => (
-                    <span key={index} style={{ height: `${height}%` }} />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className={styles.seekRow}>
-          <label className="visually-hidden" htmlFor={positionId}>Позиция воспроизведения</label>
-          <input id={positionId} type="range" min="0" max={duration} step="0.01" value={time}
-            aria-valuetext={`${formatTime(time)} из ${formatTime(duration)}`}
-            onChange={(event) => setTime(Number(event.currentTarget.value))} />
-        </div>
-
-        <footer className={styles.transport}>
+        <div className={styles.transport} aria-label="Управление воспроизведением">
           <div className={styles.playback}>
             <button className={styles.iconButton} type="button" aria-label="Вернуться к началу" title="Вернуться к началу" onClick={() => setTime(0)}>
               <PlayerIcon name="restart" />
@@ -141,12 +101,54 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
             </button>
           </div>
           <div className={styles.transportStatus}>
-            <span>{loop ? 'Повтор: такты 2–3' : 'Выберите свою партию и пойте вместе'}</span>
+            <span>{loop ? 'Повтор: такты 2–3' : 'Все партии · 4 такта'}</span>
             {metronome && <span className={styles.beats} aria-label="Визуальный метроном">
               {Array.from({ length: mockScore.beatsPerBar }, (_, index) => <i key={index} data-active={isPlaying && index === currentBeat} />)}
             </span>}
           </div>
-        </footer>
+        </div>
+
+        <section className={styles.timeline} style={gridStyle} aria-label="Общий таймлайн партий">
+          <div className={styles.barNumbers} aria-hidden="true">
+            {Array.from({ length: mockScore.bars }, (_, index) => <span key={index}>{index + 1}</span>)}
+          </div>
+          <div className={styles.waveStack}>
+            <svg className={styles.waves} viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true">
+              {tracks.map((track) => {
+                const quiet = track.muted || track.volume === 0 || (hasSolo && !track.solo);
+                const upper = track.waveform.map((height, index) => `${index / (track.waveform.length - 1) * 1000},${50 - height * 0.46}`).join(' ');
+                const lower = track.waveform.map((height, index) => `${index / (track.waveform.length - 1) * 1000},${50 + height * 0.46}`).reverse().join(' ');
+                return <polygon key={track.id} points={`${upper} ${lower}`} data-quiet={quiet}
+                  style={{ '--wave-color': `var(--color-${track.id})` } as CSSProperties}
+                  vectorEffect="non-scaling-stroke" />;
+              })}
+            </svg>
+            {loop && <div className={styles.loopRegion} aria-hidden="true" />}
+            <div className={styles.cursor} aria-hidden="true"><span /></div>
+          </div>
+          <label className="visually-hidden" htmlFor={positionId}>Позиция воспроизведения</label>
+          <input className={styles.seek} id={positionId} type="range" min="0" max={duration} step="0.01" value={time}
+            aria-valuetext={`${formatTime(time)} из ${formatTime(duration)}`}
+            onChange={(event) => setTime(Number(event.currentTarget.value))} />
+        </section>
+
+        <section className={styles.mixerSection} aria-label="Микшер партий">
+          <div className={styles.mixerHeading}><h2>Партии</h2><span>Громкость · Solo · Mute</span></div>
+          <div className={styles.mixer}>
+            {tracks.map((track) => (
+              <div className={styles.channel} key={track.id} role="group" aria-label={`Партия: ${track.name}`}>
+                <TrackControls
+                  name={track.name} volume={track.volume} muted={track.muted} solo={track.solo} tone={track.id}
+                  orientation="vertical"
+                  onVolumeChange={(volume) => updateTrack(track.id, { volume })}
+                  onMuteChange={(muted) => updateTrack(track.id, { muted })}
+                  onSoloChange={(solo) => updateTrack(track.id, { solo })}
+                />
+              </div>
+            ))}
+          </div>
+        </section>
+
       </section>
       <p className={styles.hint}><strong>S</strong> — слушать выбранные партии <span>·</span> <strong>M</strong> — выключить партию</p>
     </main>
