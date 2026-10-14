@@ -64,3 +64,20 @@
 
 .timelineViewport { overflow-x: auto; overscroll-behavior-x: contain; }
 .timelineContent { min-width: var(--timeline-width); padding-top: 4px; }
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .shell { max-width: none; padding: 8px max(8px, env(safe-area-inset-right)) 8px max(8px, env(safe-area-inset-left)); }
+  .brand, .hint { display: none; }
+  .player { padding: 8px 12px; border-radius: 12px; }
+  .scoreHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 4px; }
+  .title { font-size: 20px; margin: 0; }
+  .transport { flex-wrap: nowrap; gap: 12px; padding: 4px 0; }
+  .transportStatus { width: auto; margin-left: auto; }
+  .options { order: 1; }
+  .optionButton > span { display: none; }
+  .timeline { padding-top: 4px; }
+  .waveStack { height: 40px; }
+  .barNumbers { height: 16px; }
+  .mixerSection { padding-top: 4px; }
+  .mixer { gap: 4px; }
+}

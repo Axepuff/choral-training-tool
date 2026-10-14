@@ -71,3 +71,9 @@ export const SixteenBars: Story = {
     await expect(viewport.scrollLeft).toBe(0);
   },
 };
+
+export const MobileLandscape: Story = {
+  name: 'Мобильный · горизонтально · 16 тактов',
+  args: { bars: 16 },
+  globals: { viewport: { value: 'mobile360', isRotated: true } },
+};
