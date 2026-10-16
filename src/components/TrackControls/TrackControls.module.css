@@ -25,11 +25,11 @@
 }
 .toggle:hover:enabled { background: var(--color-surface-soft); }
 .solo[aria-pressed='true'] {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: white;
+  background: var(--color-solo);
+  border-color: var(--color-solo-hover);
+  color: var(--color-text);
 }
-.solo[aria-pressed='true']:hover:enabled { background: var(--color-accent-strong); }
+.solo[aria-pressed='true']:hover:enabled { background: var(--color-solo-hover); }
 .mute[aria-pressed='true'] {
   background: var(--color-mute);
   border-color: var(--color-mute);

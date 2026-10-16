@@ -81,3 +81,7 @@
   .mixerSection { padding-top: 4px; }
   .mixer { gap: 4px; }
 }
+
+/* Keep native touch/trackpad scrolling without a visible scrollbar. */
+.timelineViewport { scrollbar-width: none; }
+.timelineViewport::-webkit-scrollbar { display: none; }
