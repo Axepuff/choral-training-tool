@@ -2,10 +2,22 @@ import { useId, useRef, useState } from 'react';
 import styles from './CreateSong.module.css';
 
 const defaultNames = ['Сопрано', 'Альт', 'Тенор', 'Бас', 'Минус'];
-interface TrackDraft { name: string; file?: File }
+export interface TrackDraft { name: string; file?: File; existingFileName?: string }
+export interface SongFormValue {
+  title: string;
+  bpm: number;
+  beatsPerBar: number;
+  beatUnit: number;
+  tracks: TrackDraft[];
+  notes: string;
+}
 export interface CreateSongProps {
   /** Заполненные текстовые поля для демонстрации. Файлы выбираются локально. */
   initialFilled?: boolean;
+  /** Существующая песня: та же форма используется для редактирования. */
+  initialSong?: SongFormValue;
+  onSave?: (song: SongFormValue) => void;
+  onCancel?: () => void;
 }
 
 function TrackRow({ track, index, onChange }: {
@@ -13,6 +25,7 @@ function TrackRow({ track, index, onChange }: {
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const id = useId();
+  const selectedName = track.file?.name ?? track.existingFileName;
   return <div className={styles.track}>
     <span className={styles.number} aria-hidden="true">{index + 1}</span>
     <label className={styles.trackName}>
@@ -21,7 +34,7 @@ function TrackRow({ track, index, onChange }: {
         onChange={(event) => onChange({ ...track, name: event.target.value })} />
     </label>
     <button className={styles.upload} type="button" onClick={() => fileRef.current?.click()}
-      aria-label={`${track.file ? 'Заменить' : 'Выбрать'} файл трека ${index + 1}`} title={track.file ? 'Заменить аудиофайл' : 'Выбрать аудиофайл'}>
+      aria-label={`${selectedName ? 'Заменить' : 'Выбрать'} файл трека ${index + 1}`} title={selectedName ? 'Заменить аудиофайл' : 'Выбрать аудиофайл'}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
         <path d="M9 3H4v18h11V9L9 3ZM9 3v6h6M10 12v5" />
         <ellipse cx="8" cy="17" rx="2" ry="1.5" />
@@ -35,26 +48,26 @@ function TrackRow({ track, index, onChange }: {
         event.target.value = '';
       }} />
     <div className={styles.fileInfo}>
-      <span title={track.file?.name}>{track.file ? track.file.name : 'Файл не выбран'}</span>
-      {track.file && <button type="button" aria-label={`Убрать файл трека ${index + 1}`}
+      <span title={selectedName}>{selectedName ?? 'Файл не выбран'}</span>
+      {selectedName && <button type="button" aria-label={`Убрать файл трека ${index + 1}`}
         onClick={() => onChange({ name: track.name })}>Убрать</button>}
     </div>
   </div>;
 }
 
 /** Макет формы: файлы остаются в памяти браузера, запросы на сервер не выполняются. */
-export function CreateSong({ initialFilled = false }: CreateSongProps) {
+export function CreateSong({ initialFilled = false, initialSong, onSave, onCancel }: CreateSongProps) {
   const id = useId();
-  const [title, setTitle] = useState(initialFilled ? 'Тихий вечер' : '');
-  const [bpm, setBpm] = useState('84');
-  const [beats, setBeats] = useState('4');
-  const [unit, setUnit] = useState('4');
-  const [count, setCount] = useState(5);
-  const [tracks, setTracks] = useState<TrackDraft[]>(() => Array.from({ length: 32 }, (_, index) => ({ name: defaultNames[index] ?? `Трек ${index + 1}` })));
-  const [notes, setNotes] = useState(initialFilled ? 'Вступление — мягко. Обратить внимание на дыхание перед третьим тактом.' : '');
+  const [title, setTitle] = useState(initialSong?.title ?? (initialFilled ? 'Тихий вечер' : ''));
+  const [bpm, setBpm] = useState(String(initialSong?.bpm ?? 84));
+  const [beats, setBeats] = useState(String(initialSong?.beatsPerBar ?? 4));
+  const [unit, setUnit] = useState(String(initialSong?.beatUnit ?? 4));
+  const [count, setCount] = useState(initialSong?.tracks.length ?? 5);
+  const [tracks, setTracks] = useState<TrackDraft[]>(() => Array.from({ length: 32 }, (_, index) => (initialSong?.tracks[index] ?? { name: defaultNames[index] ?? `Трек ${index + 1}` })));
+  const [notes, setNotes] = useState(initialSong?.notes ?? (initialFilled ? 'Вступление — мягко. Обратить внимание на дыхание перед третьим тактом.' : ''));
   const [message, setMessage] = useState('');
   const visibleTracks = tracks.slice(0, count);
-  const selected = visibleTracks.filter((track) => track.file).length;
+  const selected = visibleTracks.filter((track) => track.file || track.existingFileName).length;
 
   return <main className={styles.shell}>
     <form className={styles.card} onChange={() => setMessage('')} onSubmit={(event) => {
@@ -63,10 +76,15 @@ export function CreateSong({ initialFilled = false }: CreateSongProps) {
         setMessage('Укажите название песни и названия всех треков.'); return;
       }
       if (selected !== count) { setMessage('Выберите файл для каждого трека.'); return; }
+      if (onSave) {
+        onSave({ title: title.trim(), bpm: Number(bpm), beatsPerBar: Number(beats), beatUnit: Number(unit),
+          tracks: visibleTracks.map((track) => ({ ...track, name: track.name.trim() })), notes });
+        return;
+      }
       setMessage('Форма заполнена. Это макет: песня не сохранена, файлы не отправлены.');
     }}>
-      <h1>Новая песня</h1>
-      <p className={styles.intro}>Добавьте партии, чтобы подготовить репетицию.</p>
+      <h1>{initialSong ? 'Редактировать песню' : 'Новая песня'}</h1>
+      <p className={styles.intro}>{initialSong ? 'Измените данные песни и голосовые партии.' : 'Добавьте партии, чтобы подготовить репетицию.'}</p>
       <label className={styles.field}>Название песни
         <input id={`${id}-title`} name="title" required maxLength={160} placeholder="Например, Тихий вечер" value={title} onChange={(event) => setTitle(event.target.value)} />
       </label>
@@ -106,7 +124,8 @@ export function CreateSong({ initialFilled = false }: CreateSongProps) {
       </label>
       <div className={styles.counter} id={`${id}-notes-count`}>{notes.length} / 1000</div>
       {message && <p className={styles.message} role="status">{message}</p>}
-      <button className={styles.submit} type="submit">Создать песню</button>
+      <button className={styles.submit} type="submit">{initialSong ? 'Сохранить изменения' : 'Создать песню'}</button>
+      {onCancel && <button className={styles.cancel} type="button" onClick={onCancel}>Отмена</button>}
       <p className={styles.demo}>Демо: файлы остаются на устройстве и не загружаются на сервер.</p>
     </form>
   </main>;
