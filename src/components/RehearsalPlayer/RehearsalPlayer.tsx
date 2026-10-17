@@ -60,7 +60,12 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   }, [time, duration]);
 
   function updateTrack(id: TrackTone, patch: Partial<Pick<MockTrack, 'volume' | 'muted' | 'solo'>>) {
-    setTracks((current) => current.map((track) => track.id === id ? { ...track, ...patch } : track));
+    setTracks((current) => {
+      const updated = current.map((track) => track.id === id ? { ...track, ...patch } : track);
+      return updated.every((track) => track.solo)
+        ? updated.map((track) => ({ ...track, solo: false }))
+        : updated;
+    });
   }
 
   function togglePlayback() {

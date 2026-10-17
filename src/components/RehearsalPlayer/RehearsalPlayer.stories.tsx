@@ -24,6 +24,16 @@ export const Default: Story = {
     for (const slider of canvas.getAllByRole('slider', { name: /^Громкость:/ })) {
       await expect(slider).toHaveAttribute('aria-orientation', 'vertical');
     }
+    const solos = canvas.getAllByRole('button', { name: /^Solo:/ });
+    for (const button of solos.slice(0, -1)) {
+      await userEvent.click(button);
+      await expect(button).toHaveAttribute('aria-pressed', 'true');
+    }
+    await userEvent.click(solos[solos.length - 1]!);
+    for (const button of solos) await expect(button).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(solos[0]!);
+    await expect(solos[0]!).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(solos[0]!);
     await userEvent.click(canvas.getByRole('button', { name: 'Воспроизвести' }));
     await expect(canvas.getByRole('button', { name: 'Пауза' })).toBeVisible();
     await userEvent.click(canvas.getByRole('button', { name: 'Пауза' }));
