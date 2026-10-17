@@ -1,7 +1,6 @@
 * { box-sizing: border-box; }
 
 html {
-  min-width: 360px;
   background: var(--color-page);
   color: var(--color-text);
   font: 400 var(--font-md) / var(--line-height) var(--font-family);

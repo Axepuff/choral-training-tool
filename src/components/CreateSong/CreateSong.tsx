@@ -12,11 +12,12 @@ function TrackRow({ track, index, onChange }: {
   track: TrackDraft; index: number; onChange: (track: TrackDraft) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const id = useId();
   return <div className={styles.track}>
     <span className={styles.number} aria-hidden="true">{index + 1}</span>
     <label className={styles.trackName}>
       <span className="visually-hidden">Название трека {index + 1}</span>
-      <input required maxLength={80} value={track.name} placeholder="Название партии"
+      <input id={`${id}-name`} name={`tracks[${index}].name`} required maxLength={80} value={track.name} placeholder="Название партии"
         onChange={(event) => onChange({ ...track, name: event.target.value })} />
     </label>
     <button className={styles.upload} type="button" onClick={() => fileRef.current?.click()}
@@ -27,7 +28,7 @@ function TrackRow({ track, index, onChange }: {
         <path d="M20 14V4m-3 3 3-3 3 3" />
       </svg>
     </button>
-    <input ref={fileRef} type="file" hidden aria-label={`Аудиофайл трека ${index + 1}`}
+    <input id={`${id}-file`} name={`tracks[${index}].file`} ref={fileRef} type="file" hidden aria-label={`Аудиофайл трека ${index + 1}`}
       onChange={(event) => {
         const file = event.target.files?.[0];
         if (file) onChange({ ...track, file });
@@ -67,23 +68,23 @@ export function CreateSong({ initialFilled = false }: CreateSongProps) {
       <h1>Новая песня</h1>
       <p className={styles.intro}>Добавьте партии, чтобы подготовить репетицию.</p>
       <label className={styles.field}>Название песни
-        <input required maxLength={160} placeholder="Например, Тихий вечер" value={title} onChange={(event) => setTitle(event.target.value)} />
+        <input id={`${id}-title`} name="title" required maxLength={160} placeholder="Например, Тихий вечер" value={title} onChange={(event) => setTitle(event.target.value)} />
       </label>
       <div className={styles.settings}>
         <label className={styles.field}>Темп, BPM
-          <input type="number" required min={20} max={300} step={1} inputMode="numeric" value={bpm} onChange={(event) => setBpm(event.target.value)} />
+          <input id={`${id}-bpm`} name="bpm" type="number" required min={20} max={300} step={1} inputMode="numeric" value={bpm} onChange={(event) => setBpm(event.target.value)} />
         </label>
         <fieldset className={styles.meter}><legend>Размер</legend><div>
-          <input aria-label="Долей в такте" type="number" required min={1} max={32} step={1} value={beats} onChange={(event) => setBeats(event.target.value)} />
+          <input id={`${id}-beats`} name="beatsPerBar" aria-label="Долей в такте" type="number" required min={1} max={32} step={1} value={beats} onChange={(event) => setBeats(event.target.value)} />
           <span aria-hidden="true">/</span>
-          <select aria-label="Длительность доли" value={unit} onChange={(event) => setUnit(event.target.value)}>
+          <select id={`${id}-unit`} name="beatUnit" aria-label="Длительность доли" value={unit} onChange={(event) => setUnit(event.target.value)}>
             {[1, 2, 4, 8, 16, 32].map((value) => <option key={value}>{value}</option>)}
           </select>
         </div></fieldset>
       </div>
       <section className={styles.tracks} aria-labelledby={`${id}-tracks`}>
         <div className={styles.sectionHeader}><h2 id={`${id}-tracks`}>Треки</h2>
-          <label>Количество <select aria-label="Количество треков" value={count} onChange={(event) => { setCount(Number(event.target.value)); setMessage(''); }}>
+          <label>Количество <select id={`${id}-count`} name="trackCount" aria-label="Количество треков" value={count} onChange={(event) => { setCount(Number(event.target.value)); setMessage(''); }}>
             {Array.from({ length: 32 }, (_, index) => <option key={index}>{index + 1}</option>)}
           </select></label>
         </div>
@@ -100,7 +101,7 @@ export function CreateSong({ initialFilled = false }: CreateSongProps) {
         </details>
       </section>
       <label className={styles.field}>Заметки <span className={styles.optional}>необязательно</span>
-        <textarea rows={4} maxLength={1000} value={notes} placeholder="Вступления, дыхание, сложные места…"
+        <textarea id={`${id}-notes`} name="notes" rows={4} maxLength={1000} value={notes} placeholder="Вступления, дыхание, сложные места…"
           aria-describedby={`${id}-notes-count`} onChange={(event) => setNotes(event.target.value)} />
       </label>
       <div className={styles.counter} id={`${id}-notes-count`}>{notes.length} / 1000</div>
