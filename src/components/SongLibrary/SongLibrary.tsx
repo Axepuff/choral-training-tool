@@ -4,6 +4,7 @@ import { CreateSong } from '../CreateSong/CreateSong';
 import type { SongFormValue } from '../CreateSong/CreateSong';
 import { mockSongs } from './mockSongs';
 import type { LibrarySong } from './mockSongs';
+import { LibraryIcon } from './LibraryIcon';
 import styles from './SongLibrary.module.css';
 
 export interface SongLibraryProps {
@@ -59,41 +60,46 @@ export function SongLibrary({ role = 'guest', songs = mockSongs, initialQuery = 
 
   return <main className={styles.page}>
     <div className={styles.content}>
-      <header className={styles.header}><div><h1>Песни</h1>
-        <p>Материалы для репетиций хора</p></div>
-        <div className={styles.headerActions}>
-          {canCreate && <a className={styles.create} href={appUrl('?page=create-song')} target="_top">Создать песню</a>}
-          <button className={styles.listLink} type="button" onClick={() => copyLink('?page=library&list=choir-demo', 'Демо-ссылка на список скопирована.')}>
-            Ссылка на список
+      <header className={styles.header}>
+        <div className={styles.heading}><h1>Песни</h1><span className={styles.count} aria-label={`Песен: ${available.length}`}>{available.length}</span></div>
+        {canCreate && <div className={styles.headerActions}>
+          <button className={styles.iconButton} type="button" aria-label="Ссылка на список" title="Скопировать ссылку на список"
+            onClick={() => copyLink('?page=library&list=choir-demo', 'Демо-ссылка на список скопирована.')}>
+            <LibraryIcon name="link" />
           </button>
-        </div>
+          <a className={`${styles.iconButton} ${styles.create}`} href={appUrl('?page=create-song')} target="_top" aria-label="Создать песню" title="Создать песню">
+            <LibraryIcon name="add" />
+          </a>
+        </div>}
       </header>
       {available.length > 0 && <div className={styles.filters}>
         <label className={styles.search} htmlFor={`${id}-search`}><span className="visually-hidden">Найти песню</span>
-          <input id={`${id}-search`} name="songSearch" type="search" placeholder="Найти песню" value={query}
+          <LibraryIcon name="search" />
+          <input id={`${id}-search`} name="songSearch" type="search" placeholder="Поиск" value={query}
             onChange={(event) => setQuery(event.target.value)} />
         </label>
         <label className={styles.sort} htmlFor={`${id}-sort`}><span className="visually-hidden">Порядок песен</span>
           <select id={`${id}-sort`} name="songSort" value={sort} onChange={(event) => setSort(event.target.value)}>
-            <option value="recent">Сначала новые</option><option value="title">По названию</option>
+            <option value="recent">Новые</option><option value="title">По названию</option>
           </select>
         </label>
       </div>}
       {notice && <p className={styles.notice} role="status">{notice}</p>}
       {matches.length > 0 ? <ul className={styles.list} aria-label="Песни">
         {matches.map((song) => <li className={styles.song} key={song.id}>
-          <div className={styles.details}><h2><a href={appUrl(`?song=${song.id}`)} target="_top">{song.title}</a></h2>
+          <a className={styles.songLink} href={appUrl(`?song=${song.id}`)} target="_top" aria-label={`Открыть: ${song.title}`}>
+            <h2>{song.title}</h2>
             <p className={styles.metadata}>{song.bpm} BPM <span>·</span> {song.meter} <span>·</span> {song.tracks} треков</p>
-            {role === 'admin' && <p className={styles.owner}>Владелец: {song.owner}</p>}
-            <p className={styles.sharing}>{song.shared ? 'Доступна по ссылке' : 'Ссылка не включена'}</p>
-          </div>
+            {role === 'admin' && <p className={styles.owner}>{song.owner}</p>}
+          </a>
           <div className={styles.actions}>
-            <a className={styles.open} href={appUrl(`?song=${song.id}`)} target="_top" aria-label={`Открыть: ${song.title}`}>Открыть</a>
-            {canEdit(song) && <button type="button" aria-label={`Редактировать: ${song.title}`}
-              onClick={() => { setEditingId(song.id); setNotice(''); window.scrollTo(0, 0); }}>Редактировать</button>}
-            <button type="button" disabled={!song.shared} aria-label={`Скопировать ссылку: ${song.title}`}
-              title={song.shared ? 'Скопировать демо-ссылку' : 'Ссылка пока не включена'}
-              onClick={() => copyLink(`?song=${song.id}`, `Демо-ссылка на «${song.title}» скопирована.`)}>Ссылка</button>
+            {canEdit(song) && <button className={styles.iconButton} type="button" aria-label={`Редактировать: ${song.title}`} title="Редактировать песню"
+              onClick={() => { setEditingId(song.id); setNotice(''); window.scrollTo(0, 0); }}><LibraryIcon name="edit" /></button>}
+            <button className={styles.iconButton} type="button" disabled={!song.shared} aria-label={`Скопировать ссылку: ${song.title}`}
+              title={song.shared ? 'Скопировать ссылку на песню' : 'Песня не опубликована'}
+              onClick={() => copyLink(`?song=${song.id}`, `Демо-ссылка на «${song.title}» скопирована.`)}>
+              <LibraryIcon name={song.shared ? 'link' : 'private'} />
+            </button>
           </div>
         </li>)}
       </ul> : <section className={styles.empty} aria-label={available.length ? 'Ничего не найдено' : 'Нет песен'}>

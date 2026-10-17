@@ -27,10 +27,10 @@ export const Search: Story = { name: 'Поиск и сортировка',
     const search = canvas.getByRole('searchbox', { name: 'Найти песню' });
     await userEvent.type(search, 'ТИХИЙ');
     await expect(canvas.getAllByRole('listitem')).toHaveLength(1);
-    await expect(canvas.getByRole('link', { name: 'Тихий вечер' })).toBeVisible();
+    await expect(canvas.getByRole('link', { name: 'Открыть: Тихий вечер' })).toBeVisible();
     await userEvent.clear(search);
     await userEvent.selectOptions(canvas.getByRole('combobox', { name: 'Порядок песен' }), 'title');
-    await expect(within(canvas.getAllByRole('listitem')[0]!).getByRole('link', { name: 'Дорога домой' })).toBeVisible();
+    await expect(within(canvas.getAllByRole('listitem')[0]!).getByRole('link', { name: 'Открыть: Дорога домой' })).toBeVisible();
   },
 };
 
@@ -41,6 +41,7 @@ export const SharedReadOnly: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.queryByRole('link', { name: 'Создать песню' })).not.toBeInTheDocument();
     await expect(canvas.queryByRole('button', { name: /^Редактировать:/ })).not.toBeInTheDocument();
+    await expect(canvas.queryByRole('button', { name: 'Ссылка на список' })).not.toBeInTheDocument();
     await expect(canvas.getAllByRole('listitem')).toHaveLength(2);
     await expect(canvas.getByRole('link', { name: 'Открыть: Тихий вечер' })).toBeVisible();
   },
@@ -63,7 +64,17 @@ export const SaveChanges: Story = {
     const title = canvas.getByRole('textbox', { name: 'Название песни' });
     await userEvent.clear(title); await userEvent.type(title, 'Вечерняя песня');
     await userEvent.click(canvas.getByRole('button', { name: 'Сохранить изменения' }));
-    await expect(canvas.getByRole('link', { name: 'Вечерняя песня' })).toBeVisible();
+    await expect(canvas.getByRole('link', { name: 'Открыть: Вечерняя песня' })).toBeVisible();
     await expect(canvas.getByRole('status')).toHaveTextContent('Изменения сохранены в макете');
   },
+};
+
+export const ManySongs: Story = {
+  name: 'Длинный список · 360 px',
+  globals: { viewport: { value: 'mobile360', isRotated: false } },
+  args: { songs: Array.from({ length: 16 }, (_, index) => ({
+    id: `demo-${index}`, title: index === 3 ? 'Очень длинное название произведения для репетиции смешанного хора' : `Песня ${index + 1}`,
+    bpm: 84, meter: '4/4', tracks: 5, bars: 4 as const,
+    owner: 'Преподаватель', updatedAt: '2026-10-17', shared: index % 3 !== 0,
+  })) },
 };
