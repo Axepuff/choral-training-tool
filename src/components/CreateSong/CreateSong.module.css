@@ -3,6 +3,13 @@
 .card h1 { margin: 0; font-size: 26px; letter-spacing: -0.03em; }
 .intro { color: var(--color-text-muted); font-size: 13px; margin: 6px 0 24px; }
 .card input, .card select, .card textarea { min-width: 0; min-height: 44px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); color: var(--color-text); padding: 10px; font: inherit; font-size: 16px; }
+.card select {
+  appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2359657b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
 .card input, .card textarea { width: 100%; }
 .card textarea { resize: vertical; }
 .card :is(input,select,textarea,summary):focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
@@ -10,8 +17,8 @@
 .settings { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; margin: 16px 0 24px; }
 .meter { min-width: 0; border: 0; margin: 0; padding: 0; }
 .meter legend { font-size: 13px; font-weight: 650; padding: 0; margin-bottom: 8px; }
-.meter > div { display: flex; align-items: center; gap: 8px; }
-.meter input, .meter select { width: calc(50% - 12px); }
+.meter > div { display: grid; grid-template-columns: minmax(44px, 1fr) auto minmax(68px, 1fr); align-items: center; gap: 8px; }
+.meter input, .meter select { width: 100%; }
 .tracks { border-block: 1px solid var(--color-border); padding: 16px 0; margin-bottom: 20px; }
 .sectionHeader { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .sectionHeader h2 { font-size: 17px; margin: 0; }
