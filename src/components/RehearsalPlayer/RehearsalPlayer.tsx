@@ -8,6 +8,8 @@ import { PlayerIcon } from './PlayerIcon';
 import styles from './RehearsalPlayer.module.css';
 
 export interface RehearsalPlayerProps {
+  /** Название выбранной песни в демонстрационной библиотеке. */
+  pieceTitle?: string;
   /** Длина демонстрационного фрагмента. */
   bars?: 4 | 16;
   /** Начальная позиция демонстрационного курсора в секундах. */
@@ -19,7 +21,7 @@ export interface RehearsalPlayerProps {
 }
 
 /** Мобильный макет репетиции. Приложение и Storybook используют этот же компонент. */
-export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initialLoop = false, bars = 4 }: RehearsalPlayerProps) {
+export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initialLoop = false, bars = 4, pieceTitle = mockScore.title }: RehearsalPlayerProps) {
   const positionId = useId();
   const timelineRef = useRef<HTMLDivElement>(null);
   const duration = bars * barDuration;
@@ -87,7 +89,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
       <section className={styles.player} aria-label="Плеер репетиции">
         <header className={styles.scoreHeader}>
           <p className={styles.eyebrow}>Моя репетиция</p>
-          <h1 className={styles.title}>{mockScore.title}</h1>
+          <h1 className={styles.title}>{pieceTitle}</h1>
           <div className={styles.metadata}>
             <span className={styles.pill}>{mockScore.bpm} BPM</span>
             <span className={styles.pill}>{mockScore.beatsPerBar}/4</span>
