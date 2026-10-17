@@ -84,12 +84,6 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
 
   return (
     <main className={styles.shell}>
-      <header className={styles.brand}>
-        <span className={styles.brandIcon}><PlayerIcon name="music" /></span>
-        <span>Хор<span className={styles.brandCaption}>пространство для репетиций</span></span>
-        <span className={styles.demoBadge}>Демо</span>
-      </header>
-
       <section className={styles.player} aria-label="Плеер репетиции">
         <header className={styles.scoreHeader}>
           <p className={styles.eyebrow}>Моя репетиция</p>
