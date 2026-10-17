@@ -20,11 +20,12 @@ function TrackRow({ track, index, onChange }: {
         onChange={(event) => onChange({ ...track, name: event.target.value })} />
     </label>
     <button className={styles.upload} type="button" onClick={() => fileRef.current?.click()}
-      aria-label={`${track.file ? 'Заменить' : 'Выбрать'} файл трека ${index + 1}`} title="Выбрать аудиофайл">
+      aria-label={`${track.file ? 'Заменить' : 'Выбрать'} файл трека ${index + 1}`} title={track.file ? 'Заменить аудиофайл' : 'Выбрать аудиофайл'}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-        <path d="M12 16V3m-5 5 5-5 5 5M4 15v5h16v-5" />
+        <path d="M9 3H4v18h11V9L9 3ZM9 3v6h6M10 12v5" />
+        <ellipse cx="8" cy="17" rx="2" ry="1.5" />
+        <path d="M20 14V4m-3 3 3-3 3 3" />
       </svg>
-      <span>{track.file ? 'Заменить' : 'Файл'}</span>
     </button>
     <input ref={fileRef} type="file" hidden aria-label={`Аудиофайл трека ${index + 1}`}
       onChange={(event) => {
@@ -55,7 +56,6 @@ export function CreateSong({ initialFilled = false }: CreateSongProps) {
   const selected = visibleTracks.filter((track) => track.file).length;
 
   return <main className={styles.shell}>
-    <header className={styles.header}><span>Библиотека хора</span><span className={styles.badge}>Макет</span></header>
     <form className={styles.card} onChange={() => setMessage('')} onSubmit={(event) => {
       event.preventDefault();
       if (!title.trim() || visibleTracks.some((track) => !track.name.trim())) {
