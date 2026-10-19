@@ -103,6 +103,8 @@ paths:
                 items: [{id: 3c95b25d-15e7-4634-89da-d66f316ba72e, ownerId: 9e6a7ad9-907c-4d9b-98fe-28d4aaf43240, title: 'Тихий вечер', bpm: 84, beatsPerBar: 4, beatUnit: 4, notes: '', publication: published, ready: true, durationMs: 45714, barCount: 16, version: 3, updatedAt: '2026-10-19T10:00:00Z', tracks: [{id: 7934417e-f689-405e-8c3e-ff01bce23ab2, position: 0, name: Сопрано, gain: 1, status: ready, durationMs: 45714, mediaUrl: /api/v1/songs/3c95b25d-15e7-4634-89da-d66f316ba72e/tracks/7934417e-f689-405e-8c3e-ff01bce23ab2/media, peaksUrl: /api/v1/songs/3c95b25d-15e7-4634-89da-d66f316ba72e/tracks/7934417e-f689-405e-8c3e-ff01bce23ab2/peaks}]}]
                 nextCursor: null
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/InvalidCursor'}
+        '410': {$ref: '#/components/responses/ExpiredCursor'}
     post:
       tags: [Songs]
       summary: Создать черновик; owner определяется сессией
@@ -346,7 +348,7 @@ paths:
         - {$ref: '#/components/parameters/Cursor'}
       responses:
         '200':
-          description: Только опубликованные песни с готовым аудио
+          description: Песни из снимка, которые всё ещё опубликованы и готовы
           headers:
             Referrer-Policy: {schema: {type: string}, description: no-referrer}
             Cache-Control: {schema: {type: string}, description: 'private, no-store'}
@@ -358,6 +360,8 @@ paths:
                 songs: [{id: 3c95b25d-15e7-4634-89da-d66f316ba72e, title: 'Тихий вечер', bpm: 84, beatsPerBar: 4, beatUnit: 4, notes: '', durationMs: 45714, barCount: 16, tracks: [{id: 7934417e-f689-405e-8c3e-ff01bce23ab2, position: 0, name: Сопрано, gain: 1, durationMs: 45714, mediaUrl: /api/v1/public/shares/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/songs/3c95b25d-15e7-4634-89da-d66f316ba72e/tracks/7934417e-f689-405e-8c3e-ff01bce23ab2/media, peaksUrl: /api/v1/public/shares/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/songs/3c95b25d-15e7-4634-89da-d66f316ba72e/tracks/7934417e-f689-405e-8c3e-ff01bce23ab2/peaks}]}]
                 nextCursor: null
         '404': {$ref: '#/components/responses/NotFound'}
+        '400': {$ref: '#/components/responses/InvalidCursor'}
+        '410': {$ref: '#/components/responses/ExpiredCursor'}
   /public/shares/{token}/songs/{songId}/tracks/{trackId}/media:
     parameters:
       - {$ref: '#/components/parameters/Token'}
@@ -416,6 +420,8 @@ paths:
                 nextCursor: null
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '400': {$ref: '#/components/responses/InvalidCursor'}
+        '410': {$ref: '#/components/responses/ExpiredCursor'}
     post:
       tags: [Admin]
       summary: Admin создаёт пользователя с временным паролем
@@ -505,6 +511,7 @@ components:
       required: true
       schema: {$ref: '#/components/schemas/Id'}
       example: 0fd74590-5bb9-4356-aa73-273809557ce8
+      description: Повтор в течение 24 ч возвращает прежний результат, включая токен POST /shares при неизменной ссылке.
     Limit:
       name: limit
       in: query
@@ -513,6 +520,7 @@ components:
       name: cursor
       in: query
       schema: {type: string}
+      description: Подписанная позиция 15-минутного снимка; 400 при чужом/повреждённом, 410 при истечении.
     Range:
       name: Range
       in: header
@@ -864,7 +872,9 @@ components:
             updatedAt: '2026-10-19T10:00:00Z'
             tracks: [{id: 7934417e-f689-405e-8c3e-ff01bce23ab2, position: 0, name: Сопрано, gain: 1, status: empty, durationMs: null, mediaUrl: null, peaksUrl: null, pendingJobId: null}]
     ShareSecret:
-      description: Новый токен показан один раз; никогда не возвращается списком ссылок
+      description: Токен при создании/перевыпуске или повторе создания с тем же Idempotency-Key в течение 24 ч; отсутствует в списке ссылок.
+      headers:
+        Cache-Control: {schema: {type: string}, example: 'private, no-store'}
       content:
         application/json:
           schema: {$ref: '#/components/schemas/ShareSecret'}
@@ -945,6 +955,20 @@ components:
               value: {error: {code: version_conflict, message: 'Песня изменена; обновите данные', requestId: req-example-6}}
             publication:
               value: {error: {code: media_not_ready, message: 'Дорожки ещё не готовы', requestId: req-example-7}}
+            staleShare:
+              value: {error: {code: idempotency_stale, message: 'Ссылка была изменена; создайте новую операцию', requestId: req-example-15}}
+    InvalidCursor:
+      description: Cursor повреждён или относится к другому маршруту/actor
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: {code: invalid_cursor, message: 'Неверная страница списка', requestId: req-example-16}}
+    ExpiredCursor:
+      description: Снимок истёк; начните новый обход без cursor
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: {code: cursor_expired, message: 'Срок просмотра списка истёк; откройте его заново', requestId: req-example-17}}
     ValidationError:
       description: Единая ошибка нормализации/поля/содержимого
       content:
