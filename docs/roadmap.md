@@ -1,8 +1,8 @@
 # План разработки и GitHub Issues
 
-Все Issues открыты как будущая работа. Создание Issue не означает, что функция уже реализована.
-Сначала объединить [PR #17 — передача документации](https://github.com/Axepuff/choral-training-tool/pull/17),
-затем начинать реализацию по очереди ниже.
+Список ниже — план работ; текущий статус смотрите в GitHub. Создание Issue не означает,
+что функция уже реализована. [PR #17 — передача документации](https://github.com/Axepuff/choral-training-tool/pull/17)
+уже объединён. Реализацию можно выполнять по очереди ниже.
 Общий трекер: [#1](https://github.com/Axepuff/choral-training-tool/issues/1). Он содержит подзадачи и не предназначен одному агенту целиком.
 
 ## Backlog
@@ -60,4 +60,5 @@ docs/authentication.md и саму Issue с её зависимостями.
 ```
 
 Правила новых чатов и субагентов: [agent-workflow.md](agent-workflow.md).
+Последовательная локальная очередь с автоматическим ревью/merge: [local-automation.md](local-automation.md).
 Текущее состояние макетов: [handoff.md](handoff.md).

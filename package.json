@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "storybook": "storybook dev --host 127.0.0.1 --port 6006 --exact-port --no-open --disable-telemetry",
     "build-storybook": "storybook build --disable-telemetry",
-    "check:mcp": "node scripts/check-mcp.mjs"
+    "check:mcp": "node scripts/check-mcp.mjs",
+    "agent:queue": "node scripts/agent-queue/runner.mjs",
+    "test:agent-queue": "node --test scripts/agent-queue/queue.test.mjs"
   },
   "dependencies": {
     "react": "19.3.0",
