@@ -1,0 +1,1015 @@
+openapi: 3.1.0
+info:
+  title: Хор · API первой рабочей версии
+  version: 1.0.0
+  description: |
+    Проектный контракт Issue #2. HTTPS и один origin. Нормализация, права,
+    транзакции и timing подробно описаны в docs/api/README.md.
+servers:
+  - url: /api/v1
+security:
+  - sessionCookie: []
+tags:
+  - name: Auth
+  - name: Songs
+  - name: Media
+  - name: Shares
+  - name: Public
+  - name: Admin
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Войти по email и паролю
+      description: Требует same-origin Origin и application/json; CSRF-токен ещё не нужен.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LoginRequest'}
+            example: {email: teacher@example.test, password: 'sample password 123'}
+      responses:
+        '200':
+          description: Новая сессия; прежняя сессия отозвана.
+          headers:
+            Set-Cookie:
+              schema: {type: string}
+              description: __Host-choral_session; Secure; HttpOnly; SameSite=Lax; Path=/
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthState'}
+              example:
+                user: {id: 9e6a7ad9-907c-4d9b-98fe-28d4aaf43240, email: teacher@example.test, role: teacher, blocked: false, mustChangePassword: false}
+                csrfToken: example-csrf-token-not-a-secret
+                expiresAt: '2026-10-26T10:00:00Z'
+        '401': {$ref: '#/components/responses/InvalidCredentials'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '403': {$ref: '#/components/responses/CsrfError'}
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Текущий пользователь и CSRF-токен
+      responses:
+        '200':
+          description: Текущая сессия
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthState'}
+              example:
+                user: {id: 9e6a7ad9-907c-4d9b-98fe-28d4aaf43240, email: teacher@example.test, role: teacher, blocked: false, mustChangePassword: false}
+                csrfToken: example-csrf-token-not-a-secret
+                expiresAt: '2026-10-26T10:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Отозвать текущую сессию
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      responses:
+        '204': {description: 'Сессия отозвана, cookie очищена'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/CsrfError'}
+  /auth/password:
+    put:
+      tags: [Auth]
+      summary: Сменить свой пароль и отозвать все сессии
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangePasswordRequest'}
+            example: {currentPassword: 'sample password 123', newPassword: 'new sample password 456'}
+      responses:
+        '204': {description: Пароль изменён; требуется новый вход}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/CsrfError'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /songs:
+    get:
+      tags: [Songs]
+      summary: Свои и доступные опубликованные песни; администратору все
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Страница песен
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SongPage'}
+              example:
+                items: [{id: 3c95b25d-15e7-4634-89da-d66f316ba72e, ownerId: 9e6a7ad9-907c-4d9b-98fe-28d4aaf43240, title: 'Тихий вечер', bpm: 84, beatsPerBar: 4, beatUnit: 4, notes: '', publication: published, ready: true, durationMs: 45714, barCount: 16, version: 3, updatedAt: '2026-10-19T10:00:00Z', tracks: [{id: 7934417e-f689-405e-8c3e-ff01bce23ab2, position: 0, name: Сопрано, gain: 1, status: ready, durationMs: 45714, mediaUrl: /api/v1/songs/3c95b25d-15e7-4634-89da-d66f316ba72e/tracks/7934417e-f689-405e-8c3e-ff01bce23ab2/media, peaksUrl: /api/v1/songs/3c95b25d-15e7-4634-89da-d66f316ba72e/tracks/7934417e-f689-405e-8c3e-ff01bce23ab2/peaks}]}]
+                nextCursor: null
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/InvalidCursor'}
+        '410': {$ref: '#/components/responses/ExpiredCursor'}
+    post:
+      tags: [Songs]
+      summary: Создать черновик; owner определяется сессией
+      parameters:
+        - {$ref: '#/components/parameters/Csrf'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SongCreate'}
+            example:
+              title: 'Тихий вечер'
+              bpm: 84
+              beatsPerBar: 4
+              beatUnit: 4
+              notes: 'Вступление — мягко.'
+              publication: draft
+              tracks: [{name: Сопрано, position: 0, gain: 1}]
+      responses:
+        '201': {$ref: '#/components/responses/SongCreated'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/CsrfError'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /songs/{songId}:
+    parameters: [{$ref: '#/components/parameters/SongId'}]
+    get:
+      tags: [Songs]
+      summary: Песня со своими активными и ожидающими дорожками
+      responses:
+        '200': {$ref: '#/components/responses/SongOk'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Songs]
+      summary: Полная замена метаданных и списка дорожек по ID; файлы не заменяет
+      description: |
+        Существующий track передаётся с id; новый без id. Пропущенный track
+        удаляется. Для published итоговые tracks должны иметь ready assets.
+      parameters:
+        - {$ref: '#/components/parameters/Csrf'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SongWrite'}
+            example:
+              title: 'Тихий вечер'
+              bpm: 84
+              beatsPerBar: 4
+              beatUnit: 4
+              notes: 'Дышать перед третьим тактом.'
+              publication: published
+              tracks: [{id: 7934417e-f689-405e-8c3e-ff01bce23ab2, name: Сопрано, position: 0, gain: 1}]
+      responses:
+        '200': {$ref: '#/components/responses/SongOk'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '428': {$ref: '#/components/responses/PreconditionRequired'}
+    delete:
+      tags: [Songs]
+      summary: Удалить песню, отозвать её song-ссылки и отменить jobs
+      parameters:
+        - {$ref: '#/components/parameters/Csrf'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      responses:
+        '204': {description: Удалена; файлы убираются после grace period}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '428': {$ref: '#/components/responses/PreconditionRequired'}
+  /songs/{songId}/tracks/{trackId}/uploads:
+    parameters:
+      - {$ref: '#/components/parameters/SongId'}
+      - {$ref: '#/components/parameters/TrackId'}
+    post:
+      tags: [Media]
+      summary: Загрузить исходник в дорожку, запустить durable processing
+      parameters:
+        - {$ref: '#/components/parameters/Csrf'}
+        - {$ref: '#/components/parameters/IfMatch'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [file]
+              properties:
+                file: {type: string, format: binary, description: Исходное аудио до 100 MiB}
+      responses:
+        '202':
+          description: Файл принят, обработка ещё не завершена
+          headers:
+            Location: {schema: {type: string}, description: URL задания}
+            ETag: {schema: {type: string}, description: Новая версия песни}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+              example: {id: c7857ed6-287b-49bd-bcc6-59d983c78068, songId: 3c95b25d-15e7-4634-89da-d66f316ba72e, trackId: 7934417e-f689-405e-8c3e-ff01bce23ab2, state: queued, attempts: 0, errorCode: null, createdAt: '2026-10-19T10:01:00Z', updatedAt: '2026-10-19T10:01:00Z'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/TooLarge'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '428': {$ref: '#/components/responses/PreconditionRequired'}
+  /jobs/{jobId}:
+    get:
+      tags: [Media]
+      summary: Статус обработки доступен владельцу песни и admin
+      parameters: [{$ref: '#/components/parameters/JobId'}]
+      responses:
+        '200':
+          description: Статус задания
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+              example: {id: c7857ed6-287b-49bd-bcc6-59d983c78068, songId: 3c95b25d-15e7-4634-89da-d66f316ba72e, trackId: 7934417e-f689-405e-8c3e-ff01bce23ab2, state: succeeded, attempts: 1, errorCode: null, createdAt: '2026-10-19T10:01:00Z', updatedAt: '2026-10-19T10:02:00Z'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /songs/{songId}/tracks/{trackId}/media:
+    parameters:
+      - {$ref: '#/components/parameters/SongId'}
+      - {$ref: '#/components/parameters/TrackId'}
+    get:
+      tags: [Media]
+      summary: Активное playback-аудио с byte Range
+      parameters: [{$ref: '#/components/parameters/Range'}]
+      responses:
+        '200': {$ref: '#/components/responses/MediaOk'}
+        '206': {$ref: '#/components/responses/MediaPartial'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/MediaNotReady'}
+        '416': {$ref: '#/components/responses/InvalidRange'}
+    head:
+      tags: [Media]
+      summary: Те же заголовки, что у GET; без тела
+      responses:
+        '200': {description: Заголовки активного playback asset}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /songs/{songId}/tracks/{trackId}/peaks:
+    parameters:
+      - {$ref: '#/components/parameters/SongId'}
+      - {$ref: '#/components/parameters/TrackId'}
+    get:
+      tags: [Media]
+      summary: Пики активного playback asset
+      responses:
+        '200': {$ref: '#/components/responses/PeaksOk'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/MediaNotReady'}
+  /shares:
+    get:
+      tags: [Shares]
+      summary: Свои ссылки; администратор может фильтровать ownerId
+      parameters:
+        - name: ownerId
+          in: query
+          schema: {$ref: '#/components/schemas/Id'}
+          description: Без параметра — свои ссылки; чужой ownerId доступен только admin.
+      responses:
+        '200':
+          description: Только метаданные, без действующих токенов
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Share'}}
+              example:
+                items: [{id: b01ad2a6-e778-491e-badf-5c35d5ae14b1, kind: list, ownerId: 9e6a7ad9-907c-4d9b-98fe-28d4aaf43240, songId: null, disabledAt: null, createdAt: '2026-10-19T10:05:00Z'}]
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Shares]
+      summary: Создать независимую song/list ссылку
+      parameters:
+        - {$ref: '#/components/parameters/Csrf'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateShare'}
+            examples:
+              list:
+                value: {kind: list, ownerId: 9e6a7ad9-907c-4d9b-98fe-28d4aaf43240}
+              song:
+                value: {kind: song, songId: 3c95b25d-15e7-4634-89da-d66f316ba72e}
+      responses:
+        '201': {$ref: '#/components/responses/ShareSecret'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /shares/{shareId}/rotate:
+    parameters: [{$ref: '#/components/parameters/ShareId'}]
+    post:
+      tags: [Shares]
+      summary: Атомарно перевыпустить токен одной ссылки
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      responses:
+        '200': {$ref: '#/components/responses/ShareSecret'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /shares/{shareId}:
+    parameters: [{$ref: '#/components/parameters/ShareId'}]
+    delete:
+      tags: [Shares]
+      summary: Отключить одну ссылку
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      responses:
+        '204': {description: Ссылка отключена; уже загруженные байты остаются у клиента}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /public/shares/{token}:
+    parameters: [{$ref: '#/components/parameters/Token'}]
+    get:
+      tags: [Public]
+      security: []
+      summary: Одну песню или динамический опубликованный список владельца
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Песни из снимка, которые всё ещё опубликованы и готовы
+          headers:
+            Referrer-Policy: {schema: {type: string}, description: no-referrer}
+            Cache-Control: {schema: {type: string}, description: 'private, no-store'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PublicShare'}
+              example:
+                kind: list
+                songs: [{id: 3c95b25d-15e7-4634-89da-d66f316ba72e, title: 'Тихий вечер', bpm: 84, beatsPerBar: 4, beatUnit: 4, notes: '', durationMs: 45714, barCount: 16, tracks: [{id: 7934417e-f689-405e-8c3e-ff01bce23ab2, position: 0, name: Сопрано, gain: 1, durationMs: 45714, mediaUrl: /api/v1/public/shares/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/songs/3c95b25d-15e7-4634-89da-d66f316ba72e/tracks/7934417e-f689-405e-8c3e-ff01bce23ab2/media, peaksUrl: /api/v1/public/shares/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/songs/3c95b25d-15e7-4634-89da-d66f316ba72e/tracks/7934417e-f689-405e-8c3e-ff01bce23ab2/peaks}]}]
+                nextCursor: null
+        '404': {$ref: '#/components/responses/NotFound'}
+        '400': {$ref: '#/components/responses/InvalidCursor'}
+        '410': {$ref: '#/components/responses/ExpiredCursor'}
+  /public/shares/{token}/songs/{songId}/tracks/{trackId}/media:
+    parameters:
+      - {$ref: '#/components/parameters/Token'}
+      - {$ref: '#/components/parameters/SongId'}
+      - {$ref: '#/components/parameters/TrackId'}
+    get:
+      tags: [Public, Media]
+      security: []
+      summary: Playback внутри действующей области ссылки
+      parameters: [{$ref: '#/components/parameters/Range'}]
+      responses:
+        '200': {$ref: '#/components/responses/MediaOk'}
+        '206': {$ref: '#/components/responses/MediaPartial'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '416': {$ref: '#/components/responses/InvalidRange'}
+    head:
+      tags: [Public, Media]
+      security: []
+      summary: Заголовки публичного playback; токен проверяется заново
+      responses:
+        '200': {description: Заголовки активного playback asset}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /public/shares/{token}/songs/{songId}/tracks/{trackId}/peaks:
+    parameters:
+      - {$ref: '#/components/parameters/Token'}
+      - {$ref: '#/components/parameters/SongId'}
+      - {$ref: '#/components/parameters/TrackId'}
+    get:
+      tags: [Public, Media]
+      security: []
+      summary: Пики внутри действующей области ссылки
+      responses:
+        '200': {$ref: '#/components/responses/PeaksOk'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: Admin получает список аккаунтов без паролей и сессий
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Страница пользователей
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, nextCursor]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/User'}}
+                  nextCursor: {type: [string, 'null']}
+              example:
+                items: [{id: 9e6a7ad9-907c-4d9b-98fe-28d4aaf43240, email: teacher@example.test, role: teacher, blocked: false, mustChangePassword: false}]
+                nextCursor: null
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '400': {$ref: '#/components/responses/InvalidCursor'}
+        '410': {$ref: '#/components/responses/ExpiredCursor'}
+    post:
+      tags: [Admin]
+      summary: Admin создаёт пользователя с временным паролем
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateUser'}
+            example: {email: new.teacher@example.test, role: teacher, temporaryPassword: 'temporary sample 123'}
+      responses:
+        '201':
+          description: Пользователь создан; пароль обратно не возвращается
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+              example: {id: 1ad600aa-9b02-4b93-8b04-6ec71b02344b, email: new.teacher@example.test, role: teacher, blocked: false, mustChangePassword: true}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /admin/users/{userId}/password:
+    parameters: [{$ref: '#/components/parameters/UserId'}]
+    put:
+      tags: [Admin]
+      summary: Admin задаёт временный пароль и отзывает сессии
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ResetPassword'}
+            example: {temporaryPassword: 'new temporary sample 123'}
+      responses:
+        '204': {description: Пароль сброшен; пользователь должен сменить его после входа}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /admin/users/{userId}:
+    parameters: [{$ref: '#/components/parameters/UserId'}]
+    patch:
+      tags: [Admin]
+      summary: Admin меняет роль или блокировку; сессии отзываются
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateUser'}
+            example: {blocked: true}
+      responses:
+        '200':
+          description: Изменённый пользователь
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+              example: {id: 1ad600aa-9b02-4b93-8b04-6ec71b02344b, email: new.teacher@example.test, role: teacher, blocked: true, mustChangePassword: true}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-choral_session
+      description: Серверная сессия; mutating requests требуют CSRF и same-origin Origin.
+  parameters:
+    Csrf:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: {type: string, minLength: 1}
+      description: Токен из /auth/me текущей cookie-сессии.
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: {type: string, pattern: '^"[1-9][0-9]*"$'}
+      example: '"3"'
+      description: Текущая версия песни из ETag.
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+      example: 0fd74590-5bb9-4356-aa73-273809557ce8
+      description: Повтор в течение 24 ч возвращает прежний результат, включая токен POST /shares при неизменной ссылке.
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 100, default: 30}
+    Cursor:
+      name: cursor
+      in: query
+      schema: {type: string}
+      description: Подписанная позиция 15-минутного снимка; 400 при чужом/повреждённом, 410 при истечении.
+    Range:
+      name: Range
+      in: header
+      schema: {type: string, pattern: '^bytes=([0-9]+-[0-9]*|-[1-9][0-9]*)$'}
+      example: bytes=0-1023
+      description: Только одиночный byte range, включая suffix/open ended.
+    SongId:
+      name: songId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    TrackId:
+      name: trackId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    ShareId:
+      name: shareId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    Token:
+      name: token
+      in: path
+      required: true
+      schema: {type: string, pattern: '^[A-Za-z0-9_-]{43}$'}
+      description: Случайные 32 байта base64url; редактировать из логов.
+  schemas:
+    Id:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, email, role, blocked, mustChangePassword]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        email: {type: string, format: email}
+        role: {type: string, enum: [teacher, admin]}
+        blocked: {type: boolean}
+        mustChangePassword: {type: boolean}
+    AuthState:
+      type: object
+      additionalProperties: false
+      required: [user, csrfToken, expiresAt]
+      properties:
+        user: {$ref: '#/components/schemas/User'}
+        csrfToken: {type: string, minLength: 1}
+        expiresAt: {type: string, format: date-time}
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: {type: string, format: email, maxLength: 254}
+        password: {type: string, minLength: 1}
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword: {type: string, minLength: 1}
+        newPassword: {type: string, minLength: 12, maxLength: 128}
+    CreateUser:
+      type: object
+      additionalProperties: false
+      required: [email, role, temporaryPassword]
+      properties:
+        email: {type: string, format: email, maxLength: 254}
+        role: {type: string, enum: [teacher, admin]}
+        temporaryPassword: {type: string, minLength: 12, maxLength: 128}
+    ResetPassword:
+      type: object
+      additionalProperties: false
+      required: [temporaryPassword]
+      properties:
+        temporaryPassword: {type: string, minLength: 12, maxLength: 128}
+    UpdateUser:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        role: {type: string, enum: [teacher, admin]}
+        blocked: {type: boolean}
+    TrackWrite:
+      type: object
+      additionalProperties: false
+      required: [name, position, gain]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+          description: Только для существующей дорожки этой песни; для новой отсутствует.
+        name: {type: string, minLength: 1, maxLength: 80}
+        position: {type: integer, minimum: 0, maximum: 31}
+        gain: {type: number, minimum: 0, maximum: 1, description: Стартовая локальная громкость}
+    SongWrite:
+      type: object
+      additionalProperties: false
+      required: [title, bpm, beatsPerBar, beatUnit, notes, publication, tracks]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 160}
+        bpm: {type: integer, minimum: 20, maximum: 300}
+        beatsPerBar: {type: integer, minimum: 1, maximum: 32}
+        beatUnit: {type: integer, enum: [1, 2, 4, 8, 16, 32]}
+        notes: {type: string, maxLength: 1000}
+        publication: {type: string, enum: [draft, published]}
+        tracks:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items: {$ref: '#/components/schemas/TrackWrite'}
+          description: position — плотная последовательность 0..N-1, id без повторов.
+    SongCreate:
+      allOf:
+        - {$ref: '#/components/schemas/SongWrite'}
+        - type: object
+          properties:
+            publication: {const: draft}
+            tracks:
+              type: array
+              items:
+                type: object
+                not: {required: [id]}
+    Track:
+      type: object
+      additionalProperties: false
+      required: [id, position, name, gain, status, durationMs, mediaUrl, peaksUrl]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        position: {type: integer, minimum: 0, maximum: 31}
+        name: {type: string, minLength: 1, maxLength: 80}
+        gain: {type: number, minimum: 0, maximum: 1}
+        status: {type: string, enum: [empty, queued, processing, ready, failed]}
+        durationMs: {type: [integer, 'null'], minimum: 1, maximum: 1200000}
+        mediaUrl: {type: [string, 'null'], description: Только активный ready asset}
+        peaksUrl: {type: [string, 'null'], description: Только активный ready asset}
+        pendingJobId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: Есть только у редактора}
+    Song:
+      type: object
+      additionalProperties: false
+      required: [id, ownerId, title, bpm, beatsPerBar, beatUnit, notes, publication, ready, durationMs, barCount, version, updatedAt, tracks]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        ownerId: {$ref: '#/components/schemas/Id'}
+        title: {type: string, minLength: 1, maxLength: 160}
+        bpm: {type: integer, minimum: 20, maximum: 300}
+        beatsPerBar: {type: integer, minimum: 1, maximum: 32}
+        beatUnit: {type: integer, enum: [1, 2, 4, 8, 16, 32]}
+        notes: {type: string, maxLength: 1000}
+        publication: {type: string, enum: [draft, published]}
+        ready: {type: boolean}
+        durationMs: {type: [integer, 'null'], minimum: 1, maximum: 1200000}
+        barCount: {type: [integer, 'null'], minimum: 1}
+        version: {type: integer, minimum: 1}
+        updatedAt: {type: string, format: date-time}
+        tracks: {type: array, minItems: 1, maxItems: 32, items: {$ref: '#/components/schemas/Track'}}
+    SongPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Song'}}
+        nextCursor: {type: [string, 'null']}
+    Job:
+      type: object
+      additionalProperties: false
+      required: [id, songId, trackId, state, attempts, errorCode, createdAt, updatedAt]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        songId: {$ref: '#/components/schemas/Id'}
+        trackId: {$ref: '#/components/schemas/Id'}
+        state: {type: string, enum: [queued, processing, succeeded, failed, canceled]}
+        attempts: {type: integer, minimum: 0, maximum: 3}
+        errorCode: {type: [string, 'null'], enum: [null, unsupported_codec, corrupt_audio, too_long, processing_timeout, processing_failed, canceled]}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+      examples:
+        - {id: c7857ed6-287b-49bd-bcc6-59d983c78068, songId: 3c95b25d-15e7-4634-89da-d66f316ba72e, trackId: 7934417e-f689-405e-8c3e-ff01bce23ab2, state: failed, attempts: 1, errorCode: unsupported_codec, createdAt: '2026-10-19T10:01:00Z', updatedAt: '2026-10-19T10:02:00Z'}
+    Share:
+      type: object
+      additionalProperties: false
+      required: [id, kind, ownerId, songId, disabledAt, createdAt]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        kind: {type: string, enum: [song, list]}
+        ownerId: {$ref: '#/components/schemas/Id'}
+        songId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}]}
+        disabledAt: {type: [string, 'null'], format: date-time}
+        createdAt: {type: string, format: date-time}
+    CreateShare:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [kind, songId]
+          properties:
+            kind: {const: song}
+            songId: {$ref: '#/components/schemas/Id'}
+        - type: object
+          additionalProperties: false
+          required: [kind, ownerId]
+          properties:
+            kind: {const: list}
+            ownerId: {$ref: '#/components/schemas/Id'}
+    ShareSecret:
+      type: object
+      additionalProperties: false
+      required: [share, token, url]
+      properties:
+        share: {$ref: '#/components/schemas/Share'}
+        token: {type: string, pattern: '^[A-Za-z0-9_-]{43}$'}
+        url: {type: string, description: Frontend URL с токеном; вернуть только однократно}
+    PublicTrack:
+      type: object
+      additionalProperties: false
+      required: [id, position, name, gain, durationMs, mediaUrl, peaksUrl]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        position: {type: integer, minimum: 0, maximum: 31}
+        name: {type: string, minLength: 1, maxLength: 80}
+        gain: {type: number, minimum: 0, maximum: 1}
+        durationMs: {type: integer, minimum: 1, maximum: 1200000}
+        mediaUrl: {type: string}
+        peaksUrl: {type: string}
+    PublicSong:
+      type: object
+      additionalProperties: false
+      required: [id, title, bpm, beatsPerBar, beatUnit, notes, durationMs, barCount, tracks]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        title: {type: string, minLength: 1, maxLength: 160}
+        bpm: {type: integer, minimum: 20, maximum: 300}
+        beatsPerBar: {type: integer, minimum: 1, maximum: 32}
+        beatUnit: {type: integer, enum: [1, 2, 4, 8, 16, 32]}
+        notes: {type: string, maxLength: 1000}
+        durationMs: {type: integer, minimum: 1, maximum: 1200000}
+        barCount: {type: integer, minimum: 1}
+        tracks: {type: array, minItems: 1, maxItems: 32, items: {$ref: '#/components/schemas/PublicTrack'}}
+    PublicShare:
+      type: object
+      additionalProperties: false
+      required: [kind, songs, nextCursor]
+      properties:
+        kind: {type: string, enum: [song, list]}
+        songs: {type: array, items: {$ref: '#/components/schemas/PublicSong'}}
+        nextCursor: {type: [string, 'null']}
+    Peaks:
+      type: object
+      additionalProperties: false
+      required: [startMs, stepMs, durationMs, points]
+      properties:
+        startMs: {type: integer, const: 0}
+        stepMs: {type: integer, const: 100}
+        durationMs: {type: integer, minimum: 1, maximum: 1200000}
+        points:
+          type: array
+          maxItems: 12000
+          items:
+            type: array
+            prefixItems: [{type: number, minimum: -1, maximum: 1}, {type: number, minimum: -1, maximum: 1}]
+            minItems: 2
+            maxItems: 2
+          description: 'Пара [minimum, maximum] каждого окна; число окон ceil(durationMs / 100).'
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, requestId]
+          properties:
+            code: {type: string}
+            message: {type: string}
+            requestId: {type: string}
+            details:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [field, code]
+                properties:
+                  field: {type: string, description: JSON Pointer; пустая строка для всего запроса}
+                  code: {type: string}
+  responses:
+    SongOk:
+      description: Песня; ETag содержит версию
+      headers:
+        ETag: {schema: {type: string}, example: '"3"'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Song'}
+          example:
+            id: 3c95b25d-15e7-4634-89da-d66f316ba72e
+            ownerId: 9e6a7ad9-907c-4d9b-98fe-28d4aaf43240
+            title: 'Тихий вечер'
+            bpm: 84
+            beatsPerBar: 4
+            beatUnit: 4
+            notes: 'Вступление — мягко.'
+            publication: published
+            ready: true
+            durationMs: 45714
+            barCount: 16
+            version: 3
+            updatedAt: '2026-10-19T10:00:00Z'
+            tracks:
+              - id: 7934417e-f689-405e-8c3e-ff01bce23ab2
+                position: 0
+                name: Сопрано
+                gain: 1
+                status: ready
+                durationMs: 45714
+                mediaUrl: /api/v1/songs/3c95b25d-15e7-4634-89da-d66f316ba72e/tracks/7934417e-f689-405e-8c3e-ff01bce23ab2/media
+                peaksUrl: /api/v1/songs/3c95b25d-15e7-4634-89da-d66f316ba72e/tracks/7934417e-f689-405e-8c3e-ff01bce23ab2/peaks
+                pendingJobId: null
+    SongCreated:
+      description: Новый черновик с серверными ID
+      headers:
+        Location: {schema: {type: string}, example: /api/v1/songs/3c95b25d-15e7-4634-89da-d66f316ba72e}
+        ETag: {schema: {type: string}, example: '"1"'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Song'}
+          example:
+            id: 3c95b25d-15e7-4634-89da-d66f316ba72e
+            ownerId: 9e6a7ad9-907c-4d9b-98fe-28d4aaf43240
+            title: 'Тихий вечер'
+            bpm: 84
+            beatsPerBar: 4
+            beatUnit: 4
+            notes: 'Вступление — мягко.'
+            publication: draft
+            ready: false
+            durationMs: null
+            barCount: null
+            version: 1
+            updatedAt: '2026-10-19T10:00:00Z'
+            tracks: [{id: 7934417e-f689-405e-8c3e-ff01bce23ab2, position: 0, name: Сопрано, gain: 1, status: empty, durationMs: null, mediaUrl: null, peaksUrl: null, pendingJobId: null}]
+    ShareSecret:
+      description: Токен при создании/перевыпуске или повторе создания с тем же Idempotency-Key в течение 24 ч; отсутствует в списке ссылок.
+      headers:
+        Cache-Control: {schema: {type: string}, example: 'private, no-store'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ShareSecret'}
+          example:
+            share: {id: b01ad2a6-e778-491e-badf-5c35d5ae14b1, kind: list, ownerId: 9e6a7ad9-907c-4d9b-98fe-28d4aaf43240, songId: null, disabledAt: null, createdAt: '2026-10-19T10:05:00Z'}
+            token: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+            url: /?list=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+    MediaOk:
+      description: Активное AAC-LC MP4 аудио
+      headers:
+        Accept-Ranges: {schema: {type: string}, example: bytes}
+        Content-Length: {schema: {type: integer}, example: 102400}
+        ETag: {schema: {type: string}, example: '"asset-2"'}
+        Cache-Control: {schema: {type: string}, example: 'private, no-store'}
+        Referrer-Policy: {schema: {type: string}, example: no-referrer}
+      content:
+        audio/mp4:
+          schema: {type: string, format: binary}
+    MediaPartial:
+      description: Один byte range
+      headers:
+        Accept-Ranges: {schema: {type: string}, example: bytes}
+        Content-Range: {schema: {type: string}, example: bytes 0-1023/102400}
+        Content-Length: {schema: {type: integer}, example: 1024}
+        ETag: {schema: {type: string}, example: '"asset-2"'}
+        Cache-Control: {schema: {type: string}, example: 'private, no-store'}
+        Referrer-Policy: {schema: {type: string}, example: no-referrer}
+      content:
+        audio/mp4:
+          schema: {type: string, format: binary}
+    PeaksOk:
+      description: Peaks текущего активного playback; обновляются вместе с media ETag
+      headers:
+        ETag: {schema: {type: string}, example: '"asset-2"'}
+        Cache-Control: {schema: {type: string}, example: 'private, no-store'}
+        Referrer-Policy: {schema: {type: string}, example: no-referrer}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Peaks'}
+          example: {startMs: 0, stepMs: 100, durationMs: 250, points: [[-0.5, 0.7], [-0.8, 0.6], [-0.2, 0.1]]}
+    Unauthorized:
+      description: Нет действующей cookie-сессии
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: {code: unauthorized, message: 'Требуется вход', requestId: req-example-1}}
+    InvalidCredentials:
+      description: Неверный email или пароль; одинаковый ответ
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: {code: invalid_credentials, message: 'Неверный email или пароль', requestId: req-example-2}}
+    Forbidden:
+      description: Действующая сессия не даёт права на действие
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: {code: forbidden, message: 'Недостаточно прав', requestId: req-example-3}}
+    CsrfError:
+      description: Origin или CSRF-токен отсутствует/неверен
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: {code: csrf_failed, message: 'Запрос отклонён', requestId: req-example-4}}
+    NotFound:
+      description: Ресурс отсутствует или скрыт правами
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: {code: not_found, message: 'Не найдено', requestId: req-example-5}}
+    Conflict:
+      description: Версия, idempotency key, публикация или pending upload конфликтуют
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          examples:
+            version:
+              value: {error: {code: version_conflict, message: 'Песня изменена; обновите данные', requestId: req-example-6}}
+            publication:
+              value: {error: {code: media_not_ready, message: 'Дорожки ещё не готовы', requestId: req-example-7}}
+            staleShare:
+              value: {error: {code: idempotency_stale, message: 'Ссылка была изменена; создайте новую операцию', requestId: req-example-15}}
+    InvalidCursor:
+      description: Cursor повреждён или относится к другому маршруту/actor
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: {code: invalid_cursor, message: 'Неверная страница списка', requestId: req-example-16}}
+    ExpiredCursor:
+      description: Снимок истёк; начните новый обход без cursor
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: {code: cursor_expired, message: 'Срок просмотра списка истёк; откройте его заново', requestId: req-example-17}}
+    ValidationError:
+      description: Единая ошибка нормализации/поля/содержимого
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          examples:
+            notes:
+              value: {error: {code: validation_error, message: 'Проверьте данные', requestId: req-example-8, details: [{field: /notes, code: max_length_1000}]}}
+            bpm:
+              value: {error: {code: validation_error, message: 'Проверьте данные', requestId: req-example-9, details: [{field: /bpm, code: out_of_range}]}}
+    PreconditionRequired:
+      description: Для изменения нужен If-Match
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: {code: precondition_required, message: 'Нужна версия песни', requestId: req-example-10}}
+    MediaNotReady:
+      description: У дорожки ещё нет готового активного asset
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: {code: media_not_ready, message: 'Аудио ещё не готово', requestId: req-example-11}}
+    TooLarge:
+      description: Превышен лимит 100 MiB
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: {code: upload_too_large, message: 'Файл слишком большой', requestId: req-example-12}}
+    InvalidRange:
+      description: Диапазон невозможен для данного asset
+      headers:
+        Content-Range: {schema: {type: string}, example: 'bytes */102400'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: {code: invalid_range, message: 'Недопустимый диапазон', requestId: req-example-13}}
+    RateLimited:
+      description: Превышен лимит попыток входа
+      headers:
+        Retry-After: {schema: {type: integer}, example: 900}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: {code: rate_limited, message: 'Попробуйте позже', requestId: req-example-14}}
