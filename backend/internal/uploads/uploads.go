@@ -94,6 +94,23 @@ func fail(w http.ResponseWriter, status int, code string) {
 	b, _ := json.Marshal(map[string]any{"error": map[string]string{"code": code, "message": messages[code], "requestId": w.Header().Get("X-Request-Id")}})
 	reply(w, status, b, "", "")
 }
+
+// readFailure classifies wrapped errors from every multipart read, including headers.
+func readFailure(w http.ResponseWriter, ctx context.Context, err error, fallback string) {
+	var filesystem *os.PathError
+	var overflow *http.MaxBytesError
+	var timeout net.Error
+	switch {
+	case errors.As(err, &filesystem):
+		fail(w, 503, "unavailable")
+	case errors.Is(err, storage.ErrSize) || errors.As(err, &overflow):
+		fail(w, 413, "upload_too_large")
+	case ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || errors.As(err, &timeout) && timeout.Timeout():
+		fail(w, 408, "upload_timeout")
+	default:
+		fail(w, 422, fallback)
+	}
+}
 func (s *Service) identityFor(w http.ResponseWriter, r *http.Request) *platform.Identity {
 	i, e := s.identity.Authenticate(r.Context(), r)
 	if e == nil && i != nil {
@@ -226,30 +243,22 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	part, e := mr.NextPart()
-	if e != nil || part.FormName() != "file" || part.FileName() == "" {
+	if e != nil {
+		readFailure(w, ctx, e, "validation_error")
+		return
+	}
+	if part.FormName() != "file" || part.FileName() == "" {
 		fail(w, 422, "validation_error")
 		return
 	}
 	hash := sha256.New()
 	e = s.store.Stage(ctx, stage, io.TeeReader(part, hash), s.maxFile)
 	if e != nil {
-		var filesystem *os.PathError
-		var overflow *http.MaxBytesError
-		var timeout net.Error
-		switch {
-		case errors.As(e, &filesystem):
-			fail(w, 503, "unavailable")
-		case errors.Is(e, storage.ErrSize) || errors.As(e, &overflow):
-			fail(w, 413, "upload_too_large")
-		case ctx.Err() != nil || errors.As(e, &timeout) && timeout.Timeout():
-			fail(w, 408, "upload_timeout")
-		default:
-			fail(w, 422, "corrupt_audio")
-		}
+		readFailure(w, ctx, e, "corrupt_audio")
 		return
 	}
 	if _, e = mr.NextPart(); e != io.EOF {
-		fail(w, 422, "validation_error")
+		readFailure(w, ctx, e, "validation_error")
 		return
 	}
 	f, e := s.store.Open(ctx, stage)

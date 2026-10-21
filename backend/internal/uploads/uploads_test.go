@@ -437,34 +437,57 @@ func TestProbeTimeoutAndOutputLimit(t *testing.T) {
 	}
 }
 
-func TestNetworkReadTimeout(t *testing.T) {
-	f := setup(t)
-	f.s.timeout = 80 * time.Millisecond
-	server := httptest.NewServer(f.h)
-	defer server.Close()
-	conn, e := net.Dial("tcp", strings.TrimPrefix(server.URL, "http://"))
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(3 * time.Second))
-	r := f.request([]byte("x"), users.ID(), `"1"`)
-	prefix := "--slow\r\nContent-Disposition: form-data; name=\"file\"; filename=\"slow.wav\"\r\nContent-Type: application/octet-stream\r\n\r\nx"
-	head := "POST " + r.URL.Path + " HTTP/1.1\r\nHost: uploads.example.test\r\nOrigin: " + origin + "\r\nCookie: " + f.cookie.String() + "\r\nX-CSRF-Token: " + f.csrf + "\r\nIdempotency-Key: " + r.Header.Get("Idempotency-Key") + "\r\nIf-Match: \"1\"\r\nContent-Type: multipart/form-data; boundary=slow\r\nContent-Length: 10000\r\n\r\n"
-	if _, e = io.WriteString(conn, head+prefix); e != nil {
-		t.Fatal(e)
-	}
-	response, e := http.ReadResponse(bufio.NewReader(conn), r)
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer response.Body.Close()
-	io.Copy(io.Discard, response.Body)
-	if response.StatusCode != 408 {
-		t.Fatalf("timeout status %d", response.StatusCode)
-	}
-	if len(f.files()) != 0 || f.count("assets") != 0 {
-		t.Fatal("timeout leaked files")
+func TestNetworkMultipartReadFailures(t *testing.T) {
+	const fileHeader = "--slow\r\nContent-Disposition: form-data; name=\"file\"; filename=\"slow.wav\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+	const nextHeader = "\r\n--slow\r\nX-Padding: "
+	for _, tc := range []struct {
+		name, prefix, code string
+		status             int
+	}{
+		{"before_first_part", "", "upload_timeout", 408},
+		{"first_part_headers", "--slow\r\nContent-Disposition: ", "upload_timeout", 408},
+		{"file_body", fileHeader + "x", "upload_timeout", 408},
+		{"next_boundary", fileHeader + "x\r\n--slow\r\n", "upload_timeout", 408},
+		{"first_headers_overflow", "--slow\r\nX-Padding: " + strings.Repeat("x", (1<<20)+2048), "upload_too_large", 413},
+		{"next_headers_overflow", fileHeader + "x" + nextHeader + strings.Repeat("x", (1<<20)+2048), "upload_too_large", 413},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := setup(t)
+			f.s.maxFile = 1024
+			f.s.timeout = 300 * time.Millisecond
+			server := httptest.NewServer(f.h)
+			defer server.Close()
+			conn, e := net.Dial("tcp", strings.TrimPrefix(server.URL, "http://"))
+			if e != nil {
+				t.Fatal(e)
+			}
+			defer conn.Close()
+			conn.SetDeadline(time.Now().Add(3 * time.Second))
+			r := f.request([]byte("x"), users.ID(), `"1"`)
+			head := "POST " + r.URL.Path + " HTTP/1.1\r\nHost: uploads.example.test\r\nOrigin: " + origin + "\r\nCookie: " + f.cookie.String() + "\r\nX-CSRF-Token: " + f.csrf + "\r\nIdempotency-Key: " + r.Header.Get("Idempotency-Key") + "\r\nIf-Match: \"1\"\r\nContent-Type: multipart/form-data; boundary=slow\r\nContent-Length: 2000000\r\n\r\n"
+			if _, e = io.WriteString(conn, head+tc.prefix); e != nil {
+				t.Fatal(e)
+			}
+			response, e := http.ReadResponse(bufio.NewReader(conn), r)
+			if e != nil {
+				t.Fatal(e)
+			}
+			body, e := io.ReadAll(response.Body)
+			response.Body.Close()
+			if e != nil {
+				t.Fatal(e)
+			}
+			if response.StatusCode != tc.status || !bytes.Contains(body, []byte(`"code":"`+tc.code+`"`)) {
+				t.Fatalf("status %d body %s; want %d %s", response.StatusCode, body, tc.status, tc.code)
+			}
+			if len(f.files()) != 0 || f.count("assets") != 0 || f.count("jobs") != 0 || f.count("idempotency_records") != 0 {
+				t.Fatal("failed read leaked files or records")
+			}
+			// The failed attempt must release admission/quota and permit the same key.
+			f.s.maxFile = MaxFile
+			f.s.timeout = 5 * time.Second
+			check(t, f.send(f.request(audio(t, "wav"), r.Header.Get("Idempotency-Key"), `"1"`)), 202)
+		})
 	}
 }
 
