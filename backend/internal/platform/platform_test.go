@@ -210,3 +210,48 @@ func TestFailedMigrationRollsBack(t *testing.T) {
 		t.Fatalf("partial version: %d %v", count, err)
 	}
 }
+
+func TestReadyAssetRequiresMetadata(t *testing.T) {
+	db, err := OpenDatabase(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, query := range []string{
+		`INSERT INTO users VALUES ('u','user@example.test','hash','teacher',NULL,1,'now','now')`,
+		`INSERT INTO songs (id,owner_id,title,bpm,beats_per_bar,beat_unit,created_at,updated_at) VALUES ('s','u','Song',120,4,4,'now','now')`,
+		`INSERT INTO tracks (id,song_id,position,name) VALUES ('t','s',0,'Track')`,
+	} {
+		if _, err := db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	columns := []string{"playback_path", "peaks_path", "duration_ms", "mime", "sample_rate", "channels"}
+	for i, column := range columns {
+		t.Run(column, func(t *testing.T) {
+			t.Cleanup(func() {
+				if _, err := db.Exec(`DELETE FROM assets WHERE id='a'`); err != nil {
+					t.Fatal(err)
+				}
+			})
+			values := []any{"playback.m4a", "peaks.json", 1000, "audio/mp4", 48000, 1}
+			values[i] = nil
+			insert := `INSERT INTO assets (id,track_id,source_path,source_bytes,source_sha256,state,created_at,updated_at,playback_path,peaks_path,duration_ms,mime,sample_rate,channels) VALUES ('a','t','source',1,x'01',?,'now','now',?,?,?,?,?,?)`
+			if _, err := db.Exec(insert, append([]any{"ready"}, values...)...); err == nil {
+				t.Fatal("ready asset accepted NULL " + column)
+			}
+			if _, err := db.Exec(insert, append([]any{"processing"}, values...)...); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(`UPDATE assets SET state='ready' WHERE id='a'`); err == nil {
+				t.Fatal("transition to ready accepted NULL " + column)
+			}
+			if _, err := db.Exec(`UPDATE assets SET state='ready', playback_path='playback.m4a', peaks_path='peaks.json', duration_ms=1000, mime='audio/mp4', sample_rate=48000, channels=1 WHERE id='a'`); err != nil {
+				t.Fatalf("valid ready transition rejected: %v", err)
+			}
+		})
+	}
+	if _, err := db.Exec(`INSERT INTO assets VALUES ('valid','t','source','playback.m4a','peaks.json',1,x'01',1000,'audio/mp4',48000,1,'ready','now','now')`); err != nil {
+		t.Fatalf("valid ready insert rejected: %v", err)
+	}
+}

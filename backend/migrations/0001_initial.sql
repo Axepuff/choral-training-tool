@@ -27,7 +27,7 @@ CREATE TABLE assets (
  duration_ms INTEGER, mime TEXT, sample_rate INTEGER, channels INTEGER,
  state TEXT NOT NULL CHECK(state IN ('pending','processing','ready','failed','retired')),
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
- CHECK(state!='ready' OR (playback_path IS NOT NULL AND peaks_path IS NOT NULL AND duration_ms>0 AND mime='audio/mp4' AND sample_rate=48000 AND channels=1))
+ CHECK(state!='ready' OR (playback_path IS NOT NULL AND peaks_path IS NOT NULL AND duration_ms IS NOT NULL AND duration_ms>0 AND mime IS NOT NULL AND mime='audio/mp4' AND sample_rate IS NOT NULL AND sample_rate=48000 AND channels IS NOT NULL AND channels=1))
 );
 CREATE TABLE jobs (
  id TEXT PRIMARY KEY, asset_id TEXT NOT NULL REFERENCES assets(id), state TEXT NOT NULL CHECK(state IN ('queued','processing','succeeded','failed','canceled')),
