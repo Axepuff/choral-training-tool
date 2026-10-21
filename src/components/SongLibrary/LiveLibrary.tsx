@@ -94,7 +94,15 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
         let uploadKey = attempts.current.get(file);
         if (!uploadKey) { uploadKey = crypto.randomUUID(); attempts.current.set(file, uploadKey); }
         setStatus(`${track.name}: загрузка 0%`);
-        let job = await uploadFile(current.id, target.id, current.version, file, uploadKey, p => setStatus(`${track.name}: загрузка ${p}%`));
+        let job;
+        try {
+          job = await uploadFile(current.id, target.id, current.version, file, uploadKey, p => setStatus(`${track.name}: загрузка ${p}%`));
+        } catch (e) {
+          // A final probe rejection is replayed by the server for this key.
+          // Keep the key when the network outcome is unknown to avoid duplicate jobs.
+          if (e instanceof ApiError && e.status === 422 && ['corrupt_audio', 'unsupported_codec', 'too_long', 'probe_timeout'].includes(e.problem.code)) attempts.current.delete(file);
+          throw e;
+        }
         while (job.state === 'queued' || job.state === 'processing') {
           setStatus(`${track.name}: обработка…`);
           await new Promise(resolve => window.setTimeout(resolve, 1000));
@@ -125,9 +133,15 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
       <ul aria-label="Состояния дорожек">{song.tracks.map(t => <li key={t.id}>{t.name}: {t.pendingJobId && jobs[t.pendingJobId] === 'failed' ? 'ошибка обработки — повторите или замените файл' : t.pendingJobId && ['queued', 'processing'].includes(jobs[t.pendingJobId] ?? '') ? 'обработка' : t.status === 'ready' ? 'готово' : t.status === 'failed' ? 'ошибка обработки — повторите или замените файл' : t.status === 'empty' ? 'файл не загружен' : 'обработка'}{t.mediaUrl && t.pendingJobId ? ' · старая готовая дорожка доступна' : ''}</li>)}</ul>
       <p>Публикация: {song.publication === 'published' ? 'опубликована' : 'черновик'}. {song.ready ? 'Аудио готово.' : 'Есть неготовые дорожки.'}</p>
       <button disabled={busy} onClick={async () => {
-        setBusy(true); setError('');
+        setBusy(true); setError(''); setStatus('');
         try { const updated = await writeSong(songForm(song), song, key.current, song.publication === 'draft' ? 'published' : 'draft'); setSong(updated); setStatus('Публикация обновлена.'); }
-        catch (e) { setError(message(e)); } finally { setBusy(false); }
+        catch (e) {
+          setError(message(e));
+          if (e instanceof ApiError && ['version_conflict', 'precondition_failed'].includes(e.problem.code)) {
+            // Do not remount the form: unsaved fields and files belong to the user.
+            try { setSong(await getSong(song.id)); } catch { /* Keep the conflict visible. */ }
+          }
+        } finally { setBusy(false); }
       }}>{song.publication === 'draft' ? 'Опубликовать сохранённую песню' : 'Снять публикацию'}</button>
     </div>}
   </>;

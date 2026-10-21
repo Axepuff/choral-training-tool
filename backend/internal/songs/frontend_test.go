@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -24,6 +26,19 @@ func TestSongsFrontendBrowser(t *testing.T) {
 	if os.Getenv("CHORAL_BROWSER_TEST") != "true" {
 		t.Skip("set CHORAL_BROWSER_TEST=true; Node and Chrome required")
 	}
+	// A one-shot real probe timeout, armed by the browser after its first upload.
+	realProbe, err := exec.LookPath("ffprobe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	probeDir := t.TempDir()
+	marker := filepath.Join(probeDir, "timeout-once")
+	wrapper := "#!/bin/sh\nif [ -f " + strconv.Quote(marker) + " ]; then\nrm -- " + strconv.Quote(marker) + "\nexec sleep 20\nfi\nexec " + strconv.Quote(realProbe) + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(probeDir, "ffprobe"), []byte(wrapper), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", probeDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CHORAL_TEST_PROBE_MARKER", marker)
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 	dir := t.TempDir()

@@ -23,6 +23,7 @@ let next = 0;
 let acceptDialog = false;
 let dialogs = 0;
 const pending = new Map();
+const uploadKeys = [];
 function send(method, params = {}) {
   const id = ++next;
   return new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
@@ -73,7 +74,7 @@ try {
  const targets=await (await fetch(`http://127.0.0.1:${port}/json`)).json();
  ws=new WebSocket(targets.find(t=>t.type==='page').webSocketDebuggerUrl);
  await new Promise((resolve,reject)=>{ws.onopen=resolve;ws.onerror=reject;});
- ws.onmessage=message=>{const data=JSON.parse(message.data);if(data.method==='Page.javascriptDialogOpening'){dialogs++;void send('Page.handleJavaScriptDialog',{accept:acceptDialog});}const entry=pending.get(data.id);if(entry){pending.delete(data.id);if(data.error)entry.reject(new Error(data.error.message));else entry.resolve(data.result);}};
+ ws.onmessage=message=>{const data=JSON.parse(message.data);if(data.method==='Network.requestWillBeSent' && data.params.request.url.endsWith('/uploads')){uploadKeys.push(data.params.request.headers['Idempotency-Key']);}if(data.method==='Fetch.requestPaused'){void send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});}if(data.method==='Page.javascriptDialogOpening'){dialogs++;void send('Page.handleJavaScriptDialog',{accept:acceptDialog});}const entry=pending.get(data.id);if(entry){pending.delete(data.id);if(data.error)entry.reject(new Error(data.error.message));else entry.resolve(data.result);}};
  await send('Page.enable');await send('Runtime.enable');await send('Network.enable');
  await navigate('?page=create-song');await expectText('Вход');
  await submit('teacher@example.test','fictional password 123');await expectText('Новая песня');
@@ -83,14 +84,31 @@ try {
  await save();await expectText('Изменения сохранены на сервере.');
  const listing=await api('/songs');assert.equal(listing.status,200);assert.equal(listing.body.items.length,1);
  const id=listing.body.items[0].id;
- await send('Page.reload');await expectText('Редактировать песню');assert.equal(await evaluate('location.search'),'?page=edit-song&id='+id);
+ await navigate(await evaluate('location.search'));await expectText('Редактировать песню');assert.equal(await evaluate('location.search'),'?page=edit-song&id='+id);
  assert.equal(await evaluate(`document.querySelector('[name=notes]').value`),'Заметка 🌼');
  // Real PCM WAV input created outside Git; actual probe and worker process it.
  const wav=Buffer.alloc(44+48000*2);wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(48000,24);wav.writeUInt32LE(96000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wav.length-44,40);for(let i=0;i<48000;i++)wav.writeInt16LE(Math.round(Math.sin(i*2*Math.PI*440/48000)*8000),44+i*2);
  const file=join(dir,'synthetic.wav');await writeFile(file,wav);
  await selectFile(file);await expectText('synthetic.wav');await save();await expectText('Изменения сохранены на сервере.');await expectText('Аудио готово.');
- let song=(await api('/songs/'+id)).body;assert.equal(song.ready,true);const media=song.tracks[0].mediaUrl;
+ let song=(await api('/songs/'+id)).body;assert.equal(song.ready,true);let media=song.tracks[0].mediaUrl;
  assert.equal((await api('/songs/'+id)).body.notes,'Заметка 🌼');
+ // Confirmed probe_timeout must allow saving the SAME selected File again.
+ await writeFile(process.env.CHORAL_TEST_PROBE_MARKER, 'armed');
+ await selectFile(file);await save();await expectText('Проверка превысила 15 секунд');
+ assert.equal((await api('/songs/'+id)).body.tracks[0].mediaUrl,media);
+ assert.equal(await bodyIncludes('Изменения сохранены на сервере.'),false);
+ const timeoutKey=uploadKeys.at(-1);assert.ok(timeoutKey);
+ await save();await expectText('Изменения сохранены на сервере.');await expectText('Аудио готово.');
+ assert.notEqual(uploadKeys.at(-1),timeoutKey,'Final probe rejection must get a new idempotency key');
+ media=(await api('/songs/'+id)).body.tracks[0].mediaUrl;
+ // A transport failure has an unknown outcome: retry keeps the same key.
+ await send('Fetch.enable',{patterns:[{urlPattern:'*/uploads',requestStage:'Request'}]});
+ await selectFile(file);await save();await expectText('Загрузка не подтверждена');
+ const networkKey=uploadKeys.at(-1);assert.ok(networkKey);
+ await send('Fetch.disable');
+ await save();await expectText('Изменения сохранены на сервере.');
+ assert.equal(uploadKeys.at(-1),networkKey,'Unknown network outcome must retain the idempotency key');
+ media=(await api('/songs/'+id)).body.tracks[0].mediaUrl;
  // Replace with invalid bytes: old media survives, no success UI.
  const bad=join(dir,'invalid.wav');await writeFile(bad,'not audio');await selectFile(bad);await save();await expectText('Файл повреждён');
  assert.equal(await bodyIncludes('Изменения сохранены на сервере.'),false);
@@ -107,7 +125,20 @@ try {
  await evaluate(`window.dispatchEvent(new Event('focus'))`);await expectText('Изменения остаются в форме.');
  assert.equal(await evaluate(`document.querySelector('[name=notes]').value`),'Офлайн заметка');
  await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});await evaluate(`window.dispatchEvent(new Event('focus'))`);await poll(()=>evaluate(`!document.body.textContent.includes('Повторить проверку сессии')`),'Session did not recover');await save();await expectText('Изменения сохранены на сервере.');
+ // Publication conflict refreshes concurrency metadata without dropping form edits/files.
+ await input('title','Несохранённое поле публикации');await selectFile(file);
+ song=(await api('/songs/'+id)).body;
+ assert.equal((await api('/songs/'+id,'PUT',{...update,title:song.title,notes:song.notes},{'If-Match':`"${song.version}"`})).status,200);
+ await click('Опубликовать сохранённую песню');await expectText('Песня изменена на сервере');
+ assert.equal(await bodyIncludes('Публикация обновлена.'),false);
+ assert.equal(await evaluate(`document.querySelector('[name=title]').value`),'Несохранённое поле публикации');
+ assert.equal(await bodyIncludes('synthetic.wav'),true);
  await click('Опубликовать сохранённую песню');await expectText('Публикация обновлена.');
+ assert.equal(await evaluate(`document.querySelector('[name=title]').value`),'Несохранённое поле публикации');
+ assert.equal((await api('/songs/'+id)).body.publication,'published');
+ assert.equal((await api('/songs/'+id)).body.title,'Мои изменения');
+ // Explicit reload discards the still-unsaved form before continuing the guest flow.
+ acceptDialog=true;await navigate(await evaluate('location.search'));await expectText('Редактировать песню');acceptDialog=false;dialogs=0;
  const extra=await api('/songs','POST',{title:'Аа первая',bpm:84,beatsPerBar:4,beatUnit:4,notes:'',publication:'draft',tracks:[{name:'Альт',position:0,gain:1}]},{'Idempotency-Key':crypto.randomUUID()});assert.equal(extra.status,201);
  await navigate('?page=library');await expectText('Аа первая');
  await evaluate(`(() => {const s=document.querySelector('[name=songSort]');s.value='title';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
@@ -145,7 +176,7 @@ try {
  for(const [width,height] of [[320,640],[360,800],[800,360],[1280,900]]){await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<900});assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,`Overflow ${width}`);assert.equal(await evaluate(`[...document.querySelectorAll('form input:not([hidden]), form select, form textarea')].every(e=>e.id && e.name && e.getBoundingClientRect().height>=44)`),true);}
  await input('title','Несохранённое название');await click('Отмена');assert.equal(dialogs,1);assert.equal(await evaluate(`document.querySelector('[name=title]').value`),'Несохранённое название');
  acceptDialog=true;await click('Отмена');await expectText('Мои изменения');assert.equal((await api('/songs/'+id)).body.title,'Мои изменения');
- console.log('Real Go/SQLite/FFmpeg + Chrome: draft, upload/ready, failed replacement, persistence, conflict/retry, offline, publish, search, share rotation/revocation, anonymous song/list, admin, Unicode and responsive checks passed.');
+ console.log('Real Go/SQLite/FFmpeg + Chrome: draft, upload/ready, probe timeout/retry, network key retention, failed replacement, persistence, conflict/retry, offline, publication conflict/retry, search, share rotation/revocation, anonymous song/list, admin, Unicode and responsive checks passed.');
 } finally {
  if(ws)ws.close();for(const p of processes.reverse()){p.kill('SIGTERM');await Promise.race([new Promise(resolve=>p.once('exit',resolve)),delay(2000)]);if(p.exitCode===null)p.kill('SIGKILL');}await rm(dir,{recursive:true,force:true,maxRetries:5});
 }
