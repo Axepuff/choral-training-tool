@@ -4,7 +4,7 @@ import styles from './SignIn.module.css';
 export interface SignInCredentials { email: string; password: string }
 export type SignInResult = 'authenticated' | 'invalid-credentials';
 export interface SignInProps {
-  /** Адаптер входа. В приложении пока отсутствует: отправки данных и сессии нет. */
+  /** Адаптер реального входа; stories передают явные fixtures. */
   onSignIn?: (credentials: SignInCredentials) => Promise<SignInResult>;
   /** Email для демонстрационных состояний. Пароль не задаётся через props. */
   initialEmail?: string;

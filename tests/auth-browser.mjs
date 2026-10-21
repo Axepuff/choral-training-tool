@@ -1,0 +1,163 @@
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = fileURLToPath(new URL('../', import.meta.url));
+const dir = await mkdtemp(join(tmpdir(), 'choral-browser-'));
+const processes = [];
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+function start(cmd, args, env = {}) {
+  const p = spawn(cmd, args, { cwd: root, env: { ...process.env, ...env }, stdio: ['ignore', 'ignore', 'ignore'] });
+  processes.push(p); return p;
+}
+async function poll(check, message, timeout = 20_000) {
+  const end = Date.now() + timeout;
+  while (Date.now() < end) { try { if (await check()) return; } catch { /* wait until ready */ } await delay(100); }
+  throw new Error(message);
+}
+let ws;
+let next = 0;
+const pending = new Map();
+function send(method, params = {}) {
+  const id = ++next;
+  return new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
+}
+async function evaluate(expression) {
+  const result = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+  if (result.exceptionDetails) throw new Error('Browser evaluation failed');
+  return result.result.value;
+}
+async function navigate(query) {
+  await send('Page.navigate', { url: `http://127.0.0.1:5179/${query}` });
+  await poll(() => evaluate('document.readyState === "complete" && !!document.getElementById("root")?.textContent'), 'Page did not load');
+}
+const bodyIncludes = (text) => evaluate(`document.body.textContent.includes(${JSON.stringify(text)})`);
+async function expectText(text) { await poll(() => bodyIncludes(text), `Missing expected UI: ${text}`); }
+async function submit(email, password) {
+  await evaluate(`(() => {
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    for (const [name, value] of Object.entries(${JSON.stringify({ email, password })})) {
+      const input = document.querySelector('input[name="' + name + '"]'); set.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    document.querySelector('form').requestSubmit();
+  })()`);
+}
+async function click(text) {
+  await evaluate(`Array.from(document.querySelectorAll('button')).find(b => b.textContent === ${JSON.stringify(text)}).click()`);
+}
+
+try {
+  start(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '5179', '--strictPort'], { CHORAL_API_PROXY: process.env.CHORAL_TEST_API, VITE_APP_DEMO: 'false' });
+  await poll(async () => (await fetch('http://127.0.0.1:5179')).ok, 'Vite did not start');
+  start(process.env.CHROME_BIN ?? '/usr/bin/google-chrome', ['--headless', '--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--remote-debugging-port=0', `--user-data-dir=${dir}`, 'about:blank']);
+  let port;
+  await poll(async () => { port = (await readFile(join(dir, 'DevToolsActivePort'), 'utf8')).split('\n')[0]; return !!port; }, 'Chrome did not start');
+  const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
+  ws = new WebSocket(targets.find((t) => t.type === 'page').webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
+  ws.onmessage = (message) => {
+    const data = JSON.parse(message.data);
+    const entry = pending.get(data.id);
+    if (entry) { pending.delete(data.id); if (data.error) entry.reject(new Error(data.error.message)); else entry.resolve(data.result); }
+  };
+  await send('Page.enable'); await send('Runtime.enable'); await send('Network.enable');
+  await send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
+  await navigate('?page=create-song&role=admin');
+  await expectText('Вход');
+  await submit('teacher@example.test', 'incorrect fictional password');
+  await expectText('Неверный email или пароль');
+  await submit('teacher@example.test', 'fictional password 123');
+  await expectText('Сохранение песен ещё не подключено.');
+  assert.equal(await evaluate('location.search'), '?page=create-song');
+  await navigate('?page=library&role=admin');
+  await expectText('Преподаватель');
+  assert.equal(await bodyIncludes('Администратор'), false);
+  assert.equal(await bodyIncludes('Тихий вечер'), false);
+  for (const [width, height] of [[320, 640], [360, 800], [800, 360], [1280, 900]]) {
+    await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 900 });
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true, `Overflow at ${width}`);
+  }
+  assert.equal(await evaluate('localStorage.length + sessionStorage.length'), 0);
+  // Network logout failure must keep the server session and offer a real retry.
+  await send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
+  await click('Выйти'); await expectText('Нет соединения с сервером');
+  await send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  await click('Выйти'); await expectText('Вход');
+  await navigate('?page=library'); await expectText('Вход');
+  // Login network error has no success message and no mock data.
+  await send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
+  await submit('teacher@example.test', 'fictional password 123'); await expectText('Не удалось войти');
+  assert.equal(await bodyIncludes('Вход выполнен.'), false);
+  await send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  await submit('teacher@example.test', 'fictional password 123'); await expectText('Преподаватель');
+  // A blocked user loses the session on me; login does not disclose blocking.
+  assert.equal((await fetch(`${process.env.CHORAL_TEST_API}/__test/block`, { method: 'POST' })).status, 204);
+  await navigate('?page=library'); await expectText('Вход');
+  await submit('teacher@example.test', 'fictional password 123'); await expectText('Неверный email или пароль');
+  // A public link bypasses login even with forged editor query parameters.
+  await navigate('?list=invalid-public-link&page=create-song&role=admin');
+  await expectText('Не удалось открыть ссылку'); assert.equal(await bodyIncludes('Вход'), false);
+  await navigate('?song=invalid-public-link&role=admin');
+  await expectText('Не удалось открыть ссылку'); assert.equal(await bodyIncludes('Создать песню'), false);
+  await navigate('?list=' + ('B'.repeat(42) + 'A') + '&page=create-song&role=admin');
+  await expectText('Тестовая песня');
+  assert.equal(await bodyIncludes('Создать песню'), false);
+  assert.equal(await evaluate(`!!document.querySelector('[aria-label="Ссылка на список"]')`), false);
+  await evaluate(`document.querySelector('a[aria-label="Открыть: Тестовая песня"]').click()`);
+  await expectText('Тестовая заметка'); await expectText('Сопрано');
+  await navigate('?song=' + 'A'.repeat(43) + '&role=admin');
+  await expectText('Тестовая заметка');
+  assert.equal(await bodyIncludes('Создать песню'), false);
+  // Bootstrap is a real gated session, not an editor until password replacement.
+  await navigate('?page=sign-in&returnTo=https://external.test'); await expectText('Вход');
+  await submit('admin@example.test', 'fictional password 123'); await expectText('Смена пароля');
+  assert.equal(await bodyIncludes('Создать песню'), false);
+  await evaluate(`(() => {
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    set.call(document.querySelector('[name=currentPassword]'), 'fictional password 123');
+    set.call(document.querySelector('[name=newPassword]'), 'replacement password 456');
+    document.querySelector('form').requestSubmit();
+  })()`);
+  await expectText('Вход');
+  await submit('admin@example.test', 'replacement password 456'); await expectText('Администратор');
+  assert.equal(await evaluate('location.search'), '?page=library');
+  await navigate('?list=' + ('B'.repeat(42) + 'A') + '&role=admin&page=create-song');
+  await expectText('Тестовая песня');
+  assert.equal(await bodyIncludes('Создать песню'), false);
+  assert.equal(await bodyIncludes('Администратор'), false);
+  await navigate('?page=library'); await expectText('Администратор');
+  await click('Выйти'); await expectText('Вход');
+  // Wait for Storybook's own storyFinished event, including each play function.
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: `
+    let channel;
+    Object.defineProperty(window, '__STORYBOOK_ADDONS_CHANNEL__', {
+      configurable: true,
+      get: () => channel,
+      set: (next) => {
+        channel = next;
+        next.on('storyFinished', (result) => { window.__storyResult = result; });
+      },
+    });
+  ` });
+  const index = await (await fetch('http://127.0.0.1:5179/storybook-static/index.json')).json();
+  const stories = Object.values(index.entries).filter((s) => s.type === 'story' && /pages-(sign-in|song-library)--/.test(s.id));
+  assert.equal(stories.length, 17);
+  for (const story of stories) {
+    await send('Page.navigate', { url: `http://127.0.0.1:5179/storybook-static/iframe.html?id=${story.id}&viewMode=story` });
+    await poll(() => evaluate(`window.__storyResult?.storyId === ${JSON.stringify(story.id)}`), `Story did not finish: ${story.id}`, 30_000);
+    assert.equal(await evaluate('window.__storyResult.status'), 'success', story.id);
+  }
+  await send('Page.navigate', { url: 'http://127.0.0.1:5179/storybook-static/app/?page=sign-in' });
+  await poll(() => evaluate('document.title === "Демонстрация · Хор" && !!document.querySelector("form")'), 'Pages demo did not load');
+  await submit('fictional@example.test', 'fictional password 123');
+  await expectText('Это макет: данные не отправлены');
+  console.log(`Storybook browser: ${stories.length} affected stories including play functions passed.`);
+  console.log('Real Go API + browser: login, reload, role, redirect, logout/revocation, network failures, blocked user, password gate, guest routes, storage and responsive smoke passed.');
+} finally {
+  if (ws) ws.close();
+  for (const p of processes.reverse()) { p.kill('SIGTERM'); await Promise.race([new Promise((resolve) => p.once('exit', resolve)), delay(2000)]); if (p.exitCode === null) p.kill('SIGKILL'); }
+  await rm(dir, { recursive: true, force: true, maxRetries: 5 });
+}

@@ -106,3 +106,11 @@ Commit/PR/merge выполняет контроллер очереди.
 upload → worker → public media. Проверены Go 1.27.3, FFmpeg 6.1.1 и локальная сборка 7.1.5;
 поставляемые binary нужно повторно проверить в среде #14. Документация:
 [backend.md](backend.md#обработка-аудио-issue-8). Commit/PR/merge — контроллеру.
+
+## Локальный результат Issue #9
+
+Реализованы typed API client, серверная сессия/login/logout/me/CSRF/401,
+password gate, безопасная навигация и независимые guest routes, dev proxy и
+явная Pages demo сборка. Go/SQLite + Chrome integration использует вымышленные
+fixtures; runtime fallback на моки отсутствует. Songs/forms — #10, звук — #11.
+Документация: [frontend-auth.md](frontend-auth.md). Commit/PR/merge — контроллеру.

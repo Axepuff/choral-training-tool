@@ -101,3 +101,13 @@ Upload использует серверную session/CSRF и проверяе�
 Public token не даёт права загрузки или чтения job. Job доступен owner/admin;
 приватная чужая песня и её jobs скрываются 404. Originals лежат за Storage и
 никогда не выдаются media endpoint. Подробнее: [backend.md](backend.md#загрузка-и-приватное-хранилище-issue-7).
+
+## Frontend интеграция (Issue #9)
+
+Разделы «UI сейчас» и «Список и редактирование сейчас» выше описывают исторический
+макет. Runtime SignIn теперь отправляет реальные credentials в Go API;
+me восстанавливает сессию, 401 снимает права, logout отзывает сессию, temporary
+password открывает смену пароля. Query-параметр не задаёт роль; public routes
+всегда guest и не отправляют session cookie. Pages/Storybook остаются явным demo.
+Личные songs/forms остаются #10; вместо фиктивного успеха runtime сообщает о
+неподключённой функции. Детали: [frontend-auth.md](frontend-auth.md).

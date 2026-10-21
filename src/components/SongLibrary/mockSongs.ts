@@ -1,14 +1,5 @@
-export interface LibrarySong {
-  id: string;
-  title: string;
-  bpm: number;
-  meter: string;
-  tracks: number;
-  bars: 4 | 16;
-  owner: string;
-  updatedAt: string;
-  shared: boolean;
-}
+import type { LibrarySong } from './LibrarySong';
+export type { LibrarySong } from './LibrarySong';
 
 /** Демонстрационные записи. Аудио для них не загружается. */
 export const mockSongs: LibrarySong[] = [

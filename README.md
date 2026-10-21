@@ -219,3 +219,6 @@ AAC-LC mono/48 kHz и peaks появляются через существующ
 удаляется после commit, failed original и старый playback при замене сохраняются.
 Лимиты, retry/recovery, проверенные форматы и ограничение проверки FFmpeg 7.1.x:
 [документация worker](docs/backend.md#обработка-аудио-issue-8).
+
+Frontend auth runtime, локальный dev proxy, явный режим демонстрации Pages и
+поведенческие проверки Issue #9 описаны в [docs/frontend-auth.md](docs/frontend-auth.md).

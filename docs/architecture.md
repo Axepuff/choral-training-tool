@@ -156,3 +156,11 @@ Completion атомарно переключает active asset после fsync
 Linux `prlimit` обязателен; проверены FFmpeg 6.1.1 и минимальная сборка 7.1.5.
 Worker проверяет также muxers/фильтры для peaks; поставляемая сборка — проверка #14. Подробности:
 [backend.md](backend.md#обработка-аудио-issue-8).
+
+## Frontend session (Issue #9)
+
+`src/api` централизует same-origin fetch, credentials, ошибки и CSRF;
+`src/auth` хранит только серверный профиль и CSRF в памяти. App разделяет
+приватные маршруты и независимый guest scope. Pages собирается с явным demo flag;
+ошибки runtime не включают fixtures. Полная songs-интеграция — #10, плеер — #11.
+Настройка и поведенческие проверки: [frontend-auth.md](frontend-auth.md).

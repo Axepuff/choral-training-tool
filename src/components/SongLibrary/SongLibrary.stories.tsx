@@ -1,11 +1,12 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, within } from 'storybook/test';
+import { mockSongs } from './mockSongs';
 import { SongLibrary } from './SongLibrary';
 
 const meta = {
-  args: { role: 'teacher' },
+  args: { role: 'teacher', songs: mockSongs },
   id: 'pages-song-library', title: 'Страницы/Список песен', component: SongLibrary,
-  parameters: { layout: 'fullscreen', docs: { description: { component: 'Библиотека на моках. Роли в stories демонстрируют видимость, серверное разграничение прав пока не реализовано. Ссылки открывают макет плеера; реальные публичные токены появятся на backend.' } } },
+  parameters: { layout: 'fullscreen', docs: { description: { component: 'Библиотека на явных fixtures. Роли в stories демонстрируют видимость; сервер проверяет права независимо. Ссылки stories открывают макет плеера, а runtime использует публичные токены.' } } },
 } satisfies Meta<typeof SongLibrary>;
 export default meta;
 type Story = StoryObj<typeof meta>;

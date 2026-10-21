@@ -2,19 +2,19 @@ import { useId, useState } from 'react';
 import { appUrl } from '../../navigation/appUrl';
 import { CreateSong } from '../CreateSong/CreateSong';
 import type { SongFormValue } from '../CreateSong/CreateSong';
-import { mockSongs } from './mockSongs';
-import type { LibrarySong } from './mockSongs';
+import type { LibrarySong } from './LibrarySong';
 import { LibraryIcon } from './LibraryIcon';
 import styles from './SongLibrary.module.css';
 
 export interface SongLibraryProps {
+  songHref?: (id: string) => string;
   role?: 'guest' | 'teacher' | 'admin';
   songs?: LibrarySong[];
   /** Для story «Поиск без результатов». */
   initialQuery?: string;
 }
 
-export function SongLibrary({ role = 'guest', songs = mockSongs, initialQuery = '' }: SongLibraryProps) {
+export function SongLibrary({ role = 'guest', songs = [], initialQuery = '', songHref }: SongLibraryProps) {
   const id = useId();
   const [query, setQuery] = useState(initialQuery);
   const [sort, setSort] = useState('recent');
@@ -87,7 +87,7 @@ export function SongLibrary({ role = 'guest', songs = mockSongs, initialQuery = 
       {notice && <p className={styles.notice} role="status">{notice}</p>}
       {matches.length > 0 ? <ul className={styles.list} aria-label="Песни">
         {matches.map((song) => <li className={styles.song} key={song.id}>
-          <a className={styles.songLink} href={appUrl(`?song=${song.id}`)} target="_top" aria-label={`Открыть: ${song.title}`}>
+          <a className={styles.songLink} href={songHref ? songHref(song.id) : appUrl(`?song=${song.id}`)} target="_top" aria-label={`Открыть: ${song.title}`}>
             <h2>{song.title}</h2>
             <p className={styles.metadata}>{song.bpm} BPM <span>·</span> {song.meter} <span>·</span> {song.tracks} треков</p>
             {role === 'admin' && <p className={styles.owner}>{song.owner}</p>}
@@ -97,7 +97,7 @@ export function SongLibrary({ role = 'guest', songs = mockSongs, initialQuery = 
               onClick={() => { setEditingId(song.id); setNotice(''); window.scrollTo(0, 0); }}><LibraryIcon name="edit" /></button>}
             <button className={styles.iconButton} type="button" disabled={!song.shared} aria-label={`Скопировать ссылку: ${song.title}`}
               title={song.shared ? 'Скопировать ссылку на песню' : 'Песня не опубликована'}
-              onClick={() => copyLink(`?song=${song.id}`, `Демо-ссылка на «${song.title}» скопирована.`)}>
+              onClick={() => copyLink(songHref ? new URL(songHref(song.id)).search : `?song=${song.id}`, `${songHref ? 'Ссылка' : 'Демо-ссылка'} на «${song.title}» скопирована.`)}>
               <LibraryIcon name={song.shared ? 'link' : 'private'} />
             </button>
           </div>
