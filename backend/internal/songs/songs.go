@@ -426,3 +426,12 @@ func retire(ctx context.Context, tx *sql.Tx, id, now string) error {
 	}
 	return nil
 }
+
+// LoadSnapshot reads metadata in the caller's transaction; callers must authorize it.
+func LoadSnapshot(ctx context.Context, tx *sql.Tx, id string) (Song, error) { return load(ctx, tx, id) }
+func Resource(v Song) platform.Resource                                     { return resource(v) }
+
+// Live rechecks session and current role without reentering the SQLite pool.
+func Live(ctx context.Context, tx *sql.Tx, i *platform.Identity, now time.Time) bool {
+	return live(ctx, tx, i, now)
+}

@@ -125,3 +125,13 @@ Frontend пока не подключён; songs/media используют эт
 Версия защищает метаданные и live-порядок дорожек. Tracks удаляются логически,
 assets retired/jobs canceled сохраняют FK и данные для уборщика #8. Новая
 миграция — 0003; UI остаётся прежним. Подробности и границы — [контракт](api/README.md#реализация-songs-в-issue-5).
+
+## Реализация Issue #6
+
+`internal/sharing` владеет управлением ссылками, hash-проверкой grant, публичными
+DTO/снимками и session/public media handlers. Общий snapshot loader songs сохраняет
+согласованность song/track/active asset, public authorizer получает только grant,
+без cookie identity. Read media проходит через `platform.Storage.Open`, без
+публичного каталога файлов. Реальный Storage подключается в #7, worker-интеграция
+проверяется в #8; отсутствие адаптера означает 503. Новых миграций и зависимостей
+нет. Детали — [backend.md](backend.md#публичные-ссылки-и-media-issue-6).

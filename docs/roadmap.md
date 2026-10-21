@@ -78,3 +78,12 @@ Unicode validation, version conflict/rollback, поиск/сортировка �
 поведенческие тесты — [backend.md](backend.md#песни-и-дорожки-issue-5).
 Публичные endpoints #6, upload #7, обработка/уборщик #8 и frontend #10 остаются
 отдельными задачами. Commit/PR/merge выполняет контроллер очереди.
+
+## Локальный результат Issue #6
+
+Реализованы sharing CRUD/rotation/revocation, encrypted replay, public song/list
+snapshots, единая область доступа к метаданным/media и HTTP GET/HEAD/Range/peaks.
+Проверки используют настоящие auth/SQLite и Storage fixtures; подключение реального
+Storage — #7, интеграция с worker — #8, UI — #10. Подробнее:
+[backend.md](backend.md#публичные-ссылки-и-media-issue-6). Commit/PR/merge остаются
+контроллеру очереди.

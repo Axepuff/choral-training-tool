@@ -328,7 +328,7 @@ paths:
     parameters: [{$ref: '#/components/parameters/ShareId'}]
     post:
       tags: [Shares]
-      summary: Атомарно перевыпустить токен одной ссылки
+      summary: Атомарно перевыпустить токен одной ссылки (включая отключённую)
       parameters: [{$ref: '#/components/parameters/Csrf'}]
       responses:
         '200': {$ref: '#/components/responses/ShareSecret'}
@@ -751,7 +751,7 @@ components:
       properties:
         share: {$ref: '#/components/schemas/Share'}
         token: {type: string, pattern: '^[A-Za-z0-9_-]{43}$'}
-        url: {type: string, description: Frontend URL с токеном; вернуть только однократно}
+        url: {type: string, description: 'Относительный frontend URL /?song=<token> или /?list=<token>; подключение UI в #10'}
     PublicTrack:
       type: object
       additionalProperties: false
