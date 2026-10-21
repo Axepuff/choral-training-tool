@@ -226,6 +226,17 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
+        '408':
+          description: Время загрузки истекло (upload_timeout)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429':
+          description: Не более двух uploads на сервер и одного на песню (upload_busy)
+          headers:
+            Retry-After: {schema: {type: integer}, description: Повторить через 2 секунды}
+        '503':
+          description: Хранилище, SQLite или FFprobe недоступны
         '413': {$ref: '#/components/responses/TooLarge'}
         '422': {$ref: '#/components/responses/ValidationError'}
         '428': {$ref: '#/components/responses/PreconditionRequired'}
@@ -714,7 +725,7 @@ components:
         trackId: {$ref: '#/components/schemas/Id'}
         state: {type: string, enum: [queued, processing, succeeded, failed, canceled]}
         attempts: {type: integer, minimum: 0, maximum: 3}
-        errorCode: {type: [string, 'null'], enum: [null, unsupported_codec, corrupt_audio, too_long, processing_timeout, processing_failed, canceled]}
+        errorCode: {type: [string, 'null'], enum: [null, unsupported_codec, corrupt_audio, too_long, probe_timeout, processing_timeout, processing_failed, canceled]}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
       examples:

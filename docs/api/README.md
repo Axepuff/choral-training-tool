@@ -299,3 +299,14 @@ Missing ready даёт редактору 409, публично 404; pending/fai
 никогда не используются handler. `url` — `/?song=<token>` или `/?list=<token>`;
 frontend-интеграция этого контракта — #10. Эксплуатация и поведенческие проверки:
 [backend.md](../backend.md#публичные-ссылки-и-media-issue-6).
+
+## Реализация upload в Issue #7
+
+Streaming multipart/FFprobe/Storage/durable jobs реализованы, frontend ещё не
+подключён. `202` — только queued; `422` probe rejection сохраняет failed asset/job
+и original, возвращает ETag/Location. `GET /jobs/{jobId}` доступен owner/admin.
+`probe_timeout` дополнен в job error codes. Лимиты HTTP/concurrency/quota уточняет
+[ADR](../decisions/0001-mvp-contract.md#уточнение-при-реализации-upload-7).
+Файлы и метаданные не публикуются вместо processing success. После удаления
+original worker/cleaner должен очистить `source_path` для освобождения квоты.
+Подробные правила recovery/replay и тесты — [backend.md](../backend.md#загрузка-и-приватное-хранилище-issue-7).

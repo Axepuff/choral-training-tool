@@ -392,3 +392,91 @@ public список → rotate/старый токен 404 → stale replay 409 
 `git diff --check`. YAML OpenAPI прочитан парсером; полный OpenAPI validator и
 браузерные play-проверки не запускались. UI/дизайн не изменены. Новых зависимостей,
 миграций, commit/push/merge и изменений настроек Git/агента/очереди нет.
+
+## Загрузка и приватное хранилище (Issue #7)
+
+`internal/uploads` реализует `POST /api/v1/songs/{songId}/tracks/{trackId}/uploads`
+и `GET /api/v1/jobs/{jobId}`. Это реальный Go HTTP/SQLite/FS/FFprobe путь, без
+подключения frontend и без конвертации в HTTP handler. `internal/storage`
+подключён к session/public media handlers вместо nil adapter.
+
+Запрос — ровно одна multipart-часть `file`, с настоящими session/CSRF,
+UUIDv4 `Idempotency-Key` и `If-Match: "<version>"`. Имя/расширение не участвуют
+в выборе пути или формата; произвольное имя, в том числе traversal, безопасно
+игнорируется. Один bounded copy пишет файл на диск и считает SHA-256, без
+`ReadAll`/`ParseMultipartForm`. Размер самого файла — 100 MiB, общий multipart
+budget — ещё 1 MiB. Лимиты квоты, concurrency и времени уточнены в
+[ADR](decisions/0001-mvp-contract.md#уточнение-при-реализации-upload-7).
+
+Auth проверяется до чтения тела, затем live-сессия, текущая роль/владелец,
+существование song/track и версия повторно проверяются перед фиксацией.
+Приватный чужой ресурс даёт 404; известная published/ready песня — 403 на запись.
+Admin загружает в любую разрешённую песню, квота принадлежит owner песни.
+GET job доступен только owner/admin, в том числе failed probe job; пути и hashes
+в DTO не выдаются. Удалённая песня скрывает и её jobs.
+
+FFprobe запускается argv без shell по уже открытому локальному descriptor
+(`/proc/self/fd/3`, Linux); вывод ограничен 64 KiB, subprocess deadline — 15 s.
+Проверяются наличие первого audio stream, codec/container, decoder, положительная
+конечная длительность до 20 минут, sample rate и channels. Видео без audio,
+битые файлы, неподдерживаемые codec/container и слишком длинное audio отклоняются.
+Это metadata-проверка, полное декодирование ещё выполняет будущий worker.
+
+Файлы лежат в `CHORAL_DATA_DIR/files`, режим новых файлов 0600, каталога 0700.
+Ключи плоские: `stage-<uuid>`, `original-<uuid>`, `playback-<uuid>`, `peaks-<uuid>`.
+Операции используют `os.Root`: пути не выходят за каталог даже через symlink.
+Stage выполняет fsync, Publish делает атомарный hard-link без перезаписи,
+удаляет временное имя и fsync каталога перед commit SQLite. Все имена находятся
+на одном volume. Storage не является публичным FileServer; media читает только
+active ready playback/peaks и дополнительно отвергает original/stage ключи.
+
+Миграция `0004_uploads.sql` добавляет source codec/container и уникальность job
+на asset. В одной транзакции записываются asset metadata/state, durable job,
+pending asset, новая song version и AES-GCM replay в `idempotency_records`.
+Original уже сохранён до commit. Active asset не меняется, даже при failed probe.
+Одновременный pending/processing upload той же дорожки даёт `409 pending_upload`.
+Failed pending допускает новую загрузку; прежняя запись остаётся для уборщика.
+Replay проверяется по SHA-256 байтов файла после auth, до If-Match/pending,
+действует 24 часа, возвращает исходные status/body/ETag/Location даже после рестарта.
+Имя файла и MIME multipart не являются параметрами обработки. Другие байты с
+тем же ключом — `409 idempotency_conflict`. Новый nonce уникален в общей таблице.
+Ключ `upload-responses.key` создаётся на volume через существующий ResponseKey,
+не выводится в логи и должен сохраняться при backup вместе с остальными keys.
+
+На отмене/ошибке до commit временный файл и неопубликованный original удаляются.
+До открытия listener выполняется recovery: удаляются stage и originals без
+строки assets; referenced originals, включая failed, сохраняются. Это закрывает
+окно crash между filesystem publish и DB commit. Recovery рассчитан на один
+процесс сервиса, как и ADR; одновременно запускать два сервера на одном data dir
+нельзя. Ошибки удаления не маскируются при startup: запуск останавливается.
+
+Граница #8: читать jobs `queued` и assets `pending`, применять lease/retry и
+processing limits ADR, обрабатывать первый audio stream; не менять active asset
+до полной проверки playback/peaks и commit. После успешного удаления оригинала
+очищать `assets.source_path=''` (source_bytes/hash остаются историческими), чтобы
+освободить квоту. Failed originals сохранять до успешной замены/явного удаления;
+retired assets и логически удалённые песни/треки убирает grace-period cleaner #8.
+В #7 уже очищаются только незавершённые HTTP операции и crash-orphans; worker,
+полный decode, публикация новых media и периодический cleaner не имитируются.
+
+Поведенческие тесты генерируют маленькие синтетические fixtures установленным
+FFmpeg в `t.TempDir()`, не сохраняют исходное аудио в Git. Покрыты WAV/FLAC/MP3/
+Ogg/M4A/AIFF, non-audio/corrupt/too-long, overflow, quota/replay, CSRF, чужой owner,
+отзыв сессии/смена версии/удаление во время streaming, отмена и настоящий сетевой
+read timeout, занятая песня, traversal, повтор/cleanup/recovery, сохранение active
+asset, реальный Storage + public GET/HEAD/Range и отказ выдавать original.
+Остальные тесты sharing продолжают проверять области доступа.
+
+Среда проверки #7: Go 1.27.3 из `/tmp/choral-toolchain`; установленный системный
+FFmpeg/FFprobe — **6.1.1**, а не исторические 7.1.5 из handoff. На этой сборке
+проверяются fixtures; проверка целевой production-сборки 7.1.x остаётся #8/#14.
+
+Проверки результата #7: `go test ./...`, `go test -race ./...`, `go vet ./...`,
+`go build ./...`; из корня — `npm ci --cache /tmp/choral-npm-cache --no-audit --no-fund`,
+`npm run typecheck`, `npm run lint`, `npm run build`, `npm run build-storybook`,
+`node scripts/assemble-pages.mjs`. OpenAPI YAML и локальные `$ref` разобраны
+PyYAML; `git diff --check` проходит. UI не изменялся, браузерные play-проверки
+повторно не запускались; сборка Storybook их не заменяет. Storybook сохраняет
+предупреждение о размере bundle. Тесты дополнительно проверяют предел двух
+одновременных HTTP uploads, rollback после publish при отказе SQLite и отсутствие
+FFprobe (503 без asset/job), replay после полного повторного открытия SQLite/FS.
