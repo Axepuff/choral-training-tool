@@ -74,6 +74,7 @@ paths:
     put:
       tags: [Auth]
       summary: Сменить свой пароль и отозвать все сессии
+      description: При обязательной смене новый пароль должен отличаться от текущего временного; совпадение возвращает 422 без изменения пароля, флага обязательной смены и сессий.
       parameters: [{$ref: '#/components/parameters/Csrf'}]
       requestBody:
         required: true

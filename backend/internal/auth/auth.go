@@ -419,6 +419,10 @@ func (s *Service) password(w http.ResponseWriter, r *http.Request) {
 		fail(w, 422, "validation_error", "Неверный текущий пароль")
 		return
 	}
+	if a.User.MustChangePassword && in.New == in.Current {
+		fail(w, 422, "validation_error", "Новый пароль должен отличаться от временного")
+		return
+	}
 	hash, err := users.Hash(in.New)
 	if err != nil {
 		fail(w, 422, "validation_error", "Пароль должен содержать 12–128 символов")

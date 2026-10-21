@@ -299,8 +299,31 @@ func TestPasswordResetBlockingAndAuthorization(t *testing.T) {
 func TestChangePasswordRevokesAllSessions(t *testing.T) {
 	f := setup(t)
 	one, a := f.login("teacher@example.test", sample, nil)
-	two, _ := f.login("teacher@example.test", sample, nil)
+	two, second := f.login("teacher@example.test", sample, nil)
 	expect(t, f.request("PUT", "/api/v1/auth/password", `{"currentPassword":"incorrect password","newPassword":"new fictional password"}`, one, a.CSRF, f.s.Origin), 422)
+	body, _ := json.Marshal(map[string]string{"currentPassword": sample, "newPassword": sample})
+	w := f.request("PUT", "/api/v1/auth/password", string(body), one, a.CSRF, f.s.Origin)
+	expect(t, w, 422)
+	if len(w.Result().Cookies()) != 0 {
+		t.Fatal("rejected password change modified cookie")
+	}
+	for index, c := range []*http.Cookie{one, two} {
+		w = f.request("GET", "/api/v1/auth/me", "", c, "", "")
+		expect(t, w, 200)
+		var unchanged state
+		if err := json.Unmarshal(w.Body.Bytes(), &unchanged); err != nil {
+			t.Fatal(err)
+		}
+		before := []state{a, second}[index]
+		if !unchanged.User.MustChangePassword || unchanged.CSRF != before.CSRF || !unchanged.Expires.Equal(before.Expires) {
+			t.Fatal("rejected password change modified session or temporary status")
+		}
+		r := httptest.NewRequest("GET", "/api/v1/songs", nil)
+		r.AddCookie(c)
+		if _, err := f.s.Authenticate(context.Background(), r); err != ErrPasswordChange {
+			t.Fatal("rejected password change bypassed temporary password gate")
+		}
+	}
 	f.change(one, a)
 	for _, c := range []*http.Cookie{one, two} {
 		expect(t, f.request("GET", "/api/v1/auth/me", "", c, "", ""), 401)
