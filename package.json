@@ -14,7 +14,8 @@
     "build-storybook": "storybook build --disable-telemetry",
     "check:mcp": "node scripts/check-mcp.mjs",
     "agent:queue": "node scripts/agent-queue/runner.mjs",
-    "test:agent-queue": "node --test scripts/agent-queue/queue.test.mjs"
+    "test:agent-queue": "node --test scripts/agent-queue/queue.test.mjs",
+    "test:agent-cli": "node --test scripts/agent-queue/codex-config.check.mjs"
   },
   "dependencies": {
     "react": "19.3.0",
