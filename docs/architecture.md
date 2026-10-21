@@ -145,3 +145,14 @@ DTO/снимками и session/public media handlers. Общий snapshot loade
 worker и периодическая уборка referenced assets остаются #8. Recovery до listener
 удаляет только незавершённые операции/crash-orphans. Детали:
 [backend.md](backend.md#загрузка-и-приватное-хранилище-issue-7).
+
+## Реализация Issue #8
+
+`internal/processing` исполняет durable SQLite jobs внутри сервиса: два слота,
+один на песню, lease/retry, bounded FFmpeg/FFprobe и настоящие AAC-LC/peaks.
+Completion атомарно переключает active asset после fsync и проверки результата;
+удаление original и retired файлов повторяет ограниченный cleaner. Старый playback
+сохраняется при ошибке замены. Media из #6/#7 теперь получает реальные результаты.
+Linux `prlimit` обязателен; фактически проверенная сборка — FFmpeg 6.1.1, проверка
+deployment baseline 7.1.x остаётся для среды #14. Подробности:
+[backend.md](backend.md#обработка-аудио-issue-8).
