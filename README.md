@@ -222,3 +222,7 @@ AAC-LC mono/48 kHz и peaks появляются через существующ
 
 Frontend auth runtime, локальный dev proxy, явный режим демонстрации Pages и
 поведенческие проверки Issue #9 описаны в [docs/frontend-auth.md](docs/frontend-auth.md).
+
+Интеграция списка, формы, загрузки и публичных ссылок с реальным Go API:
+[сценарии и проверки Issue #10](docs/frontend-songs.md). Runtime не использует
+fixtures; Pages/Storybook остаются явным demo. Реальный audio engine — Issue #11.

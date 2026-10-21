@@ -1,0 +1,87 @@
+# Песни, формы, загрузки и ссылки — Issue #10
+
+Обычная сборка использует существующий Go API, SQLite и FFmpeg worker.
+`LiveLibrary` подключает согласованные `SongLibrary`/`CreateSong`; fixtures остаются
+только в stories и явно обозначенной Pages demo. Новых runtime-зависимостей нет.
+Запуск backend и dev proxy описан в [backend.md](backend.md) и
+[frontend-auth.md](frontend-auth.md).
+
+## Поведение
+
+- Личный список читает все страницы snapshot `/songs`, передаёт NFC/trim `q` и
+  `sort=updated_desc|title_asc` серверу. При новом запросе прежний отменяется;
+  loading/error/empty различаются. Ошибка имеет кнопку повтора.
+- Роль и owner ID приходят из session/API, имена владельцев не угадываются.
+  Teacher редактирует свои песни, admin — все, чужие опубликованные песни
+  открываются только для чтения. Сервер остаётся источником авторизации:
+  403/404/401 не заменяются локальным успехом. Гостевые маршруты независимы от cookie.
+- Создание POST всегда создаёт draft, файлы не обязательны. PUT отправляет полную
+  форму и `If-Match`. Порядок, ID и gain сохранённых дорожек удерживаются, новые
+  дорожки получают ID сервера. Заметки сохраняются без trim. NFC/scalar validation:
+  title 1–160, name 1–80, notes 0–1000; BPM 20–300, beats 1–32, unit 1/2/4/8/16/32.
+  Нативные id/name, числовые ограничения и 44px targets сохранены.
+- Созданный draft получает адрес редактирования для reload. Создание использует
+  постоянный для попытки UUID idempotency key; сетевой повтор не создаёт дубликат.
+  При конфликте поля/файлы остаются в форме, серверная версия перечитывается.
+  Повторное сохранение — явное решение пользователя записать свои поля поверх
+  актуальной версии. Автоматического повторного PUT нет.
+- Сохранение сначала фиксирует метаданные, затем последовательно отправляет файлы.
+  Это несколько транзакций: при частичной ошибке уже сохранённые данные остаются,
+  форма сохраняет выбранные файлы и показывает ошибку, а не общий успех.
+  Успешно обработанные файлы повторно не отправляются при повторе этой формы.
+- Multipart XHR показывает фактический upload progress. После 100% клиент ждёт
+  `/jobs/{id}` до `succeeded`; queued/processing не считаются ready. Jobs после
+  reload также перечитываются. При failed/probe/network error можно повторить
+  сохранение либо выбрать замену. Старый active asset остаётся доступен;
+  удаление выбранной замены возвращает старую дорожку, не удаляет серверный файл.
+- Публикация — отдельная кнопка для **сохранённой** версии. Она не сохраняет
+  незаписанные поля формы; сервер отклоняет публикацию неготовых дорожек.
+- Панель ссылок читает существующие shares, создаёт отдельные song/list ссылки,
+  ротирует и отзывает их. Настоящий адрес показывается и копируется через Clipboard;
+  при запрете Clipboard доступен ручной выбор адреса. GET shares не раскрывает
+  старый token: для нового адреса нужно создать отдельную ссылку или заменить старую.
+  Замена отключает старый token; отзыв удаляет адрес из панели. Public list показывает
+  только published/ready, guest song/list открываются без входа.
+- При несохранённых изменениях закрытие/reload/переход защищает стандартный
+  `beforeunload` (браузер требует user activation). «Отмена» запрашивает подтверждение.
+  Отмена отбрасывает только несохранённые поля; сохранённый черновик остаётся в списке.
+  Файлы не записываются в localStorage/sessionStorage. Фоновая проверка сессии,
+  включая временный offline, не размонтирует форму; ошибка явно показана.
+  Настоящий 401 отзывает session согласно #9.
+
+## Проверки
+
+```sh
+npm ci --cache /tmp/choral-npm-cache --no-audit --no-fund
+npm run typecheck
+npm run lint
+npm run build
+npm run build-storybook
+node scripts/assemble-pages.mjs
+npm run test:auth
+# Для auth browser regression подготовить именно Pages demo, сохранив runtime dist:
+VITE_APP_DEMO=true npm run build
+node scripts/assemble-pages.mjs
+npm run build
+# В backend/, Go версии из go.mod; Chrome, FFprobe/FFmpeg в PATH:
+CHORAL_BROWSER_TEST=true go test -count=1 ./internal/songs -run TestSongsFrontendBrowser -v
+CHORAL_BROWSER_TEST=true go test -count=1 ./internal/auth -run TestFrontendBrowser -v
+```
+
+Songs browser test использует отдельные временные SQLite/Storage, вымышленные
+аккаунты, созданный в /tmp настоящий WAV и реальный worker. Он проверяет
+create → upload → ready → edit → reload → guest song/list, ошибки замены,
+conflict/retry, offline/focus, owner/admin/чужой teacher, отзыв/ротацию, Unicode,
+отмену и ширины 320/360/800 landscape/1280. Auth browser regression запускает
+также play-функции 26 затронутых stories; сборка Storybook сама их не запускает.
+Всего теперь 38 stories: новые loading/error списка и processing/error формы.
+
+Реальный audio engine остаётся #11. Страница чтения показывает метаданные и
+явно сообщает, что воспроизведение ещё не подключено. Backend endpoints,
+auth middleware, настройки очереди и Git не менялись этой реализацией.
+
+Проверено в текущей среде: npm ci, typecheck/lint, runtime и Pages demo builds,
+Storybook build/assemble, 15 client/session проверок, Go tests пакетов songs/auth,
+оба browser integration tests и 26 story play-проверок прошли. Использован
+существующий Go 1.27.3 из `/tmp/choral-toolchain`; системный Go 1.22.2 не подходит
+для go.mod. Изменение версий toolchain/стека не потребовалось.

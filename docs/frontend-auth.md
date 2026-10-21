@@ -128,3 +128,13 @@ SignIn/ChangePassword при focus и visibilitychange, сохранение ф�
 Chrome, 17 stories с play и Pages demo), `go test ./internal/auth ./internal/sharing`,
 `git diff --check`. Использованы Node 24.19.0 и Go 1.27.3 из локального toolchain.
 Storybook сохраняет предупреждение о размере bundle; сборка успешна.
+
+## Обновление Issue #10
+
+Личный список/создание/редактирование уже подключены к Go API; исторический
+раздел о заглушках выше больше не описывает runtime. См.
+[frontend-songs.md](frontend-songs.md). Формы сохраняют экземпляр при background
+me; временная ошибка me оставляет предыдущую session и показывает явный banner,
+чтобы offline не уничтожал несохранённые данные. Все записи по-прежнему проверяет
+сервер, 401 снимает session. Query-кодирование допускает пробелы/пунктуацию поиска,
+но endpoint остаётся относительным same-origin без обхода пути.

@@ -111,3 +111,11 @@ password открывает смену пароля. Query-параметр не
 всегда guest и не отправляют session cookie. Pages/Storybook остаются явным demo.
 Личные songs/forms остаются #10; вместо фиктивного успеха runtime сообщает о
 неподключённой функции. Детали: [frontend-auth.md](frontend-auth.md).
+
+## Песни и ссылки в runtime (Issue #10)
+
+Историческое описание макетов выше заменено реальной интеграцией: список, формы,
+upload/jobs и sharing используют session/CSRF; права выводятся из серверных
+role/owner ID и перепроверяются API. Guest routes остаются read-only без cookie.
+Временная ошибка фонового me сохраняет форму и показывает ошибку; 401 снимает
+сессию. Подробнее: [frontend-songs.md](frontend-songs.md).

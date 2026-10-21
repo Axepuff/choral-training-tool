@@ -39,3 +39,8 @@ export const MissingFiles: Story = {
     await expect(canvas.getByRole('status')).toHaveTextContent('Выберите файл для каждого трека.');
   },
 };
+
+export const Processing: Story = { name: 'Обработка аудио', args: { live: true, initialFilled: true, busy: true, status: 'Сопрано: обработка…' },
+  play: async ({ canvasElement }) => { const c = within(canvasElement); await expect(c.getByRole('status')).toHaveTextContent('обработка'); await expect(c.getByRole('button', { name: 'Создать песню' })).toBeDisabled(); } };
+export const UploadError: Story = { name: 'Ошибка замены файла', args: { live: true, initialFilled: true, error: 'Файл повреждён. Старая готовая дорожка сохранена.' },
+  play: async ({ canvasElement }) => { await expect(within(canvasElement).getByRole('alert')).toHaveTextContent('Старая готовая дорожка сохранена'); } };

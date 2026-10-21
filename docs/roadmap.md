@@ -114,3 +114,10 @@ password gate, безопасная навигация и независимые
 явная Pages demo сборка. Go/SQLite + Chrome integration использует вымышленные
 fixtures; runtime fallback на моки отсутствует. Songs/forms — #10, звук — #11.
 Документация: [frontend-auth.md](frontend-auth.md). Commit/PR/merge — контроллеру.
+
+## Локальный результат Issue #10
+
+Список/поиск/сортировка, draft/PUT, загрузка с progress и реальным worker,
+публикация и публичные ссылки подключены к существующему API. Реальные Chrome +
+Go/SQLite/FFmpeg проверки и ограничения описаны в [frontend-songs.md](frontend-songs.md).
+Плеер/звук остаётся #11. Commit/PR/merge выполняет контроллер очереди.
