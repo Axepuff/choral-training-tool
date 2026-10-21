@@ -3,6 +3,9 @@
 Runtime использует реальный `/api/v1/auth/*`. `src/api/client.ts` — общий typed
 fetch-клиент и `ApiError` (status, code, message, requestId, details, Retry-After).
 HTTP/невалидный JSON/сеть не превращаются в успешный вход или fixture-данные.
+Каждый запрос ограничен таймаутом 30 секунд. `AbortSignal.any` объединяет его
+с сигналом вызывающего кода: отмена при уходе со страницы сохраняется, а зависший
+public-запрос завершает загрузку ошибкой с предложением обновить страницу.
 Ответ auth проверяется перед установкой идентичности; роль берётся только с сервера.
 Пароль передаётся только в JSON login/password, непрозрачная сессия — HttpOnly cookie.
 CSRF хранится только в памяти, приходит из login/me и отправляется в session writes.
@@ -94,6 +97,8 @@ GOCACHE=/tmp/choral-gocache GOPATH=/tmp/choral-gopath npm run test:auth:browser
 Первая команда проверяет клиент, ошибки, credentials/CSRF, маршруты, stale response,
 пагинацию public и отсутствие fallback с управляемыми ответами fetch.
 Регрессии покрывают focus во время login и устаревший me 401 до/после его успеха.
+Дополнительно проверяются зависший public fetch с переданным signal, таймаут,
+отмена вызывающим кодом и успешный повтор без fallback.
 Вторая запускает настоящий Go auth/sharing с SQLite в t.TempDir(), вымышленными
 аккаунтами и синтетическими public metadata fixtures, затем Vite proxy и headless
 Chrome через CDP. Проверяет неверный пароль, login/reload/logout, отзыв, сеть,
@@ -102,13 +107,16 @@ role/page, отсутствие browser storage и overflow на 320/360/landsca
 Отдельно задерживает настоящие ответы me/login: проверяет сохранение полей
 SignIn/ChangePassword при focus и visibilitychange, сохранение формы во время
 незавершённого login и отсутствие конкурирующего me.
+Браузерная регрессия имитирует зависший public transport с сокращённым таймаутом,
+проверяет исчезновение загрузки и сообщение о повторе; после reload без имитации
+получает метаданные настоящего Go sharing API.
 Также запускает 17 затронутых stories с ожиданием storyFinished (включая play)
 и проверяет demo SignIn без отправки данных. Production БД/cookies/credentials не читаются. HTTP управляющий endpoint блокировки
 существует только внутри этого теста. Обычный go test пропускает браузерный запуск.
 
 Проверено в локальной sandbox для результата #9: `npm ci`, typecheck, lint,
 обычная runtime build и demo build, build-storybook, assemble-pages,
-`npm run test:auth` (14 проверок), `npm run test:auth:browser` (реальный Go API,
+`npm run test:auth` (15 проверок, включая родительскую), `npm run test:auth:browser` (реальный Go API,
 Chrome, 17 stories с play и Pages demo), `go test ./internal/auth ./internal/sharing`,
 `git diff --check`. Использованы Node 24.19.0 и Go 1.27.3 из локального toolchain.
 Storybook сохраняет предупреждение о размере bundle; сборка успешна.

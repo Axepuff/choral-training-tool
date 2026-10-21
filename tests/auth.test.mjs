@@ -166,5 +166,27 @@ test('API/session/navigation behavior', async (t) => {
       globalThis.fetch = async () => problem('not_found', 404);
       await assert.rejects(readPublic('revoked', new AbortController().signal));
     });
+    await t.test('hanging public requests time out with caller signal and can retry; caller cancellation still works', async () => {
+      const timeout = AbortSignal.timeout;
+      try {
+        // Shorten the production deadline without changing client configuration.
+        AbortSignal.timeout = (ms) => { assert.equal(ms, 30_000); return timeout(20); };
+        globalThis.fetch = async (_url, { signal }) => new Promise((_resolve, reject) => {
+          signal.throwIfAborted();
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        });
+        const controller = new AbortController();
+        const keepAlive = setTimeout(() => {}, 1000);
+        try {
+          await assert.rejects(readPublic('hanging', controller.signal), (e) => e instanceof ApiError && e.problem.code === 'network_error');
+          assert.equal(controller.signal.aborted, false);
+          const canceled = readPublic('canceled', controller.signal);
+          controller.abort();
+          await assert.rejects(canceled, ApiError);
+        } finally { clearTimeout(keepAlive); }
+        globalThis.fetch = async () => json({ kind: 'list', songs: [{ id: 'retry' }], nextCursor: null });
+        assert.deepEqual(await readPublic('hanging', new AbortController().signal), [{ id: 'retry' }]);
+      } finally { AbortSignal.timeout = timeout; }
+    });
   } finally { globalThis.fetch = originalFetch; await rm(dir, { recursive: true, force: true }); }
 });

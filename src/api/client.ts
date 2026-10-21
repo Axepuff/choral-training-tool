@@ -41,7 +41,9 @@ export class ApiClient {
     try {
       response = await fetch(`/api/v1${path}`, {
         ...options, method, headers, credentials: access === 'public' ? 'omit' : 'same-origin',
-        cache: 'no-store', redirect: 'error', signal: options.signal ?? AbortSignal.timeout(30_000),
+        cache: 'no-store', redirect: 'error', signal: AbortSignal.any([
+          AbortSignal.timeout(30_000), ...(options.signal ? [options.signal] : []),
+        ]),
       });
     } catch {
       throw new ApiError(0, { code: 'network_error', message: 'Нет соединения с сервером. Попробуйте ещё раз.' });

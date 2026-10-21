@@ -153,6 +153,26 @@ try {
   await expectText('Не удалось открыть ссылку'); assert.equal(await bodyIncludes('Вход'), false);
   await navigate('?song=invalid-public-link&role=admin');
   await expectText('Не удалось открыть ссылку'); assert.equal(await bodyIncludes('Создать песню'), false);
+  // Simulate a stalled transport, keeping PublicRoute's own cancellation signal.
+  const stalled = await send('Page.addScriptToEvaluateOnNewDocument', { source: `
+    const timeout = AbortSignal.timeout;
+    AbortSignal.timeout = () => timeout(100);
+    const original = window.fetch;
+    window.fetch = (url, options) => String(url).includes('/public/shares/')
+      ? new Promise((resolve, reject) => {
+          options.signal.throwIfAborted();
+          options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+        })
+      : original(url, options);
+  ` });
+  await navigate('?list=' + ('B'.repeat(42) + 'A'));
+  await expectText('Не удалось открыть ссылку');
+  await expectText('Обновите страницу для повтора');
+  assert.equal(await bodyIncludes('Загрузка песни…'), false);
+  assert.equal(await bodyIncludes('Тестовая песня'), false);
+  await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: stalled.identifier });
+  await send('Page.reload');
+  await expectText('Тестовая песня');
   await navigate('?list=' + ('B'.repeat(42) + 'A') + '&page=create-song&role=admin');
   await expectText('Тестовая песня');
   assert.equal(await bodyIncludes('Создать песню'), false);
