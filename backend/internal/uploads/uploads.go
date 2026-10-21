@@ -46,17 +46,17 @@ func New(db *sql.DB, i platform.IdentityProvider, store *storage.Store, dir stri
 	if e != nil {
 		return nil, e
 	}
-	rows, e := db.Query(`SELECT source_path FROM assets`)
+	rows, e := db.Query(`SELECT source_path,COALESCE(playback_path,''),COALESCE(peaks_path,'') FROM assets`)
 	if e != nil {
 		return nil, e
 	}
 	keep := map[string]bool{}
 	for rows.Next() {
-		var k string
-		if e = rows.Scan(&k); e != nil {
+		var k, playback, peaks string
+		if e = rows.Scan(&k, &playback, &peaks); e != nil {
 			break
 		}
-		keep[k] = true
+		keep[k], keep[playback], keep[peaks] = true, true, true
 	}
 	re := rows.Err()
 	rows.Close()
