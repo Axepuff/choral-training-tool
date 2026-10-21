@@ -80,15 +80,30 @@ try {
  await submit('teacher@example.test','fictional password 123');await expectText('Новая песня');
  await input('title','Реальная песня');await input('notes','Заметка 🌼',true);
  await evaluate(`(() => {const s=document.querySelector('[name=trackCount]');s.value='1';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
- // Draft creation accepts missing files, persists Unicode and notes.
- await save();await expectText('Изменения сохранены на сервере.');
- const listing=await api('/songs');assert.equal(listing.status,200);assert.equal(listing.body.items.length,1);
- const id=listing.body.items[0].id;
- await navigate(await evaluate('location.search'));await expectText('Редактировать песню');assert.equal(await evaluate('location.search'),'?page=edit-song&id='+id);
- assert.equal(await evaluate(`document.querySelector('[name=notes]').value`),'Заметка 🌼');
  // Real PCM WAV input created outside Git; actual probe and worker process it.
  const wav=Buffer.alloc(44+48000*2);wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(48000,24);wav.writeUInt32LE(96000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wav.length-44,40);for(let i=0;i<48000;i++)wav.writeInt16LE(Math.round(Math.sin(i*2*Math.PI*440/48000)*8000),44+i*2);
  const file=join(dir,'synthetic.wav');await writeFile(file,wav);
+ // Draft metadata commits before any selected audio is uploaded.
+ // Lose the response AFTER the real server commits the draft, then edit the form.
+ await selectFile(file);
+ await send('Fetch.enable',{patterns:[{urlPattern:'*/api/v1/songs',requestStage:'Response'}]});
+ await save();await expectText('Нет соединения с сервером');
+ await send('Fetch.disable');
+ const uncertain=await api('/songs');assert.equal(uncertain.body.items.length,1);
+ assert.equal(uncertain.body.items[0].title,'Реальная песня');
+ await input('title','Восстановленная песня');await input('notes','Изменено после потери ответа',true);
+ await input('tracks[0].name','Новая партия');assert.equal(await bodyIncludes('synthetic.wav'),true);
+ await save();await expectText('Изменения сохранены на сервере.');await expectText('Аудио готово.');
+ const recovered=(await api('/songs/'+uncertain.body.items[0].id)).body;
+ assert.equal(recovered.title,'Восстановленная песня');assert.equal(recovered.notes,'Изменено после потери ответа');
+ assert.equal(recovered.tracks[0].name,'Новая партия');assert.equal(recovered.ready,true);
+ assert.equal(await bodyIncludes('Нет соединения с сервером'),false);
+ await input('title','Реальная песня');await input('notes','Заметка 🌼',true);
+ await save();await expectText('Изменения сохранены на сервере.');
+ const listing=await api('/songs');assert.equal(listing.status,200);assert.equal(listing.body.items.length,1);
+ const id=listing.body.items[0].id;assert.equal(id,uncertain.body.items[0].id,'Recovery must reuse the committed draft');
+ await navigate(await evaluate('location.search'));await expectText('Редактировать песню');assert.equal(await evaluate('location.search'),'?page=edit-song&id='+id);
+ assert.equal(await evaluate(`document.querySelector('[name=notes]').value`),'Заметка 🌼');
  await selectFile(file);await expectText('synthetic.wav');await save();await expectText('Изменения сохранены на сервере.');await expectText('Аудио готово.');
  let song=(await api('/songs/'+id)).body;assert.equal(song.ready,true);let media=song.tracks[0].mediaUrl;
  assert.equal((await api('/songs/'+id)).body.notes,'Заметка 🌼');
@@ -176,7 +191,7 @@ try {
  for(const [width,height] of [[320,640],[360,800],[800,360],[1280,900]]){await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<900});assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,`Overflow ${width}`);assert.equal(await evaluate(`[...document.querySelectorAll('form input:not([hidden]), form select, form textarea')].every(e=>e.id && e.name && e.getBoundingClientRect().height>=44)`),true);}
  await input('title','Несохранённое название');await click('Отмена');assert.equal(dialogs,1);assert.equal(await evaluate(`document.querySelector('[name=title]').value`),'Несохранённое название');
  acceptDialog=true;await click('Отмена');await expectText('Мои изменения');assert.equal((await api('/songs/'+id)).body.title,'Мои изменения');
- console.log('Real Go/SQLite/FFmpeg + Chrome: draft, upload/ready, probe timeout/retry, network key retention, failed replacement, persistence, conflict/retry, offline, publication conflict/retry, search, share rotation/revocation, anonymous song/list, admin, Unicode and responsive checks passed.');
+ console.log('Real Go/SQLite/FFmpeg + Chrome: lost creation response/edit/replay without duplicate or File loss, draft, upload/ready, probe timeout/retry, network key retention, failed replacement, persistence, conflict/retry, offline, publication conflict/retry, search, share rotation/revocation, anonymous song/list, admin, Unicode and responsive checks passed.');
 } finally {
  if(ws)ws.close();for(const p of processes.reverse()){p.kill('SIGTERM');await Promise.race([new Promise(resolve=>p.once('exit',resolve)),delay(2000)]);if(p.exitCode===null)p.kill('SIGKILL');}await rm(dir,{recursive:true,force:true,maxRetries:5});
 }

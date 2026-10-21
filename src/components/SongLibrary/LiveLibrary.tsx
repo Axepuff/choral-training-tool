@@ -56,6 +56,7 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
   const [busy, setBusy] = useState(false);
   const [epoch, setEpoch] = useState(0);
   const key = useRef(crypto.randomUUID());
+  const creation = useRef<SongFormValue | null>(null);
   const attempts = useRef(new Map<File, string>());
   const assigned = useRef<string[]>([]);
   const completed = useRef(new Set<File>());
@@ -84,8 +85,25 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
     setBusy(true); setError(''); setStatus('Сохраняем данные…');
     let current = song;
     try {
-      const writing = { ...value, tracks: value.tracks.map((t, index) => ({ ...t, ...(!t.id && assigned.current[index] ? { id: assigned.current[index] } : {}) })) };
-      current = await writeSong(writing, current, key.current); assigned.current = current.tracks.map(t => t.id); setSong(current);
+      const recovering = creation.current !== null;
+      const updating = current !== null;
+      if (!current) {
+        // An unknown POST outcome must be replayed with its original body/key.
+        // Keep the mounted form's newer fields and File objects for the PUT/upload.
+        creation.current ??= { ...value, tracks: value.tracks.map(t => ({ ...t })) };
+        try { current = await writeSong(creation.current, null, key.current); }
+        catch (e) {
+          if (e instanceof ApiError && [400, 422].includes(e.status)) creation.current = null;
+          throw e;
+        }
+        assigned.current = current.tracks.map(t => t.id); setSong(current);
+        creation.current = null;
+      }
+      if (updating || recovering) {
+        const writing = { ...value, tracks: value.tracks.map((t, index) => ({ ...t, ...(!t.id && assigned.current[index] ? { id: assigned.current[index] } : {}) })) };
+        current = await writeSong(writing, current, key.current);
+      }
+      assigned.current = current.tracks.map(t => t.id); setSong(current);
       if (!id) window.history.replaceState(null, '', `?page=edit-song&id=${current.id}`);
       for (const [index, track] of value.tracks.entries()) {
         if (!track.file || completed.current.has(track.file)) continue;
