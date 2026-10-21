@@ -62,7 +62,7 @@ func TestDatabaseLifecycle(t *testing.T) {
 		t.Fatalf("persistence/rollback: %s %v", role, err)
 	}
 	var count int
-	if err = db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != 3 {
+	if err = db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != 4 {
 		t.Fatalf("migration repeated: %d %v", count, err)
 	}
 	// Force a new connection to verify connection-level pragmas survive reconnect.
@@ -254,7 +254,7 @@ func TestReadyAssetRequiresMetadata(t *testing.T) {
 			}
 		})
 	}
-	if _, err := db.Exec(`INSERT INTO assets VALUES ('valid','t','source','playback.m4a','peaks.json',1,x'01',1000,'audio/mp4',48000,1,'ready','now','now')`); err != nil {
+	if _, err := db.Exec(`INSERT INTO assets (id,track_id,source_path,playback_path,peaks_path,source_bytes,source_sha256,duration_ms,mime,sample_rate,channels,state,created_at,updated_at) VALUES ('valid','t','source','playback.m4a','peaks.json',1,x'01',1000,'audio/mp4',48000,1,'ready','now','now')`); err != nil {
 		t.Fatalf("valid ready insert rejected: %v", err)
 	}
 }

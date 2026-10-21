@@ -87,3 +87,13 @@ snapshots, единая область доступа к метаданным/me
 Storage — #7, интеграция с worker — #8, UI — #10. Подробнее:
 [backend.md](backend.md#публичные-ссылки-и-media-issue-6). Commit/PR/merge остаются
 контроллеру очереди.
+
+## Локальный результат Issue #7
+
+Реализованы streaming upload, private Storage, FFprobe metadata/decoder validation,
+quota/admission/timeouts, durable jobs и статусы, version/live ownership checks,
+replay и очистка незавершённых/crash файлов. Поведенческие тесты используют
+реальные синтетические audio fixtures и SQLite/FS/auth. Worker/full decode/
+публикация результата/периодический cleaner — #8, UI — #10. Документация:
+[backend.md](backend.md#загрузка-и-приватное-хранилище-issue-7).
+Commit/PR/merge выполняет контроллер очереди.

@@ -27,7 +27,8 @@ type Authorizer interface {
 }
 
 // Storage keys are internal relative IDs, never client filenames. Publish must
-// fsync and atomically rename on the same volume before the DB transaction commits.
+// fsync and atomically publish on the same volume (rename or no-replace link)
+// before the DB transaction commits.
 type Storage interface {
 	Stage(context.Context, string, io.Reader, int64) error
 	Publish(context.Context, string, string) error

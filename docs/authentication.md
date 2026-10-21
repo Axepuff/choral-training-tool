@@ -93,3 +93,11 @@ authorizer. Teacher не получает чужой draft даже по ID (404
 запросы и не удаляет уже полученные байты. Media до #7/#8 проверяется через
 Storage fixtures; без адаптера сервер возвращает 503. Детали и границы —
 [backend.md](backend.md#публичные-ссылки-и-media-issue-6). UI остаётся макетом до #10.
+
+## Upload и jobs (Issue #7)
+
+Upload использует серверную session/CSRF и проверяет owner/admin до чтения тела и
+повторно перед commit (включая live-сессию, актуальную роль, блокировку и version).
+Public token не даёт права загрузки или чтения job. Job доступен owner/admin;
+приватная чужая песня и её jobs скрываются 404. Originals лежат за Storage и
+никогда не выдаются media endpoint. Подробнее: [backend.md](backend.md#загрузка-и-приватное-хранилище-issue-7).

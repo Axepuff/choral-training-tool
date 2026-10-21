@@ -260,7 +260,7 @@ func (s *Service) media(w http.ResponseWriter, r *http.Request) {
 		kind = "peaks"
 	}
 	// Never fall back to source_path or to http.FileServer. #7 provides Storage.
-	if s.Storage == nil {
+	if s.Storage == nil || strings.HasPrefix(key, "original-") || strings.HasPrefix(key, "stage-") {
 		fail(w, 503, "unavailable")
 		return
 	}

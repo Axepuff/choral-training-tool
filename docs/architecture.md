@@ -135,3 +135,13 @@ DTO/снимками и session/public media handlers. Общий snapshot loade
 публичного каталога файлов. Реальный Storage подключается в #7, worker-интеграция
 проверяется в #8; отсутствие адаптера означает 503. Новых миграций и зависимостей
 нет. Детали — [backend.md](backend.md#публичные-ссылки-и-media-issue-6).
+
+## Реализация Issue #7
+
+`internal/uploads` владеет streaming multipart, admission/quota, FFprobe adapter,
+идемпотентностью и атомарным enqueue в SQLite. `internal/storage` реализует
+`platform.Storage` на приватном rooted filesystem, подключён к sharing/media.
+Миграция 0004 сохраняет source codec/container. HTTP не выполняет конвертацию;
+worker и периодическая уборка referenced assets остаются #8. Recovery до listener
+удаляет только незавершённые операции/crash-orphans. Детали:
+[backend.md](backend.md#загрузка-и-приватное-хранилище-issue-7).
