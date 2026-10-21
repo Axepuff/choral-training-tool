@@ -73,6 +73,20 @@ async function checkFormOnFocus(selector) {
   assert.equal(await evaluate(preserved), true, 'Focus erased form after me');
 }
 
+async function checkResponsiveText(selector, text) {
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(selector)}).textContent`), text);
+  for (const [width, height] of [[320, 640], [360, 800], [800, 360], [1280, 900]]) {
+    await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 900 });
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true, `Page overflow at ${width}: ${selector}`);
+    assert.equal(await evaluate(`(() => {
+      const element = document.querySelector(${JSON.stringify(selector)});
+      const range = document.createRange(); range.selectNodeContents(element);
+      return [...range.getClientRects()].every(rect => rect.left >= 0 && rect.right <= innerWidth)
+        && element.scrollWidth <= element.clientWidth;
+    })()`), true, `Text overflow at ${width}: ${selector}`);
+  }
+}
+
 async function click(text) {
   await evaluate(`Array.from(document.querySelectorAll('button')).find(b => b.textContent === ${JSON.stringify(text)}).click()`);
 }
@@ -182,9 +196,21 @@ try {
   await navigate('?song=' + 'A'.repeat(43) + '&role=admin');
   await expectText('Тестовая заметка');
   assert.equal(await bodyIncludes('Создать песню'), false);
+  assert.equal((await fetch(`${process.env.CHORAL_TEST_API}/__test/long-metadata`, { method: 'POST' })).status, 204);
+  for (const query of ['?song=' + 'A'.repeat(43), '?list=' + ('B'.repeat(42) + 'A')]) {
+    await navigate(query); await expectText('Я'.repeat(160));
+    await checkResponsiveText(query.startsWith('?song') ? 'main h1' : 'main h2', 'Я'.repeat(160));
+    if (query.startsWith('?list')) {
+      await evaluate(`document.querySelector('main h2').closest('a').click()`);
+      await expectText('Ж'.repeat(1000));
+      await checkResponsiveText('main h1', 'Я'.repeat(160));
+    }
+    await checkResponsiveText('main li', 'Щ'.repeat(80));
+    await checkResponsiveText('main p:nth-of-type(2)', 'Ж'.repeat(1000));
+  }
   // Bootstrap is a real gated session, not an editor until password replacement.
   await navigate('?page=sign-in&returnTo=https://external.test'); await expectText('Вход');
-  await submit('admin@example.test', 'fictional password 123'); await expectText('Смена пароля');
+  await submit(('a'.repeat(64) + '@' + 'b'.repeat(63) + '.test'), 'fictional password 123'); await expectText('Смена пароля');
   assert.equal(await bodyIncludes('Создать песню'), false);
   await checkFormOnFocus('[name=newPassword]');
   await evaluate(`(() => {
@@ -194,10 +220,11 @@ try {
     document.querySelector('form').requestSubmit();
   })()`);
   await expectText('Вход');
-  await submit('admin@example.test', 'replacement password 456'); await expectText('Администратор');
+  await submit(('a'.repeat(64) + '@' + 'b'.repeat(63) + '.test'), 'replacement password 456'); await expectText('Администратор');
   assert.equal(await evaluate('location.search'), '?page=library');
+  await checkResponsiveText('main header + p', 'a'.repeat(64) + '@' + 'b'.repeat(63) + '.test · Администратор');
   await navigate('?list=' + ('B'.repeat(42) + 'A') + '&role=admin&page=create-song');
-  await expectText('Тестовая песня');
+  await expectText('Я'.repeat(160));
   assert.equal(await bodyIncludes('Создать песню'), false);
   assert.equal(await bodyIncludes('Администратор'), false);
   await navigate('?page=library'); await expectText('Администратор');

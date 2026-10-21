@@ -29,7 +29,7 @@ func TestFrontendBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	_, err = users.Create(context.Background(), db, "admin@example.test", "fictional password 123", "admin", true)
+	_, err = users.Create(context.Background(), db, strings.Repeat("a", 64)+"@"+strings.Repeat("b", 63)+".test", "fictional password 123", "admin", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,6 +84,18 @@ func TestFrontendBrowser(t *testing.T) {
 	mux.HandleFunc("POST /__test/block", func(w http.ResponseWriter, r *http.Request) {
 		_, err := db.ExecContext(r.Context(), `UPDATE users SET blocked_at='2026-01-01T00:00:00Z' WHERE id=?`, teacher.ID)
 		if err != nil {
+			w.WriteHeader(500)
+			return
+		}
+		w.WriteHeader(204)
+	})
+	// Long, unbroken server values exercise wrapping rather than short demo text.
+	mux.HandleFunc("POST /__test/long-metadata", func(w http.ResponseWriter, r *http.Request) {
+		if _, err := db.ExecContext(r.Context(), `UPDATE songs SET title=?, notes=? WHERE id=?`, strings.Repeat("Я", 160), strings.Repeat("Ж", 1000), songID); err != nil {
+			w.WriteHeader(500)
+			return
+		}
+		if _, err := db.ExecContext(r.Context(), `UPDATE tracks SET name=? WHERE id=?`, strings.Repeat("Щ", 80), trackID); err != nil {
 			w.WriteHeader(500)
 			return
 		}

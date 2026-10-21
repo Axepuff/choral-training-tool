@@ -104,6 +104,14 @@ GOCACHE=/tmp/choral-gocache GOPATH=/tmp/choral-gopath npm run test:auth:browser
 Chrome через CDP. Проверяет неверный пароль, login/reload/logout, отзыв, сеть,
 блокировку, обязательную смену пароля, безопасный возврат, public routes с forged
 role/page, отсутствие browser storage и overflow на 320/360/landscape/desktop.
+Регрессия мобильной адаптации использует непрерывные серверные строки:
+название 160 символов, дорожку 80, заметку 1000 и длинный допустимый email.
+Проверяет public song, песню из public list и профиль после входа на
+320×640, 360×800, 800×360 и 1280×900: полное содержимое, границы текстовых
+фрагментов и отсутствие горизонтального переполнения. Общий контейнер
+наследует `overflow-wrap: anywhere`; текст переносится без скрытия overflow.
+Эти сценарии, 17 stories с play, auth tests, runtime/demo build, Storybook build,
+lint и assemble-pages повторно проверены при исправлении замечания P2 к #9.
 Отдельно задерживает настоящие ответы me/login: проверяет сохранение полей
 SignIn/ChangePassword при focus и visibilitychange, сохранение формы во время
 незавершённого login и отсутствие конкурирующего me.
