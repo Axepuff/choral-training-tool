@@ -261,6 +261,105 @@ console.log(JSON.stringify({ args, promptLength: prompt.length, tokenPresent: Bo
   }
 });
 
+async function capacityFixture(t, { failures = 2, stderr, stdout = '', writeSuccess = true } = {}) {
+  const runner = await fixture(t);
+  const bin = join(runner.dir, 'fake-bin'); await mkdir(bin);
+  const executable = join(bin, 'codex');
+  const capacity = 'ERROR: Selected model is at capacity. Please try a different model.';
+  await writeFile(executable, `#!/usr/bin/env node
+import fs from 'node:fs';
+const args = process.argv.slice(2);
+const output = args[args.indexOf('--output-last-message') + 1];
+const countFile = ${JSON.stringify(join(runner.dir, 'attempts.json'))};
+const calls = fs.existsSync(countFile) ? JSON.parse(fs.readFileSync(countFile, 'utf8')) : [];
+let prompt = ''; for await (const chunk of process.stdin) prompt += chunk;
+calls.push({ args, prompt, staleOutput: fs.existsSync(output) });
+fs.writeFileSync(countFile, JSON.stringify(calls));
+if (calls.length <= ${failures}) {
+  fs.writeFileSync('example.txt', 'partial implementation\\n');
+  fs.writeFileSync(output, 'stale failed response');
+  process.stdout.write(${JSON.stringify(stdout)});
+  process.stderr.write(${JSON.stringify(stderr ?? `${capacity}\n${capacity}\n`)});
+  process.exit(1);
+}
+if (${writeSuccess}) fs.writeFileSync(output, args.includes('--output-schema') ? ${JSON.stringify(JSON.stringify(approval()))} : 'finished');
+`);
+  await chmod(executable, 0o755);
+  runner.cleanEnv.PATH = `${bin}:${runner.cleanEnv.PATH}`;
+  const waits = [];
+  runner.wait = async ms => { waits.push(ms); };
+  const calls = async () => JSON.parse(await readFile(join(runner.dir, 'attempts.json'), 'utf8'));
+  return { runner, waits, calls, capacity };
+}
+
+test('capacity: повторы сохраняют настройки, частичный код и счётчик исправлений', async t => {
+  const { runner, waits, calls } = await capacityFixture(t);
+  runner.state = { fixRounds: 2 };
+  assert.equal(await runner.codex('Complete Issue #8.'), 'finished');
+  assert.deepEqual(waits, [15_000, 30_000]);
+  const attempts = await calls(); assert.equal(attempts.length, 3);
+  for (const attempt of attempts) {
+    assert.deepEqual(attempt.args, attempts[0].args);
+    assert.equal(attempt.staleOutput, false);
+  }
+  assert.ok(attempts[1].prompt.includes('сохраняя уже сделанную работу'));
+  assert.equal(await readFile(join(runner.root, 'example.txt'), 'utf8'), 'partial implementation\n');
+  assert.equal(runner.state.fixRounds, 2);
+});
+
+test('capacity: максимум три повтора, затем остановка с понятной причиной', async t => {
+  const { runner, waits, calls } = await capacityFixture(t, { failures: 10 });
+  await assert.rejects(runner.codex('Complete Issue #8.'), /перегруженной после трёх повторов/);
+  assert.equal((await calls()).length, 4);
+  assert.deepEqual(waits, [15_000, 30_000, 60_000]);
+});
+
+test('capacity: ревью повторяется только для чтения и возвращает свежий JSON', async t => {
+  const { runner, waits, calls } = await capacityFixture(t, { failures: 1 });
+  const report = JSON.parse(await runner.codex('Review Issue #8.', { review: true }));
+  assert.equal(validateReview(report, head, base), true);
+  const attempts = await calls(); assert.equal(attempts.length, 2);
+  assert.deepEqual(attempts[0].args, attempts[1].args);
+  assert.ok(attempts[1].args.includes('read-only'));
+  assert.equal(attempts[0].prompt, attempts[1].prompt);
+  assert.deepEqual(waits, [15_000]);
+});
+
+test('capacity: квота, auth, неизвестная ошибка и сообщение только в stdout не повторяются', async t => {
+  const capacity = 'ERROR: Selected model is at capacity. Please try a different model.';
+  for (const options of [
+    { stderr: "ERROR: You've hit your usage limit.\n" },
+    { stderr: 'ERROR: 401 Unauthorized: fake-sensitive-value\n' },
+    { stderr: 'Error: unknown failure\n' },
+    { stderr: `${capacity}\nERROR: 401 Unauthorized\n` },
+    { stderr: 'Error: unknown failure\n', stdout: capacity },
+  ]) {
+    const { runner, waits, calls } = await capacityFixture(t, options);
+    await assert.rejects(runner.codex('Complete Issue #8.'), error => {
+      assert.notEqual(error.code, 'CODEX_MODEL_CAPACITY');
+      assert.ok(!error.message.includes('fake-sensitive-value'));
+      return true;
+    });
+    assert.equal((await calls()).length, 1);
+    assert.deepEqual(waits, []);
+  }
+});
+
+test('capacity: Ctrl+C во время задержки прекращает повторы и сохраняет код', async t => {
+  const { runner, calls } = await capacityFixture(t);
+  const controller = new AbortController(); runner.signal = controller.signal;
+  runner.wait = async (_, __, { signal }) => { controller.abort(); signal.throwIfAborted(); };
+  await assert.rejects(runner.codex('Complete Issue #8.'), { name: 'AbortError' });
+  assert.equal((await calls()).length, 1);
+  assert.equal(await readFile(join(runner.root, 'example.txt'), 'utf8'), 'partial implementation\n');
+});
+
+test('capacity: успешный exit без нового ответа не использует оставшийся ответ неудачной попытки', async t => {
+  const { runner, calls } = await capacityFixture(t, { failures: 1, writeSuccess: false });
+  await assert.rejects(runner.codex('Complete Issue #8.'), { code: 'ENOENT' });
+  assert.equal((await calls()).length, 2);
+});
+
 test('preflight отвергает API login до GitHub и не вызывает inference', async t => {
   const runner = await fixture(t);
   runner.env = { PATH: process.env.PATH };

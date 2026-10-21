@@ -23,11 +23,12 @@ Ctrl+C останавливает очередь. Повторный --once/--ru
 `;
 
 export class Runner {
-  constructor(root, { signal, log = console.log, env = process.env } = {}) {
+  constructor(root, { signal, log = console.log, env = process.env, wait = delay } = {}) {
     this.root = root;
     this.signal = signal;
     this.log = log;
     this.env = env;
+    this.wait = wait;
     this.cleanEnv = { ...childEnvironment(env), CI: 'true', GIT_TERMINAL_PROMPT: '0', npm_config_update_notifier: 'false' };
   }
 
@@ -68,7 +69,12 @@ export class Runner {
           if (stream) { stream.end(); await finished(stream); }
           if (cancelled || code !== 0 && !allowFailure) {
             // Authentication failures must not echo CLI output that could contain credentials.
-            reject(new Error(`${bin} ${args[0]}: код ${code ?? killedBy}. ${logfile ? `Лог: ${logfile}` : 'Проверьте команду отдельно.'}`));
+            const lastError = stderr.split(/\r?\n/).filter(line => /^(?:ERROR|Error|error):/.test(line)).at(-1);
+            const capacity = !cancelled && code === 1 && bin === 'codex' && args[0] === 'exec'
+              && lastError === 'ERROR: Selected model is at capacity. Please try a different model.';
+            const error = new Error(`${bin} ${args[0]}: код ${code ?? killedBy}. ${capacity ? 'Выбранная модель временно перегружена. ' : ''}${logfile ? `Лог: ${logfile}` : 'Проверьте команду отдельно.'}`);
+            if (capacity) error.code = 'CODEX_MODEL_CAPACITY';
+            reject(error);
           } else resolvePromise({ code, output: output.trim(), stderr: stderr.trim() });
         } catch (error) { reject(error); }
       });
@@ -238,7 +244,25 @@ export class Runner {
     }
     args.push('-');
     this.log(`${review ? 'Независимое ревью' : 'Реализация/исправления'} Codex. Лог: ${join(this.dir, `${stamp}.log`)}`);
-    await this.command('codex', args, { input: prompt, timeout: 90 * 60_000, logfile: join(this.dir, `${stamp}.log`) });
+    const retryDelays = [15_000, 30_000, 60_000];
+    for (let attempt = 0; ; attempt++) {
+      this.signal?.throwIfAborted();
+      // A failed invocation must never supply a stale final message to a retry.
+      await rm(last, { force: true });
+      try {
+        const continuation = attempt > 0 && !review
+          ? '\nПредыдущий запуск остановился из-за перегрузки модели. Проверь существующие изменения в рабочем дереве и продолжи реализацию, сохраняя уже сделанную работу.' : '';
+        await this.command('codex', args, { input: prompt + continuation, timeout: 90 * 60_000, logfile: join(this.dir, `${stamp}.log`) });
+        break;
+      } catch (error) {
+        if (error.code !== 'CODEX_MODEL_CAPACITY') throw error;
+        if (attempt === retryDelays.length) {
+          throw new Error(`Выбранная модель остаётся перегруженной после трёх повторов. Дождитесь восстановления сервиса и повторите запуск. Лог: ${join(this.dir, `${stamp}.log`)}`, { cause: error });
+        }
+        this.log(`Модель временно перегружена. Повтор ${attempt + 1}/${retryDelays.length} через ${retryDelays[attempt] / 1000} с; модель и настройки сохраняются.`);
+        await this.wait(retryDelays[attempt], undefined, { signal: this.signal });
+      }
+    }
     return readFile(last, 'utf8');
   }
   async implement(task, feedback) {
