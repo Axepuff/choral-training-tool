@@ -304,3 +304,91 @@ build-storybook, assemble-pages прошли; браузерные play-пров
 поскольку UI не изменён. Обновлённый YAML OpenAPI прочитан YAML-парсером;
 это не полный OpenAPI validator. Ветка, настройки Git/агента/очереди не менялись;
 commit/push/PR/merge не выполнялись.
+
+## Публичные ссылки и media (Issue #6)
+
+`internal/sharing` подключён в server. Реализованы:
+
+- `GET/POST /api/v1/shares`: свои метаданные ссылок без токенов; admin может
+  выбрать `ownerId`. Создание принимает `{kind:"song",songId}` либо
+  `{kind:"list",ownerId}`, UUIDv4 `Idempotency-Key`, реальную сессию и CSRF.
+- `DELETE /api/v1/shares/{shareId}` отключает одну ссылку; повтор безопасен.
+  `POST /api/v1/shares/{shareId}/rotate` меняет токен атомарно и включает также
+  отключённую ссылку. Владелец/admin проверяются в транзакции вместе с живой
+  сессией и текущей ролью. Удалённую песню нельзя заново открыть ротацией.
+- `GET /api/v1/public/shares/{token}`: song возвращает ровно одну published/ready
+  песню, list — только published/ready песни своего owner. Один owner может иметь
+  несколько независимых ссылок. Снятие публикации, удаление, потеря ready немедленно
+  исключают песню; токен не даёт прав на запись. Cookie, даже admin, не расширяет
+  public scope. Неизвестный/отозванный/неподходящий токен или чужие ID дают 404.
+- Session/public `/songs/{songId}/tracks/{trackId}/media` и `/peaks`: активный
+  asset должен принадлежать именно этому live track, track — указанной песне.
+  Pending/failed replacement не заслоняет старый ready asset. Нет ready —
+  редактору 409, гостю/постороннему 404. Готовый draft доступен owner/admin по
+  session endpoint, но не по public URL. Media/peaks используют тот же grant и
+  published/ready контракт, что публичная выдача метаданных.
+
+Токен — 32 случайных байта (base64url без padding, 43 символа); в shares только
+SHA-256. Создание и AES-256-GCM replay фиксируются вместе. Неизменная ссылка
+повторно возвращается 24 часа; после disable/rotate — `409 idempotency_stale`,
+другое тело — `409 idempotency_conflict`. После истечения TTL возможна новая
+операция. Неверный ciphertext/недоступный ключ — ошибка 503, без создания дубля.
+Ключ `share-responses.key` создаётся в data dir с 0600, вне SQLite; общий код
+загрузки ключа вынесен в platform без изменения song key/формата replay #5.
+Сохраняйте оба key-файла на постоянном томе и в защищённом backup. Ключ sharing
+также шифрует cursor; автоматической ротации нет.
+
+List pagination: `limit=1..100` (default 30), неизменяемый снимок ID в SQLite
+на 15 минут, порядок `updatedAt DESC, id ASC`, актуальные поля/права на каждой
+странице. Новые публикации входят только в новый обход; исчезнувшие из доступа
+пропускаются. Cursor зашифрован, связан с маршрутом и точным токеном, ID не
+раскрывает. Подмена/другая ссылка — 400, истечение — 410, отзыв — 404 независимо
+от существования cursor. Старые снимки очищаются при новом обходе.
+
+Public DTO содержит только поля PublicSong/PublicTrack из OpenAPI: нет owner,
+email, версии, jobs, внутренних путей, upload-originals и иных редакторских полей.
+Ответы не кешируются (`private, no-store`), включая ошибки Range, и используют
+`Referrer-Policy: no-referrer`; session пути добавляют `Vary: Cookie`.
+`net/http.ServeContent` обслуживает seek-based GET/HEAD, byte Range/206/416,
+Content-Length, Content-Type (`audio/mp4`/`application/json`) и ETag активного
+asset. Каждый запрос, включая Range/условный GET/HEAD, сначала авторизуется.
+Отзыв предотвращает новые запросы после commit. Уже начавшийся ответ и полученные
+браузером байты отозвать нельзя; тест сохраняет прежние байты после отзыва.
+
+### Граница Storage и следующих задач
+
+#6 не реализует загрузчик, файловое хранилище или FFmpeg. Handler принимает
+`platform.Storage` и вызывает только `Open` для playback/peaks key из SQLite,
+после полной проверки доступа. Путь от клиента не принимается, source_path не
+читается, static file server и fallback к оригиналу отсутствуют. Для #7 нужно
+передать реальный Storage в `sharing.New` в `cmd/server/main.go`; сейчас там nil,
+поэтому попытка чтения ready media при отсутствии адаптера даёт честный 503.
+Сами ссылки, отзыв, ротация и публичные метаданные уже работают на реальной БД.
+Storage.Open должен возвращать seekable immutable snapshot артефакта, ограничивать
+ключи каталогом данных и не допускать выхода через пути/symlink. #8 должен
+подтвердить интеграцию с реальными AAC/peaks после атомарной фиксации ready.
+До этого тесты используют байтовые fixtures только на границе Storage;
+они не подтверждают декодируемость аудио и не запускают FFmpeg.
+
+`url` создания/ротации — относительный frontend URL `/?song=<token>` либо
+`/?list=<token>`. Подключение этих URL к API и UI шаринга относится к #10;
+существующие макеты не являются реализацией защищённого чтения.
+
+Поведенческие тесты `internal/sharing` используют реальные SQLite, Argon2id login,
+cookie/CSRF и общий HTTP router: valid/unknown/revoked/wrong-scope, owner/admin/
+посторонний, невозможность расширить public scope через admin-cookie, запись,
+подмена song/track/asset ID, неопубликованные/processing/failed/retired/empty,
+GET/HEAD/Range/peaks, storage failure, независимость ссылок, restart/replay,
+rollback secret persistence, snapshot membership/order/expiry и отзыв между
+страницами. Команды Go и frontend остаются теми же, что выше.
+
+Фактически проверено для #6 на Go 1.27.3: `go test ./...`,
+`go test -race ./...`, `go vet ./...`, `go mod verify`, сборки server/accounts.
+Собранный server на временной БД прошёл HTTP smoke: bootstrap → login → смена
+временного пароля → login → создание list-ссылки → идентичный replay → пустой
+public список → rotate/старый токен 404 → stale replay 409 → revoke/новый токен
+404 → SIGTERM с exit 0. Токены/пароли в отчёт и журналы не выводились.
+Также прошли `npm ci`, typecheck, lint, build, build-storybook, assemble-pages и
+`git diff --check`. YAML OpenAPI прочитан парсером; полный OpenAPI validator и
+браузерные play-проверки не запускались. UI/дизайн не изменены. Новых зависимостей,
+миграций, commit/push/merge и изменений настроек Git/агента/очереди нет.

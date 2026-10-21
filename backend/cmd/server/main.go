@@ -11,6 +11,7 @@ import (
 
 	"github.com/Axepuff/choral-training-tool/backend/internal/auth"
 	"github.com/Axepuff/choral-training-tool/backend/internal/platform"
+	"github.com/Axepuff/choral-training-tool/backend/internal/sharing"
 	"github.com/Axepuff/choral-training-tool/backend/internal/songs"
 )
 
@@ -59,13 +60,19 @@ func run() int {
 		log.Error("song_key_startup_failed")
 		return 1
 	}
+	// Upload/storage (#7) will supply the adapter; absent media storage fails closed.
+	shareAPI, err := sharing.New(db, identity, identity, nil, c.DataDir)
+	if err != nil {
+		log.Error("share_key_startup_failed")
+		return 1
+	}
 	listener, err := net.Listen("tcp", c.Addr)
 	if err != nil {
 		log.Error("listen_failed")
 		return 1
 	}
 	log.Info("server_started")
-	if err := platform.NewService(c, db, log, identity.Register, songAPI.Register).Serve(ctx, listener); err != nil {
+	if err := platform.NewService(c, db, log, identity.Register, songAPI.Register, shareAPI.Register).Serve(ctx, listener); err != nil {
 		log.Error("server_stopped_with_error")
 		return 1
 	}
