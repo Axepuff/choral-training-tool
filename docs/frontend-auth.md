@@ -10,7 +10,13 @@ CSRF хранится только в памяти, приходит из login/
 
 `src/auth/session.ts` хранит один снимок для `useSyncExternalStore`.
 Старт/reload, возврат фокуса/видимости и истечение сессии вызывают me; до подтверждения
-редакторские действия скрыты. 401 приватного API убирает пользователя и CSRF.
+редакторские действия скрыты. При фоновой проверке SignIn и ChangePassword
+сохраняют экземпляр формы и введённые значения; сетевая ошибка фонового me
+не стирает эти формы. Первичная ошибка восстановления по-прежнему показывает retry.
+Повторные focus/visibility события объединяются, а во время login/logout/password
+новый me не запускается. Auth-операция делает ответы ранее начатого me устаревшими,
+включая 401: только актуальная проверка может изменить профиль и CSRF.
+401 остальных приватных API убирает пользователя и CSRF.
 401 login означает неверные данные (включая блокировку), не успех.
 CSRF failure перечитывает me; исходный write **не повторяется автоматически**.
 После ошибки можно повторить действие. Logout снимает права после настоящего
@@ -87,18 +93,22 @@ GOCACHE=/tmp/choral-gocache GOPATH=/tmp/choral-gopath npm run test:auth:browser
 
 Первая команда проверяет клиент, ошибки, credentials/CSRF, маршруты, stale response,
 пагинацию public и отсутствие fallback с управляемыми ответами fetch.
+Регрессии покрывают focus во время login и устаревший me 401 до/после его успеха.
 Вторая запускает настоящий Go auth/sharing с SQLite в t.TempDir(), вымышленными
 аккаунтами и синтетическими public metadata fixtures, затем Vite proxy и headless
 Chrome через CDP. Проверяет неверный пароль, login/reload/logout, отзыв, сеть,
 блокировку, обязательную смену пароля, безопасный возврат, public routes с forged
 role/page, отсутствие browser storage и overflow на 320/360/landscape/desktop.
+Отдельно задерживает настоящие ответы me/login: проверяет сохранение полей
+SignIn/ChangePassword при focus и visibilitychange, сохранение формы во время
+незавершённого login и отсутствие конкурирующего me.
 Также запускает 17 затронутых stories с ожиданием storyFinished (включая play)
 и проверяет demo SignIn без отправки данных. Production БД/cookies/credentials не читаются. HTTP управляющий endpoint блокировки
 существует только внутри этого теста. Обычный go test пропускает браузерный запуск.
 
 Проверено в локальной sandbox для результата #9: `npm ci`, typecheck, lint,
 обычная runtime build и demo build, build-storybook, assemble-pages,
-`npm run test:auth` (10 проверок), `npm run test:auth:browser` (реальный Go API,
+`npm run test:auth` (14 проверок), `npm run test:auth:browser` (реальный Go API,
 Chrome, 17 stories с play и Pages demo), `go test ./internal/auth ./internal/sharing`,
 `git diff --check`. Использованы Node 24.19.0 и Go 1.27.3 из локального toolchain.
 Storybook сохраняет предупреждение о размере bundle; сборка успешна.

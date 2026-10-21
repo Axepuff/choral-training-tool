@@ -45,6 +45,34 @@ async function submit(email, password) {
     document.querySelector('form').requestSubmit();
   })()`);
 }
+// Hold a real me response to check the form both during and after revalidation.
+async function checkFormOnFocus(selector) {
+  await evaluate(`(() => {
+    window.__formInput = document.querySelector(${JSON.stringify(selector)});
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    set.call(window.__formInput, 'fictional draft value');
+    window.__formInput.dispatchEvent(new Event('input', { bubbles: true }));
+    const original = window.fetch;
+    window.__meStarted = false; window.__meFinished = false;
+    window.fetch = async (...args) => {
+      if (!String(args[0]).endsWith('/auth/me')) return original(...args);
+      window.__meStarted = true;
+      await new Promise(resolve => { window.__releaseMe = resolve; });
+      try { return await original(...args); }
+      finally { window.fetch = original; window.__meFinished = true; }
+    };
+    window.dispatchEvent(new Event('focus'));
+    document.dispatchEvent(new Event('visibilitychange'));
+  })()`);
+  await poll(() => evaluate('window.__meStarted'), 'Focus did not check me');
+  const preserved = `document.querySelector(${JSON.stringify(selector)}) === window.__formInput && window.__formInput.value === 'fictional draft value'`;
+  assert.equal(await evaluate(preserved), true, 'Focus unmounted form during me');
+  await evaluate('window.__releaseMe()');
+  await poll(() => evaluate('window.__meFinished'), 'Focus me did not finish');
+  await delay(100);
+  assert.equal(await evaluate(preserved), true, 'Focus erased form after me');
+}
+
 async function click(text) {
   await evaluate(`Array.from(document.querySelectorAll('button')).find(b => b.textContent === ${JSON.stringify(text)}).click()`);
 }
@@ -67,9 +95,32 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
   await navigate('?page=create-song&role=admin');
   await expectText('Вход');
+  await checkFormOnFocus('[name=email]');
   await submit('teacher@example.test', 'incorrect fictional password');
   await expectText('Неверный email или пароль');
+  // Delay the real login response, then simulate returning from another tab.
+  await evaluate(`(() => {
+    const original = window.fetch;
+    window.__loginHeld = false; window.__focusMeCalls = 0;
+    window.fetch = async (...args) => {
+      if (String(args[0]).endsWith('/auth/me')) window.__focusMeCalls++;
+      const response = await original(...args);
+      if (String(args[0]).endsWith('/auth/login')) {
+        window.__loginHeld = true;
+        await new Promise(resolve => { window.__releaseLogin = resolve; });
+      }
+      return response;
+    };
+    window.__restoreFetch = () => { window.fetch = original; };
+  })()`);
   await submit('teacher@example.test', 'fictional password 123');
+  await poll(() => evaluate('window.__loginHeld'), 'Login response was not held');
+  await evaluate(`window.__loginForm = document.querySelector('form'); window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange'));`);
+  await delay(100);
+  assert.equal(await evaluate("document.querySelector('form') === window.__loginForm"), true);
+  assert.equal(await evaluate('window.__focusMeCalls'), 0, 'Focus competed with login');
+  await evaluate('window.__releaseLogin(); window.__restoreFetch();');
+
   await expectText('Сохранение песен ещё не подключено.');
   assert.equal(await evaluate('location.search'), '?page=create-song');
   await navigate('?page=library&role=admin');
@@ -115,6 +166,7 @@ try {
   await navigate('?page=sign-in&returnTo=https://external.test'); await expectText('Вход');
   await submit('admin@example.test', 'fictional password 123'); await expectText('Смена пароля');
   assert.equal(await bodyIncludes('Создать песню'), false);
+  await checkFormOnFocus('[name=newPassword]');
   await evaluate(`(() => {
     const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
     set.call(document.querySelector('[name=currentPassword]'), 'fictional password 123');

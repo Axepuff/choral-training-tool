@@ -57,6 +57,7 @@ export function App() {
     }} />;
   }
   if (auth.session.user.mustChangePassword) return <ChangePassword />;
+  if (auth.status === 'checking') return <p role="status">Проверяем сессию…</p>;
   const user = auth.session.user;
   return <main className={styles.page}><div className={styles.content}>
     <header className={styles.header}><h1>{route.kind === 'create-song' ? 'Создание песни' : route.kind === 'edit-song' ? 'Редактирование песни' : 'Песни'}</h1>

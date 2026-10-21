@@ -24,6 +24,12 @@ const problem = (code, status) => json({ error: { code, message: code, requestId
 
 test('API/session/navigation behavior', async (t) => {
   try {
+    await t.test('initial network failure offers recovery without a session', async () => {
+      globalThis.fetch = async () => { throw new Error('offline'); };
+      await auth.restoreSession();
+      assert.equal(auth.getAuth().status, 'error');
+      assert.equal(auth.getAuth().session, null);
+    });
     await t.test('credentials and CSRF are centralized; public scope omits both', async () => {
       const client = new ApiClient(); client.csrfToken = 'fictional-csrf';
       const calls = [];
@@ -56,7 +62,7 @@ test('API/session/navigation behavior', async (t) => {
       }
       globalThis.fetch = async () => { throw new Error('offline'); };
       await auth.restoreSession();
-      assert.equal(auth.getAuth().status, 'error');
+      assert.equal(auth.getAuth().status, 'ready');
     });
     await t.test('logout waits for revocation, failed logout can retry', async () => {
       globalThis.fetch = async () => json(session);
@@ -74,6 +80,44 @@ test('API/session/navigation behavior', async (t) => {
       auth.clearSession(); resolve(json(session)); await pending;
       assert.equal(auth.getAuth().session, null);
     });
+    await t.test('focus checks preserve anonymous state and cannot interrupt login', async () => {
+      auth.clearSession();
+      let finishMe;
+      let finishLogin;
+      const calls = [];
+      globalThis.fetch = (url) => {
+        calls.push(url);
+        return new Promise((resolve) => { if (url.endsWith('/me')) finishMe = resolve; else finishLogin = resolve; });
+      };
+      const check = auth.restoreSession();
+      assert.equal(auth.getAuth().status, 'checking');
+      const signingIn = auth.login({ email: session.user.email, password: 'fictional password' });
+      await auth.restoreSession();
+      // A pre-login me 401 is also stale, even when its initial CSRF was null.
+      finishMe(problem('unauthorized', 401));
+      await check;
+      await auth.restoreSession();
+      assert.equal(calls.length, 2);
+      finishLogin(json(session));
+      await signingIn;
+      assert.equal(auth.getAuth().session.user.id, session.user.id);
+      globalThis.fetch = async () => { throw new Error('offline'); };
+      auth.clearSession();
+      await auth.restoreSession();
+      assert.equal(auth.getAuth().status, 'ready');
+    });
+    await t.test('late me 401 cannot clear a successful login or its CSRF', async () => {
+      auth.clearSession();
+      let finishMe;
+      globalThis.fetch = (url) => url.endsWith('/me')
+        ? new Promise((resolve) => { finishMe = resolve; }) : Promise.resolve(json(session));
+      const check = auth.restoreSession();
+      await auth.login({ email: session.user.email, password: 'fictional password' });
+      finishMe(problem('unauthorized', 401));
+      await check;
+      assert.equal(auth.getAuth().session.user.id, session.user.id);
+      assert.equal(api.csrfToken, session.csrfToken);
+    });
     await t.test('a late unauthorized response cannot invalidate a newer session', async () => {
       let resolve;
       api.csrfToken = 'old-fictional-csrf';
@@ -90,6 +134,18 @@ test('API/session/navigation behavior', async (t) => {
       await assert.rejects(api.request('/songs', { method: 'POST', body: '{}' }), (e) => e.problem.code === 'csrf_failed');
       await new Promise((resolve) => setTimeout(resolve, 0));
       assert.deepEqual(calls, ['/api/v1/songs', '/api/v1/auth/me']);
+      assert.equal(auth.getAuth().session.csrfToken, session.csrfToken);
+    });
+    await t.test('CSRF rejection during logout refreshes after the auth operation', async () => {
+      const calls = [];
+      globalThis.fetch = async (url) => {
+        calls.push(url);
+        return url.endsWith('/me') ? json(session) : problem('csrf_failed', 403);
+      };
+      await assert.rejects(auth.logout(), (e) => e.problem.code === 'csrf_failed');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.deepEqual(calls, ['/api/v1/auth/logout', '/api/v1/auth/me']);
+      assert.equal(auth.getAuth().status, 'ready');
       assert.equal(auth.getAuth().session.csrfToken, session.csrfToken);
     });
     await t.test('public routes ignore forged role/page; redirect is an internal allowlist', () => {

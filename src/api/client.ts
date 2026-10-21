@@ -24,7 +24,7 @@ export class ApiClient {
   onUnauthorized = () => {};
   onCSRF = () => {};
 
-  async request<T>(path: string, options: RequestInit = {}, access: 'session' | 'public' | 'login' = 'session'): Promise<T> {
+  async request<T>(path: string, options: RequestInit = {}, access: 'session' | 'public' | 'login' | 'restore' = 'session'): Promise<T> {
     // Do not allow callers to send credentials to arbitrary URLs.
     if (!/^\/[a-zA-Z0-9/_.?%=&-]*$/.test(path) || path.startsWith('//') || path.includes('..')) {
       throw new Error('Invalid API path');
@@ -65,7 +65,7 @@ export class ApiClient {
   }
 
   async session(path: '/auth/me' | '/auth/login', credentials?: { email: string; password: string }): Promise<Session> {
-    const value = await this.request<Session>(path, credentials ? { method: 'POST', body: JSON.stringify(credentials) } : {}, credentials ? 'login' : 'session');
+    const value = await this.request<Session>(path, credentials ? { method: 'POST', body: JSON.stringify(credentials) } : {}, credentials ? 'login' : 'restore');
     const u = value?.user;
     if (!u || typeof u.id !== 'string' || !u.id || typeof u.email !== 'string' ||
       !['teacher', 'admin'].includes(u.role) || u.blocked !== false || typeof u.mustChangePassword !== 'boolean' ||
