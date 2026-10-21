@@ -92,6 +92,14 @@ paths:
       tags: [Songs]
       summary: Свои и доступные опубликованные песни; администратору все
       parameters:
+        - name: q
+          in: query
+          description: Подстрока названия без учёта регистра, NFC и trim; максимум 160 Unicode scalar values.
+          schema: {type: string, maxLength: 160}
+        - name: sort
+          in: query
+          description: По названию без учёта регистра или BPM; при равенстве id ASC. По умолчанию updatedAt DESC, id ASC.
+          schema: {type: string, enum: [updated_desc, title_asc, title_desc, bpm_asc, bpm_desc], default: updated_desc}
         - {$ref: '#/components/parameters/Limit'}
         - {$ref: '#/components/parameters/Cursor'}
       responses:

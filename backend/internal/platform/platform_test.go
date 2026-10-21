@@ -3,6 +3,7 @@ package platform
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"io"
 	"log/slog"
 	"net"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Axepuff/choral-training-tool/backend/migrations"
 )
 
 func TestDatabaseLifecycle(t *testing.T) {
@@ -59,7 +62,7 @@ func TestDatabaseLifecycle(t *testing.T) {
 		t.Fatalf("persistence/rollback: %s %v", role, err)
 	}
 	var count int
-	if err = db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != 2 {
+	if err = db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != 3 {
 		t.Fatalf("migration repeated: %d %v", count, err)
 	}
 	// Force a new connection to verify connection-level pragmas survive reconnect.
@@ -281,5 +284,59 @@ func TestAuthMigrationUpgradesFoundation(t *testing.T) {
 	}
 	if _, err = db.Exec(`INSERT INTO login_attempts VALUES (x'01',1,0,0)`); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSongsMigrationPreservesExistingMedia(t *testing.T) {
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "upgrade.sqlite")+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	// Apply only accepted #3/#4 migrations before populating their existing schema.
+	if _, err = db.Exec(`CREATE TABLE schema_migrations(name TEXT PRIMARY KEY,checksum TEXT NOT NULL,applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"0001_initial.sql", "0002_auth.sql"} {
+		body, e := migrations.Files.ReadFile(name)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if e = applyMigration(ctx, db, name, body); e != nil {
+			t.Fatal(e)
+		}
+	}
+	for _, q := range []string{
+		`INSERT INTO users VALUES ('u','existing@example.test','fictional-hash','teacher',NULL,0,'now','now')`,
+		`INSERT INTO songs(id,owner_id,title,bpm,beats_per_bar,beat_unit,created_at,updated_at) VALUES('s','u','Existing',84,4,4,'now','now')`,
+		`INSERT INTO tracks(id,song_id,position,name) VALUES('t','s',0,'Existing track')`,
+		`INSERT INTO assets(id,track_id,source_path,source_bytes,source_sha256,state,created_at,updated_at) VALUES('a','t','internal/original',1,x'01','processing','now','now')`,
+		`INSERT INTO assets VALUES ('ready','t','source','playback','peaks',1,x'02',1000,'audio/mp4',48000,1,'ready','now','now')`,
+		`UPDATE tracks SET pending_asset_id='a',active_asset_id='ready' WHERE id='t'`,
+		`INSERT INTO jobs(id,asset_id,state,created_at,updated_at) VALUES('j','a','processing','now','now')`,
+	} {
+		if _, err = db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if err = Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	var asset, track, job string
+	if err = db.QueryRow(`SELECT t.pending_asset_id,a.track_id,j.asset_id FROM tracks t JOIN assets a ON a.id=t.pending_asset_id JOIN jobs j ON j.asset_id=a.id WHERE t.id='t' AND t.deleted_at IS NULL AND t.active_asset_id='ready'`).Scan(&asset, &track, &job); err != nil || asset != "a" || track != "t" || job != "a" {
+		t.Fatalf("migration broke media links: %v", err)
+	}
+	rows, err := db.Query(`PRAGMA foreign_key_check`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	if rows.Next() {
+		t.Fatal("migration broke foreign keys")
 	}
 }

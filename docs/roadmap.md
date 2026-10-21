@@ -69,3 +69,12 @@ docs/authentication.md и саму Issue с её зависимостями.
 смена/сброс временного пароля и поведенческие HTTP/SQLite тесты. Это не означает
 завершения #9 (подключение frontend) или #13 (CRUD/UI аккаунтов). Commit/PR/merge
 этого результата выполняет контроллер очереди.
+
+## Локальный результат Issue #5
+
+Реализованы приватные CRUD песен/дорожек, SQLite persistence, real auth/ownership,
+Unicode validation, version conflict/rollback, поиск/сортировка и snapshot cursor,
+идемпотентное создание и логическое удаление с отменой jobs. Документация и
+поведенческие тесты — [backend.md](backend.md#песни-и-дорожки-issue-5).
+Публичные endpoints #6, upload #7, обработка/уборщик #8 и frontend #10 остаются
+отдельными задачами. Commit/PR/merge выполняет контроллер очереди.
