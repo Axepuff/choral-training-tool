@@ -19,6 +19,8 @@ type Runner struct {
 	db      *sql.DB
 	store   *storage.Store
 	timeout time.Duration
+	mu      sync.Mutex
+	active  map[string]bool // song slots held until process returns
 }
 type job struct {
 	id, asset, source, track, song string
@@ -33,12 +35,22 @@ func New(ctx context.Context, db *sql.DB, store *storage.Store) (*Runner, error)
 	if e := CheckTools(ctx); e != nil {
 		return nil, e
 	}
-	r := &Runner{db: db, store: store, timeout: 5 * time.Minute}
+	r := &Runner{db: db, store: store, timeout: 5 * time.Minute, active: make(map[string]bool)}
 	_, e := db.ExecContext(ctx, `UPDATE jobs SET lease_until=NULL WHERE state='processing'`)
 	return r, e
 }
 
 func (r *Runner) claim(ctx context.Context) (*job, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.active) >= 2 {
+		return nil, nil
+	}
+	// With two worker slots, at most one other song can still be running.
+	busySong := ""
+	for song := range r.active {
+		busySong = song
+	}
 	tx, e := r.db.BeginTx(ctx, nil)
 	if e != nil {
 		return nil, e
@@ -59,7 +71,7 @@ func (r *Runner) claim(ctx context.Context) (*job, error) {
 		return nil, e
 	}
 	j := &job{}
-	e = tx.QueryRowContext(ctx, `SELECT j.id,a.id,a.source_path,t.id,t.song_id,j.attempts+1 FROM jobs j JOIN assets a ON a.id=j.asset_id JOIN tracks t ON t.id=a.track_id WHERE j.state='queued' AND j.attempts<3 AND (j.lease_until IS NULL OR j.lease_until<=?) AND (SELECT count(*) FROM jobs WHERE state='processing')<2 AND NOT EXISTS (SELECT 1 FROM jobs busy JOIN assets ba ON ba.id=busy.asset_id JOIN tracks bt ON bt.id=ba.track_id WHERE busy.state='processing' AND bt.song_id=t.song_id) ORDER BY j.created_at,j.id LIMIT 1`, now).Scan(&j.id, &j.asset, &j.source, &j.track, &j.song, &j.attempt)
+	e = tx.QueryRowContext(ctx, `SELECT j.id,a.id,a.source_path,t.id,t.song_id,j.attempts+1 FROM jobs j JOIN assets a ON a.id=j.asset_id JOIN tracks t ON t.id=a.track_id WHERE t.song_id!=? AND j.state='queued' AND j.attempts<3 AND (j.lease_until IS NULL OR j.lease_until<=?) AND (SELECT count(*) FROM jobs WHERE state='processing')<2 AND NOT EXISTS (SELECT 1 FROM jobs busy JOIN assets ba ON ba.id=busy.asset_id JOIN tracks bt ON bt.id=ba.track_id WHERE busy.state='processing' AND bt.song_id=t.song_id) ORDER BY j.created_at,j.id LIMIT 1`, busySong, now).Scan(&j.id, &j.asset, &j.source, &j.track, &j.song, &j.attempt)
 	if errors.Is(e, sql.ErrNoRows) {
 		return nil, tx.Commit()
 	}
@@ -73,7 +85,11 @@ func (r *Runner) claim(ctx context.Context) (*job, error) {
 	if e != nil {
 		return nil, e
 	}
-	return j, tx.Commit()
+	if e = tx.Commit(); e != nil {
+		return nil, e
+	}
+	r.active[j.song] = true
+	return j, nil
 }
 
 // Run returns only after both subprocess slots stop, before DB/Storage close.
@@ -111,6 +127,11 @@ func (r *Runner) Run(ctx context.Context) {
 }
 
 func (r *Runner) process(parent context.Context, j *job) {
+	defer func() {
+		r.mu.Lock()
+		delete(r.active, j.song)
+		r.mu.Unlock()
+	}()
 	ctx, cancel := context.WithTimeout(parent, r.timeout)
 	defer cancel()
 	playback, peaks := "playback-"+users.ID(), "peaks-"+users.ID()
@@ -166,6 +187,10 @@ func (r *Runner) convert(ctx context.Context, source, out, peaks string) (int64,
 		return 0, e
 	}
 	defer input.Close()
+	sourceWave, e := decodeWave(ctx, input.(*os.File))
+	if e != nil {
+		return 0, e
+	}
 	output, e := r.store.CreateStage(out)
 	if e != nil {
 		return 0, e
@@ -175,14 +200,7 @@ func (r *Runner) convert(ctx context.Context, source, out, peaks string) (int64,
 	var diagnostic bounded
 	c.Stderr = &diagnostic
 	if e = c.Run(); e != nil {
-		// Diagnostics are used only for classification, never exposed or logged.
-		text := string(diagnostic.data)
-		for _, temporary := range []string{"No space left on device", "Input/output error", "Permission denied", "failed to execute"} {
-			if strings.Contains(text, temporary) {
-				return 0, e
-			}
-		}
-		return 0, &mediaError{"decode_failed"}
+		return 0, decodeError(e, diagnostic)
 	}
 	if e = output.Sync(); e != nil {
 		return 0, e
@@ -194,25 +212,8 @@ func (r *Runner) convert(ctx context.Context, source, out, peaks string) (int64,
 		}
 		return 0, &mediaError{"invalid_result"}
 	}
-	c = command(ctx, "ffmpeg", []*os.File{output}, "-nostdin", "-v", "error", "-xerror", "-threads", "1", "-protocol_whitelist", "file,pipe", "-i", "/proc/self/fd/3", "-map", "0:a:0", "-ac", "1", "-ar", "48000", "-threads", "1", "-f", "f32le", "pipe:1")
-	pipe, e := c.StdoutPipe()
-	if e != nil {
-		return 0, e
-	}
-	if e = c.Start(); e != nil {
-		return 0, e
-	}
-	w, readErr := readWave(pipe)
-	if readErr != nil {
-		_ = c.Process.Kill()
-	}
-	e = c.Wait()
-	if e != nil || readErr != nil {
-		return 0, &mediaError{"invalid_result"}
-	}
-	// AAC pads the final frame. MP4 edit-list duration excludes that padding;
-	// preserve t=0 and crop only the final decoded window to that timeline.
-	if w.Duration < duration || w.Duration-duration > 22 {
+	w, e := decodeWave(ctx, output)
+	if e != nil || !validTiming(sourceWave.Duration, duration, w.Duration) {
 		return 0, &mediaError{"invalid_result"}
 	}
 	w.Duration = duration
@@ -341,4 +342,46 @@ func (r *Runner) cleanup(ctx context.Context) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// Compare against decoded source samples, not potentially inaccurate container
+// duration (notably raw AAC/MP3). Only terminal codec padding may be cropped.
+func validTiming(source, timeline, decoded int64) bool {
+	return timeline >= source-20 && timeline <= source+20 && decoded >= timeline && decoded-timeline <= 20
+}
+
+func decodeWave(ctx context.Context, input *os.File) (wave, error) {
+	c := command(ctx, "ffmpeg", []*os.File{input}, "-nostdin", "-v", "error", "-xerror", "-threads", "1", "-filter_threads", "1", "-protocol_whitelist", "file,pipe", "-format_whitelist", "wav,mp3,flac,ogg,mov,matroska,webm,aac,aiff,asf", "-i", "/proc/self/fd/3", "-map", "0:a:0", "-vn", "-sn", "-dn", "-ac", "1", "-ar", "48000", "-threads", "1", "-f", "f32le", "pipe:1")
+	var diagnostic bounded
+	c.Stderr = &diagnostic
+	pipe, e := c.StdoutPipe()
+	if e != nil {
+		return wave{}, e
+	}
+	if e = c.Start(); e != nil {
+		return wave{}, e
+	}
+	w, readErr := readWave(pipe)
+	if readErr != nil {
+		_ = c.Process.Kill()
+	}
+	e = c.Wait()
+	if e != nil {
+		return wave{}, decodeError(e, diagnostic)
+	}
+	if readErr != nil {
+		return wave{}, &mediaError{"decode_failed"}
+	}
+	return w, nil
+}
+
+func decodeError(e error, diagnostic bounded) error {
+	// Classify temporary I/O failures in source decode as well as conversion.
+	// Diagnostics never enter API errors or logs.
+	for _, temporary := range []string{"No space left on device", "Input/output error", "Permission denied", "failed to execute"} {
+		if strings.Contains(string(diagnostic.data), temporary) {
+			return e
+		}
+	}
+	return &mediaError{"decode_failed"}
 }

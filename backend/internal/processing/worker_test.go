@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
@@ -176,6 +177,7 @@ func TestClaimLimitsRecoveryAndFencing(t *testing.T) {
 		t.Fatal("server limit", j, e)
 	}
 	f.exec(`UPDATE jobs SET lease_until=NULL WHERE id=?`, one.id)
+	delete(f.r.active, one.song) // Simulate the old process exiting before recovery.
 	recovered := f.claim()
 	if recovered.id != one.id || recovered.attempt != 2 {
 		t.Fatal("recovery", recovered)
@@ -299,12 +301,14 @@ func TestRetryExhaustionAndShutdown(t *testing.T) {
 	}
 	for n := 2; n <= 3; n++ {
 		f.exec(`UPDATE jobs SET lease_until=NULL WHERE id=?`, j.id)
+		delete(f.r.active, j.song) // Interrupted process has exited.
 		claimed = f.claim()
 		if claimed.attempt != n {
 			t.Fatal(claimed)
 		}
 	}
 	f.exec(`UPDATE jobs SET lease_until=NULL WHERE id=?`, j.id)
+	delete(f.r.active, j.song)
 	if got, e := f.r.claim(context.Background()); e != nil || got != nil {
 		t.Fatal(got, e)
 	}
@@ -585,4 +589,187 @@ func fixtureFFmpeg() string {
 		return binary
 	}
 	return "ffmpeg"
+}
+
+func TestSourceDurationBeforePublication(t *testing.T) {
+	for _, limit := range []string{"0.1", "0.329", "0.330"} {
+		t.Run(limit, func(t *testing.T) {
+			f := setup(t)
+			j := f.add("wav")
+			real, e := exec.LookPath("ffmpeg")
+			if e != nil {
+				t.Fatal(e)
+			}
+			dir := t.TempDir()
+			// Fault injection: FFmpeg exits successfully with valid but shortened AAC.
+			script := `#!/bin/sh
+case "$*" in
+  *aac_low*) exec "$CHORAL_TEST_REAL_FFMPEG" -t "$CHORAL_TEST_LIMIT" "$@" ;;
+  *) exec "$CHORAL_TEST_REAL_FFMPEG" "$@" ;;
+esac
+`
+			if e = os.WriteFile(filepath.Join(dir, "ffmpeg"), []byte(script), 0700); e != nil {
+				t.Fatal(e)
+			}
+			t.Setenv("CHORAL_TEST_REAL_FFMPEG", real)
+			t.Setenv("CHORAL_TEST_LIMIT", limit)
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			f.r.process(context.Background(), f.claim())
+
+			want := "failed"
+			if limit == "0.330" {
+				want = "succeeded"
+			} // Exactly 20 ms shorter.
+			if f.str(`SELECT state FROM jobs WHERE id=?`, j.id) != want {
+				t.Fatal("incorrect source-duration decision", limit)
+			}
+			if limit != "0.330" {
+				if f.str(`SELECT error_code FROM jobs WHERE id=?`, j.id) != "invalid_result" || !f.exists(j.source) {
+					t.Fatal("short successful result must preserve original")
+				}
+				if f.str(`SELECT COALESCE(active_asset_id,'') FROM tracks WHERE id=?`, j.track) != "" {
+					t.Fatal("short result activated")
+				}
+			} else if f.exists(j.source) {
+				t.Fatal("verified result did not release original")
+			}
+		})
+	}
+}
+
+func TestPaddingBoundaryBeforePublication(t *testing.T) {
+	for _, padding := range []int64{20, 21, 22} {
+		t.Run(fmt.Sprint(padding), func(t *testing.T) {
+			f := setup(t)
+			j := f.add("wav")
+			// Discover actual decoded length, then inject only the edit-list
+			// duration. Conversion and PCM/peaks remain real in all cases.
+			stage, peaks := "stage-"+users.ID(), "stage-"+users.ID()
+			if _, e := f.r.convert(context.Background(), j.source, stage, peaks); e != nil {
+				t.Fatal(e)
+			}
+			file, e := f.store.Open(context.Background(), stage)
+			if e != nil {
+				t.Fatal(e)
+			}
+			w, e := decodeWave(context.Background(), file.(*os.File))
+			file.Close()
+			if e != nil {
+				t.Fatal(e)
+			}
+			dir := t.TempDir()
+			metadata := fmt.Sprintf(`{"streams":[{"codec_type":"audio","codec_name":"aac","profile":"LC","sample_rate":"48000","channels":1,"start_time":"0","duration":"%.3f"}]}`, float64(w.Duration-padding)/1000)
+			if e = os.WriteFile(filepath.Join(dir, "ffprobe"), []byte("#!/bin/sh\nprintf '%s' '"+metadata+"'\n"), 0700); e != nil {
+				t.Fatal(e)
+			}
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			f.r.process(context.Background(), f.claim())
+			want := "failed"
+			if padding == 20 {
+				want = "succeeded"
+			}
+			if state := f.str(`SELECT state FROM jobs WHERE id=?`, j.id); state != want {
+				t.Fatal(state, want)
+			}
+			if f.exists(j.source) != (padding > 20) {
+				t.Fatal("incorrect original deletion order")
+			}
+		})
+	}
+}
+
+func TestCanceledConversionHoldsSongSlot(t *testing.T) {
+	f := setup(t)
+	a := f.add("wav")
+	b := f.add("wav")
+	f.exec(`UPDATE tracks SET song_id=?,position=1 WHERE id=?`, a.song, b.track)
+	c := f.add("wav")
+	f.exec(`UPDATE jobs SET created_at='2000' WHERE id=?`, a.id)
+	claimed := f.claim()
+	real, e := exec.LookPath("ffmpeg")
+	if e != nil {
+		t.Fatal(e)
+	}
+	dir := t.TempDir()
+	marker, release := filepath.Join(dir, "started"), filepath.Join(dir, "release")
+	script := `#!/bin/sh
+case "$*" in
+  *aac_low*)
+    touch "$CHORAL_TEST_MARKER"
+    while [ ! -f "$CHORAL_TEST_RELEASE" ]; do sleep 0.01; done ;;
+esac
+exec "$CHORAL_TEST_REAL_FFMPEG" "$@"
+`
+	if e = os.WriteFile(filepath.Join(dir, "ffmpeg"), []byte(script), 0700); e != nil {
+		t.Fatal(e)
+	}
+	t.Setenv("CHORAL_TEST_REAL_FFMPEG", real)
+	t.Setenv("CHORAL_TEST_MARKER", marker)
+	t.Setenv("CHORAL_TEST_RELEASE", release)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	done := make(chan struct{})
+	go func() { f.r.process(context.Background(), claimed); close(done) }()
+	defer func() { _ = os.WriteFile(release, nil, 0600); <-done }()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, e = os.Stat(marker); e == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("conversion never started")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// Persist the same tombstone/cancellation transitions as songs.retire.
+	f.exec(`UPDATE tracks SET deleted_at=?,pending_asset_id=NULL WHERE id=?`, stamp(time.Now()), a.track)
+	f.exec(`UPDATE assets SET state='retired' WHERE id=?`, a.asset)
+	f.exec(`UPDATE jobs SET state='canceled',lease_until=NULL WHERE id=?`, a.id)
+	other := f.claim()
+	if other.id != c.id {
+		t.Fatal("same-song job admitted before subprocess exit", other)
+	}
+	if next, e := f.r.claim(context.Background()); e != nil || next != nil {
+		t.Fatal("server subprocess limit exceeded", next, e)
+	}
+	if e = os.WriteFile(release, nil, 0600); e != nil {
+		t.Fatal(e)
+	}
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("conversion did not exit")
+	}
+	if !f.exists(a.source) || f.str(`SELECT COALESCE(active_asset_id,'') FROM tracks WHERE id=?`, a.track) != "" {
+		t.Fatal("canceled asset published/lost original")
+	}
+	next := f.claim()
+	if next.id != b.id {
+		t.Fatal("waiting track not admitted", next)
+	}
+	f.r.process(context.Background(), next)
+	if f.str(`SELECT state FROM jobs WHERE id=?`, b.id) != "succeeded" {
+		t.Fatal("waiting conversion failed")
+	}
+	f.r.process(context.Background(), other)
+}
+
+func TestSourceDecodeIOFailureRetries(t *testing.T) {
+	f := setup(t)
+	j := f.add("wav")
+	dir := t.TempDir()
+	if e := os.WriteFile(filepath.Join(dir, "ffmpeg"), []byte("#!/bin/sh\nprintf 'Input/output error' >&2\nexit 1\n"), 0700); e != nil {
+		t.Fatal(e)
+	}
+	path := os.Getenv("PATH")
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+path)
+	f.r.process(context.Background(), f.claim())
+	if f.str(`SELECT state FROM jobs WHERE id=?`, j.id) != "queued" || f.str(`SELECT error_code FROM jobs WHERE id=?`, j.id) != "storage_error" || !f.exists(j.source) {
+		t.Fatal("source I/O failure lost retry/original")
+	}
+	t.Setenv("PATH", path)
+	f.exec(`UPDATE jobs SET lease_until=NULL WHERE id=?`, j.id)
+	f.r.process(context.Background(), f.claim())
+	if f.str(`SELECT state FROM jobs WHERE id=?`, j.id) != "succeeded" || f.exists(j.source) {
+		t.Fatal("source decode retry failed")
+	}
 }
