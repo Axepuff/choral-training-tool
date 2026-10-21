@@ -812,3 +812,61 @@ exec "$CHORAL_TEST_REAL_FFMPEG" "$@"
 		})
 	}
 }
+
+func TestResultProbeFailureRetries(t *testing.T) {
+	for _, phase := range []string{"io", "process", "invalid_json", "invalid_metadata"} {
+		t.Run(phase, func(t *testing.T) {
+			f := setup(t)
+			old := f.add("wav")
+			f.r.process(context.Background(), f.claim())
+			oldKey := f.str(`SELECT playback_path FROM assets WHERE id=?`, old.asset)
+			j := f.add("flac")
+			f.exec(`UPDATE tracks SET pending_asset_id=NULL WHERE id=?`, j.track)
+			f.exec(`UPDATE assets SET track_id=? WHERE id=?`, old.track, j.asset)
+			f.exec(`UPDATE tracks SET pending_asset_id=? WHERE id=?`, j.asset, old.track)
+			dir := t.TempDir()
+			marker := filepath.Join(dir, "fault")
+			t.Setenv("CHORAL_TEST_MARKER", marker)
+			diagnostic := ""
+			if phase == "io" {
+				diagnostic = "Input/output error"
+			}
+			script := "#!/bin/sh\ntouch \"$CHORAL_TEST_MARKER\"\nprintf '%s' '" + diagnostic + "' >&2\nexit 1\n"
+			if phase == "invalid_json" || phase == "invalid_metadata" {
+				payload := "invalid JSON"
+				if phase == "invalid_metadata" {
+					payload = `{"streams":[]}`
+				}
+				script = "#!/bin/sh\ntouch \"$CHORAL_TEST_MARKER\"\nprintf '%s' '" + payload + "'\n"
+			}
+			if e := os.WriteFile(filepath.Join(dir, "ffprobe"), []byte(script), 0700); e != nil {
+				t.Fatal(e)
+			}
+			path := os.Getenv("PATH")
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+path)
+			f.r.process(context.Background(), f.claim())
+			wantState, wantCode := "queued", "storage_error"
+			if strings.HasPrefix(phase, "invalid_") {
+				wantState, wantCode = "failed", "invalid_result"
+			}
+			if f.str(`SELECT state FROM jobs WHERE id=?`, j.id) != wantState || f.str(`SELECT error_code FROM jobs WHERE id=?`, j.id) != wantCode || !f.exists(j.source) {
+				t.Fatal("I/O failure lost retry/original")
+			}
+			if _, e := os.Stat(marker); e != nil {
+				t.Fatal("result probe fault not reached", e)
+			}
+			if !f.exists(oldKey) || f.str(`SELECT active_asset_id FROM tracks WHERE id=?`, old.track) != old.asset {
+				t.Fatal("old active asset lost on result probe failure")
+			}
+			if wantState == "failed" {
+				return
+			}
+			t.Setenv("PATH", path)
+			f.exec(`UPDATE jobs SET lease_until=NULL WHERE id=?`, j.id)
+			f.r.process(context.Background(), f.claim())
+			if f.str(`SELECT state FROM jobs WHERE id=?`, j.id) != "succeeded" || f.exists(j.source) || f.str(`SELECT attempts FROM jobs WHERE id=?`, j.id) != "2" || f.str(`SELECT active_asset_id FROM tracks WHERE id=?`, old.track) != j.asset || !f.exists(oldKey) {
+				t.Fatal("result probe retry failed or old playback grace lost")
+			}
+		})
+	}
+}

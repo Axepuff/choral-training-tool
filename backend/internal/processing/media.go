@@ -126,6 +126,8 @@ func verify(ctx context.Context, f *os.File) (int64, error) {
 		if ctx.Err() != nil {
 			return 0, ctx.Err()
 		}
+		// Process failures are infrastructure errors and remain retryable.
+		// Only successfully read but invalid metadata is a terminal result.
 		return 0, e
 	}
 	var v struct {
@@ -140,16 +142,16 @@ func verify(ctx context.Context, f *os.File) (int64, error) {
 		}
 	}
 	if e := json.Unmarshal(out.data, &v); e != nil {
-		return 0, e
+		return 0, &mediaError{"invalid_result"}
 	}
 	if len(v.Streams) != 1 {
-		return 0, errors.New("invalid streams")
+		return 0, &mediaError{"invalid_result"}
 	}
 	s := v.Streams[0]
 	d, e := strconv.ParseFloat(s.Duration, 64)
 	start, se := strconv.ParseFloat(s.Start, 64)
 	if e != nil || se != nil || math.IsNaN(d) || math.IsInf(d, 0) || d <= 0 || d > 1200 || math.Abs(start) > 0.001 || s.Type != "audio" || s.Codec != "aac" || s.Profile != "LC" || s.Rate != "48000" || s.Channels != 1 {
-		return 0, errors.New("invalid playback metadata")
+		return 0, &mediaError{"invalid_result"}
 	}
 	return int64(math.Round(d * 1000)), nil
 }

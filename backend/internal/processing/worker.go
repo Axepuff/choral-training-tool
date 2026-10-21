@@ -210,7 +210,7 @@ func (r *Runner) convert(ctx context.Context, source, out, peaks string) (int64,
 		if errors.Is(e, context.DeadlineExceeded) {
 			return 0, &mediaError{"processing_timeout"}
 		}
-		return 0, &mediaError{"invalid_result"}
+		return 0, e
 	}
 	w, e := decodeWave(ctx, output)
 	if e != nil {
