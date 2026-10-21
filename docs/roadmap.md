@@ -62,3 +62,10 @@ docs/authentication.md и саму Issue с её зависимостями.
 Правила новых чатов и субагентов: [agent-workflow.md](agent-workflow.md).
 Последовательная локальная очередь с автоматическим ревью/merge: [local-automation.md](local-automation.md).
 Текущее состояние макетов: [handoff.md](handoff.md).
+
+## Локальный результат Issue #4
+
+Реализованы Go auth/identity/authorizer, bootstrap и восстановление оператора,
+смена/сброс временного пароля и поведенческие HTTP/SQLite тесты. Это не означает
+завершения #9 (подключение frontend) или #13 (CRUD/UI аккаунтов). Commit/PR/merge
+этого результата выполняет контроллер очереди.

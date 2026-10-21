@@ -1,8 +1,8 @@
 # Каркас backend (Issue #3)
 
-Frontend остаётся в корне и сохраняет согласованный дизайн. Go-сервис пока
-обслуживает только `GET /livez` и `GET /readyz`; остальные URL возвращают 404,
-без мок-успеха. Login, songs, storage и worker реализуются следующими задачами.
+Frontend остаётся в корне и сохраняет согласованный дизайн. Go-сервис обслуживает `GET /livez`, `GET /readyz` и auth endpoints Issue #4
+(описаны ниже); songs, storage и worker реализуются следующими задачами.
+Не реализованные URL возвращают 404 без мок-успеха.
 Pages публикует только статический UI и не запускает backend.
 
 ## Toolchain и запуск
@@ -131,3 +131,116 @@ reconnect, rollback, повреждение БД, readiness, редактиро�
 Бинарник отдельно запущен на пустой БД, проверен `/readyz`, остановлен SIGTERM
 с кодом 0 и повторно запущен с тем же каталогом. UI-код не менялся;
 браузерные play-проверки stories здесь не запускались.
+
+## Авторизация (Issue #4)
+
+Сервер теперь подключает реальные `POST /api/v1/auth/login`, `GET /api/v1/auth/me`,
+`POST /api/v1/auth/logout`, `PUT /api/v1/auth/password` и
+`PUT /api/v1/admin/users/{userId}/password`. CRUD аккаунтов/UI остаются #13;
+первоначальный teacher создаётся оператором. Frontend подключается отдельно в #9.
+Пакеты: `internal/auth`, `internal/users`. Таблицы users/sessions из foundation
+используются без изменения; новая миграция **0002_auth.sql** принадлежит #4 и
+добавляет только устойчивый limiter и индекс sessions. Следующим миграциям нужен
+следующий свободный номер. Принятый `0001_initial.sql` не изменён.
+
+Для production задайте `CHORAL_ORIGIN=https://ваш-домен` (без пути и конечного `/`).
+По умолчанию `https://localhost`. Origin сравнивается с конфигурацией, а не с Host
+или `X-Forwarded-*`; CORS не включён. TLS может завершаться на доверенном proxy.
+Для HTTP **только локально** нужны одновременно:
+
+```sh
+export CHORAL_ADDR=127.0.0.1:8080
+export CHORAL_ORIGIN=http://127.0.0.1:8080
+export CHORAL_LOCAL_HTTP=true
+```
+
+Сервер откажет при нелокальном listener или нелокальном HTTP origin. Local-cookie
+называется `choral_session_local` и только в этом режиме не имеет Secure;
+production-cookie `__Host-choral_session` всегда Secure/HttpOnly/SameSite=Lax/Path=/,
+без Domain. Флаг local нельзя включать на опубликованном сервере.
+
+Сессии имеют абсолютный срок 7 суток без продления. Cookie ID — случайные 32 байта;
+в SQLite только SHA-256. CSRF вычисляется HMAC-SHA256 от cookie ID с меткой
+`choral-csrf-v1`, в БД только его hash: `/auth/me` восстанавливает тот же токен без
+хранения открытого секрета. Login ротирует предъявленную сессию транзакционно;
+смена/сброс пароля отзывает все сессии и требует нового входа (204). Все аккаунты,
+созданные CLI, требуют смены временного пароля. До смены доступны только me,
+password, logout. Неверные/заблокированные учётные данные дают одинаковый 401.
+После пяти неуспешных входов IP/email блокируется на 15 минут: следующая попытка
+получает 429 с Retry-After. Лимит сохраняется после рестарта; успех сбрасывает
+счётчик пары. IP берётся из RemoteAddr, proxy-заголовкам сервер не доверяет.
+За proxy все клиенты могут иметь один IP; это консервативное ограничение для MVP.
+Истёкшие limiter-записи очищаются при следующих попытках входа.
+
+Argon2id: 64 MiB, 3 прохода, parallelism 1, соль 16 байт, hash 32 байта;
+`x/crypto` нужен для Argon2id, `x/text` — для NFC email. Email приводится к NFC,
+trim + lower-case всего адреса; пароль не нормализуется и не обрезается,
+12–128 Unicode scalar values. HTTP JSON ограничен 8 KiB, неизвестные поля,
+невалидный UTF-8 и одиночные surrogate отвергаются. Логи не содержат URL, тела,
+email, паролей, cookie и CSRF.
+
+### Локальные команды оператора
+
+```sh
+cd backend
+go build -o /tmp/choral-accounts ./cmd/accounts
+# CHORAL_DATA_DIR должен указывать на тот же каталог, что у сервера.
+# В Bash: ввод без эха, пароль не попадает в argv или историю команд.
+IFS= read -r -s -p 'Временный пароль: ' choral_password
+printf '%s\n' "$choral_password" | /tmp/choral-accounts bootstrap admin@example.test
+unset choral_password
+```
+
+Для начального учителя повторите защищённый ввод и замените последнюю команду на
+`/tmp/choral-accounts create-teacher teacher@example.test`. Bootstrap допускается
+только при полностью пустой users; повторный вызов ничего не меняет. Создание
+teacher требует существования активного admin. При потере доступа к единственному
+admin используйте `/tmp/choral-accounts reset-admin` с тем же защищённым stdin:
+пароль заменяется, сессии отзываются, блокировка снимается, нужна смена при входе.
+При нескольких admin команда отказывается выбирать аккаунт. Прямое чтение с
+терминала запрещено во избежание эха; stdin принимает pipe или файл без прав
+группы/остальных (0600). Не используйте литералы настоящих паролей в shell-командах,
+Git, URL или env. Удаляется ровно один завершающий LF/CRLF транспорта.
+Передавайте временный пароль адресату по отдельному защищённому каналу.
+
+### Контракт для следующих backend-пакетов
+
+`auth.Service` реализует `platform.IdentityProvider` и `platform.Authorizer`.
+Сначала вызывайте `Authenticate(ctx, request)`, затем нужный `Can*`; роль/owner из
+JSON/query не являются identity. `ErrUnauthorized` означает 401, `ErrCSRF` —
+403 csrf_failed, `ErrPasswordChange` — 403 password_change_required. Ошибки БД
+не должны превращаться в успех. Authorizer повторно проверяет актуальную роль,
+сессию, блокировку, срок и обязательную смену пароля; подмена Role в Identity
+не расширяет доступ. ShareGrant должен поступать только из проверенного sharing
+пакета (#6), публичные endpoints не должны расширять grant через cookie identity.
+Для media дополнительно проверяйте ready, даже если admin может читать метаданные.
+Не вызывайте DB-based authorizer внутри уже открытой транзакции этого же пула
+(один connection); проверяйте identity до неё, а изменяемые инварианты — внутри.
+`users.SetPassword` принимает транзакцию вызывающего API для атомарного отзыва;
+`users.SetBlocked` блокирует и отзывает сессии атомарно, защищая последнего admin.
+HTTP CRUD/смена ролей и UI аккаунтов не входят в эту задачу.
+
+### Поведенческие проверки #4
+
+```sh
+cd backend
+go test ./...
+go test -race ./...
+go vet ./...
+go build -o /tmp/choral-server ./cmd/server
+go build -o /tmp/choral-accounts ./cmd/accounts
+```
+
+Тесты используют временные SQLite и вымышленные секреты: вход/единая ошибка,
+постоянный limiter после закрытия/открытия БД, CSRF/Origin, cookie, ротация,
+logout/expiry/revocation, блокировка, роль/owner/share scope, смена временного
+пароля, reset admin, конкурентный и повторный bootstrap, операторские команды,
+Unicode и отсутствие секретов в HTTP-логах. Проверка схемы foundation также
+проверяет применение двух миграций и повторное открытие базы.
+
+Проверено в локальной среде Issue #4: `go test ./...`, `go test -race ./...`,
+`go vet ./...`, `go mod verify`, сборка обоих CLI/server binary; запуск binary
+с временной БД и цепочка bootstrap → teacher → login/me → password → новый
+login → logout. Также прошли `npm ci`, typecheck, lint, build, build-storybook,
+`node scripts/assemble-pages.mjs`. Браузерные play-проверки не запускались:
+frontend-код и дизайн в #4 не менялись.

@@ -52,9 +52,12 @@ type Service struct {
 	timeout  time.Duration
 }
 
-func NewService(c Config, db *sql.DB, logger *slog.Logger) *Service {
+func NewService(c Config, db *sql.DB, logger *slog.Logger, register ...func(*http.ServeMux)) *Service {
 	s := &Service{db: db, log: logger, timeout: c.ShutdownTimeout}
 	mux := http.NewServeMux()
+	for _, routes := range register {
+		routes(mux)
+	}
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "alive"}) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
