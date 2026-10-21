@@ -112,7 +112,7 @@ func check(t *testing.T, w *httptest.ResponseRecorder, status int) {
 func audio(t *testing.T, format string) []byte {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "fixture."+format)
-	if b, e := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.1", "-y", p).CombinedOutput(); e != nil {
+	if b, e := exec.Command(fixtureFFmpeg(), "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.1", "-y", p).CombinedOutput(); e != nil {
 		t.Fatalf("fixture: %v %s", e, b)
 	}
 	b, e := os.ReadFile(p)
@@ -440,7 +440,7 @@ func TestNonAudioAndTooLong(t *testing.T) {
 				path = filepath.Join(t.TempDir(), "fixture.mp4")
 				args = []string{"-v", "error", "-f", "lavfi", "-i", "color=size=16x16:duration=0.1", "-an", "-y", path}
 			}
-			if b, e := exec.Command("ffmpeg", args...).CombinedOutput(); e != nil {
+			if b, e := exec.Command(fixtureFFmpeg(), args...).CombinedOutput(); e != nil {
 				t.Fatalf("fixture: %v %s", e, b)
 			}
 			b, e := os.ReadFile(path)
@@ -857,4 +857,13 @@ func TestProcessedUploadPublicMedia(t *testing.T) {
 	}
 	f.exec(`UPDATE shares SET disabled_at='now'`)
 	check(t, f.send(httptest.NewRequest("GET", path+"/media", nil)), 404)
+}
+
+// A minimal deployment build need not include lavfi or fixture encoders.
+// Only generation uses this override; probe/conversion always use PATH binaries.
+func fixtureFFmpeg() string {
+	if binary := os.Getenv("CHORAL_TEST_FIXTURE_FFMPEG"); binary != "" {
+		return binary
+	}
+	return "ffmpeg"
 }

@@ -509,13 +509,16 @@ FFprobe (503 без asset/job), replay после полного повторн�
 ## Обработка аудио (Issue #8)
 
 `internal/processing` подключён к `cmd/server`: после upload recovery, до listener
-проверяются `prlimit`, FFmpeg AAC encoder/decoder и FFprobe. Недоступные инструменты
+проверяются `prlimit`, FFmpeg AAC encoder/decoder, PCM float encoder, MP4/float PCM
+muxers, фильтры resampling/timestamps и FFprobe. Недоступные инструменты
 останавливают запуск (`processing_startup_failed`), queued success не имитируется.
 Linux и util-linux `prlimit` теперь обязательны. На одном data dir разрешён один
 процесс сервиса. При остановке сервер ждёт оба worker слота до закрытия SQLite/FS.
 
 SQLite claim выполняется транзакционно: не более двух processing jobs и одного
-на песню. Lease — 6 минут, wall timeout всей попытки — 5 минут. После рестарта
+на песню. Lease — 6 минут, wall timeout всей попытки — 5 минут. Проверка результата
+FFprobe имеет отдельный лимит 15 секунд; его превышение даёт
+`processing_timeout` с повтором и сохранением original. После рестарта
 processing leases сбрасываются до listener, оригиналы сохраняются, попытка
 повторяется с новым fencing number (`attempts`). Просроченные leases восстанавливает
 также poll. Максимум три попытки (первая и два повтора); временный отказ Storage/
@@ -579,11 +582,41 @@ crash stages и артефакты без committed ссылок; referenced ori
 raw AAC/ADTS, ASF/WMA, WebM Opus. Тесты генерируют синтетический stereo 44.1 kHz
 сигнал и проверяют настоящий mono/48 kHz AAC-LC, duration и непустые peaks.
 Поддержка определяется decoder/demuxer конкретной сборки, а не расширением.
-Среда этой проверки: **FFmpeg/FFprobe 6.1.1-3ubuntu5**, Go **1.27.3**. Историческое
-упоминание 7.1.5 в handoff не описывает установленный binary. Deployment baseline
-ADR остаётся **7.1.x**: этот binary здесь отсутствует, поэтому совместимость именно
-production-сборки 7.1.x должна быть подтверждена теми же тестами в #14; проверка
-capabilities при запуске не заменяет её. Новых Go/npm зависимостей нет.
+Проверяются системная **FFmpeg/FFprobe 6.1.1-3ubuntu5** и локальная сборка
+**7.1.5** (deployment baseline ADR — 7.1.x), Go **1.27.3**. Важно проверять
+конкретную конфигурацию, а не только версию: первоначальная минимальная сборка
+7.1.5 имела AAC, но не float PCM muxer, поэтому не могла формировать peaks.
+Worker теперь отклоняет такую сборку до listener. В configure этот muxer
+называется `pcm_f32le`, хотя CLI использует `-f f32le`. Для production в #14
+следует повторить набор проверок с поставляемыми binary. Новых зависимостей нет.
+
+Минимальная конфигурация проверяемой 7.1.5 (Linux, util-linux `prlimit`):
+
+```sh
+./configure --disable-everything --disable-doc --disable-debug --disable-x86asm \
+  --enable-protocol=file,pipe \
+  --enable-demuxer=wav,mp3,flac,ogg,mov,matroska,aac,aiff,asf \
+  --enable-decoder=aac,flac,mp3,mp3float,pcm_s16le,pcm_s16be,vorbis,opus,wmav2 \
+  --enable-encoder=aac,pcm_f32le --enable-muxer=mp4,pcm_f32le \
+  --enable-filter=aresample,asetpts,aformat,anull
+make -j2
+```
+
+Запуск полного backend набора с этой сборкой, после помещения её ffmpeg/ffprobe
+в `/tmp/choral-ffmpeg71-bin`:
+
+```sh
+cd backend
+PATH=/tmp/choral-ffmpeg71-bin:/tmp/choral-toolchain/go/bin:$PATH \
+  CHORAL_TEST_FIXTURE_FFMPEG=/usr/bin/ffmpeg \
+  GOCACHE=/tmp/choral-gocache GOPATH=/tmp/choral-gopath \
+  go test -count=1 ./...
+```
+
+`CHORAL_TEST_FIXTURE_FFMPEG` действует только на генерацию синтетических файлов
+в тестах (ей нужны lavfi и дополнительные encoders). Probe, worker, проверка
+результата и peaks используют проверяемую сборку из PATH. В приложении этого
+параметра нет; при обычном тестировании генерация тоже использует PATH.
 
 Поведенческие проверки #8: настоящая конвертация девяти форматов; лимиты claim
 server/song; fencing повторной попытки; corrupt input, настоящий wall timeout,
@@ -594,3 +627,8 @@ active asset и source при каждом отказе; успешный retry,
 FLAC; startup recovery удаляет leftovers, повтор обрабатывает тот же original и
 только после успеха удаляет его. Upload integration использует реальные auth,
 SQLite, FS, worker и public GET/HEAD/Range/peaks без готовых asset fixtures.
+
+Дополнительные проверки: сохранение начальной тишины и исходного уровня сигнала,
+отказ FFprobe для настоящего PCM вместо playback AAC, зависший result probe
+(15 секунд, original остаётся, последующий retry успешен), отказ старта при
+отсутствующем float PCM muxer. Job error codes согласованы с OpenAPI.

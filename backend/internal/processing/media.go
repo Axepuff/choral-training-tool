@@ -43,7 +43,16 @@ func (b *bounded) Write(p []byte) (int, error) {
 func CheckTools(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	for _, spec := range []struct{ name, flag, want string }{{"ffmpeg", "-encoders", " aac "}, {"ffmpeg", "-decoders", " aac "}, {"ffprobe", "-version", "ffprobe version"}} {
+	for _, spec := range []struct{ name, flag, want string }{
+		{"ffmpeg", "-encoders", " aac "},
+		{"ffmpeg", "-encoders", " pcm_f32le "},
+		{"ffmpeg", "-decoders", " aac "},
+		{"ffmpeg", "-muxers", " mp4 "},
+		{"ffmpeg", "-muxers", " f32le "},
+		{"ffmpeg", "-filters", " aresample "},
+		{"ffmpeg", "-filters", " asetpts "},
+		{"ffprobe", "-version", "ffprobe version"},
+	} {
 		var out bounded
 		c := command(ctx, spec.name, nil, "-v", "error", spec.flag)
 		c.Stdout = &out
@@ -51,7 +60,7 @@ func CheckTools(ctx context.Context) error {
 			return e
 		}
 		if !strings.Contains(string(out.data), spec.want) {
-			return errors.New("required AAC tools unavailable")
+			return errors.New("required audio processing capability unavailable")
 		}
 	}
 	return nil
@@ -108,10 +117,15 @@ func readWave(r io.Reader) (wave, error) {
 }
 
 func verify(ctx context.Context, f *os.File) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	var out bounded
 	c := command(ctx, "ffprobe", []*os.File{f}, "-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "format=duration:stream=codec_type,codec_name,profile,sample_rate,channels,start_time,duration", "-of", "json", "/proc/self/fd/3")
 	c.Stdout = &out
 	if e := c.Run(); e != nil {
+		if ctx.Err() != nil {
+			return 0, ctx.Err()
+		}
 		return 0, e
 	}
 	var v struct {

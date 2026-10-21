@@ -143,8 +143,10 @@ func (s *Store) Remove(_ context.Context, key string) error {
 // CreateStage gives the worker a seekable output descriptor, never a user path.
 // The caller must Sync and Close it before Publish.
 func (s *Store) CreateStage(key string) (*os.File, error) {
- if s.valid(key) != nil || !strings.HasPrefix(key, "stage-") { return nil, errors.New("invalid stage") }
- return s.root.OpenFile(key, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
+	if s.valid(key) != nil || !strings.HasPrefix(key, "stage-") {
+		return nil, errors.New("invalid stage")
+	}
+	return s.root.OpenFile(key, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
 }
 
 // Recover runs before serving requests, in the single service process. Referenced

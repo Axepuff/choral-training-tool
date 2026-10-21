@@ -189,6 +189,9 @@ func (r *Runner) convert(ctx context.Context, source, out, peaks string) (int64,
 	}
 	duration, e := verify(ctx, output)
 	if e != nil {
+		if errors.Is(e, context.DeadlineExceeded) {
+			return 0, &mediaError{"processing_timeout"}
+		}
 		return 0, &mediaError{"invalid_result"}
 	}
 	c = command(ctx, "ffmpeg", []*os.File{output}, "-nostdin", "-v", "error", "-xerror", "-threads", "1", "-protocol_whitelist", "file,pipe", "-i", "/proc/self/fd/3", "-map", "0:a:0", "-ac", "1", "-ar", "48000", "-threads", "1", "-f", "f32le", "pipe:1")

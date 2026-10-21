@@ -103,6 +103,6 @@ Commit/PR/merge выполняет контроллер очереди.
 Реализованы SQLite worker/lease/retry, bounded FFmpeg, настоящие playback и peaks,
 атомарная замена active asset и cleanup после commit с grace/failed retention.
 Поведенческие проверки включают SIGKILL/restart во время реальной обработки и
-upload → worker → public media. Проверены Go 1.27.3 и FFmpeg 6.1.1; целевую
-сборку FFmpeg 7.1.x необходимо проверить в среде #14. Документация:
+upload → worker → public media. Проверены Go 1.27.3, FFmpeg 6.1.1 и локальная сборка 7.1.5;
+поставляемые binary нужно повторно проверить в среде #14. Документация:
 [backend.md](backend.md#обработка-аудио-issue-8). Commit/PR/merge — контроллеру.
