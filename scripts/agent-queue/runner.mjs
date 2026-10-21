@@ -224,7 +224,10 @@ export class Runner {
     const args = ['exec', '--ignore-user-config', '--ephemeral', '--color', 'never',
       '--sandbox', review ? 'read-only' : 'workspace-write',
       '-c', 'model_provider="openai"', '-c', 'forced_login_method="chatgpt"',
-      '-c', 'approval_policy="never"', '-c', 'mcp_servers.choral_storybook.enabled=false',
+      '-c', 'approval_policy="never"',
+      // Disabled entries still need a transport when project config is unavailable.
+      '-c', 'mcp_servers.choral_storybook.url="http://127.0.0.1:6006/mcp"',
+      '-c', 'mcp_servers.choral_storybook.enabled=false',
       '-c', `sandbox_workspace_write.network_access=${!review}`,
       '-c', 'shell_environment_policy.exclude=["*TOKEN*","*SECRET*","*PASSWORD*","*API_KEY*","*COOKIE*"]',
       '--output-last-message', last];

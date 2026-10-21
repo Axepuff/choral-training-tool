@@ -195,10 +195,28 @@ npm run agent:queue -- --unlock
 Живой процесс не позволяет снять свой lock. Не удаляйте lock или state во время
 работы. Не переключайте ветки в этом clone вручную без остановки очереди.
 
+Если в логе Codex есть `invalid transport` в `mcp_servers.choral_storybook`,
+обновите очередь до исправления из `main`: CLI требует URL даже у отключённого MCP.
+При остановленной очереди и чистом рабочем дереве выполните **в текущей ветке
+задачи**, сохраняя `.git/choral-queue/state.json`:
+
+```sh
+git status --short
+git fetch origin +refs/heads/main:refs/remotes/origin/main
+git merge --no-edit origin/main
+npm run test:agent-cli
+npm run agent:queue -- --once
+```
+
+Продолжайте после `git status --short`, только если вывод пустой. Если есть правки —
+сначала просмотрите и сохраните их коммитом. Переключение на `main` и удаление state
+для этого обновления не требуются. Storybook для очереди запускать не нужно.
+
 ## Проверка самой автоматизации
 
 ```sh
 npm run test:agent-queue
+npm run test:agent-cli
 npm run agent:queue -- --dry-run
 ```
 
@@ -207,6 +225,12 @@ npm run agent:queue -- --dry-run
 настоящие задачи. Dry-run проверяет чтение реального backlog. Первый реальный
 вызов Codex нужно проверить на вашем компьютере после входа; облачные тесты
 не подтверждают вход в ваш локальный аккаунт.
+
+`test:agent-cli` отдельно требует установленный Codex CLI. Он проверяет реальные
+аргументы реализации и ревью на пустой временной конфигурации с заведомо неизвестным
+provider. Ожидаемый отказ происходит до авторизации и inference; модель не вызывается.
+Контрольный сценарий воспроизводит исходный `invalid transport` без URL. Проверено
+на Codex CLI 0.159.2 и 0.163.0; эта проверка не подтверждает доступность самой модели.
 
 Документация: [Codex CLI и ChatGPT login](https://github.com/openai/codex#signing-in-with-your-chatgpt-account),
 [Codex non-interactive](https://developers.openai.com/codex/noninteractive),
