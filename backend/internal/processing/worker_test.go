@@ -753,23 +753,62 @@ exec "$CHORAL_TEST_REAL_FFMPEG" "$@"
 	f.r.process(context.Background(), other)
 }
 
-func TestSourceDecodeIOFailureRetries(t *testing.T) {
-	f := setup(t)
-	j := f.add("wav")
-	dir := t.TempDir()
-	if e := os.WriteFile(filepath.Join(dir, "ffmpeg"), []byte("#!/bin/sh\nprintf 'Input/output error' >&2\nexit 1\n"), 0700); e != nil {
-		t.Fatal(e)
-	}
-	path := os.Getenv("PATH")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+path)
-	f.r.process(context.Background(), f.claim())
-	if f.str(`SELECT state FROM jobs WHERE id=?`, j.id) != "queued" || f.str(`SELECT error_code FROM jobs WHERE id=?`, j.id) != "storage_error" || !f.exists(j.source) {
-		t.Fatal("source I/O failure lost retry/original")
-	}
-	t.Setenv("PATH", path)
-	f.exec(`UPDATE jobs SET lease_until=NULL WHERE id=?`, j.id)
-	f.r.process(context.Background(), f.claim())
-	if f.str(`SELECT state FROM jobs WHERE id=?`, j.id) != "succeeded" || f.exists(j.source) {
-		t.Fatal("source decode retry failed")
+func TestDecodeIOFailureRetries(t *testing.T) {
+	for _, phase := range []string{"source", "playback"} {
+		t.Run(phase, func(t *testing.T) {
+			f := setup(t)
+			old := f.add("wav")
+			f.r.process(context.Background(), f.claim())
+			oldKey := f.str(`SELECT playback_path FROM assets WHERE id=?`, old.asset)
+			j := f.add("flac")
+			f.exec(`UPDATE tracks SET pending_asset_id=NULL WHERE id=?`, j.track)
+			f.exec(`UPDATE assets SET track_id=? WHERE id=?`, old.track, j.asset)
+			f.exec(`UPDATE tracks SET pending_asset_id=? WHERE id=?`, j.asset, old.track)
+			real, e := exec.LookPath("ffmpeg")
+			if e != nil {
+				t.Fatal(e)
+			}
+			dir := t.TempDir()
+			marker := filepath.Join(dir, "fault")
+			t.Setenv("CHORAL_TEST_REAL_FFMPEG", real)
+			t.Setenv("CHORAL_TEST_MARKER", marker)
+			t.Setenv("CHORAL_TEST_PHASE", phase)
+			script := `#!/bin/sh
+case " $* " in
+ *" -f f32le "*)
+  input=$(readlink /proc/self/fd/3)
+  case "$CHORAL_TEST_PHASE:$input" in
+   source:*original-*|playback:*stage-*)
+    touch "$CHORAL_TEST_MARKER"
+    printf 'Input/output error' >&2
+    exit 1
+    ;;
+  esac
+  ;;
+esac
+exec "$CHORAL_TEST_REAL_FFMPEG" "$@"
+`
+			if e := os.WriteFile(filepath.Join(dir, "ffmpeg"), []byte(script), 0700); e != nil {
+				t.Fatal(e)
+			}
+			path := os.Getenv("PATH")
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+path)
+			f.r.process(context.Background(), f.claim())
+			if f.str(`SELECT state FROM jobs WHERE id=?`, j.id) != "queued" || f.str(`SELECT error_code FROM jobs WHERE id=?`, j.id) != "storage_error" || !f.exists(j.source) {
+				t.Fatal("I/O failure lost retry/original")
+			}
+			if _, e := os.Stat(marker); e != nil {
+				t.Fatal("decode fault not reached", e)
+			}
+			if !f.exists(oldKey) || f.str(`SELECT active_asset_id FROM tracks WHERE id=?`, old.track) != old.asset {
+				t.Fatal("old active asset lost on decode failure")
+			}
+			t.Setenv("PATH", path)
+			f.exec(`UPDATE jobs SET lease_until=NULL WHERE id=?`, j.id)
+			f.r.process(context.Background(), f.claim())
+			if f.str(`SELECT state FROM jobs WHERE id=?`, j.id) != "succeeded" || f.exists(j.source) || f.str(`SELECT attempts FROM jobs WHERE id=?`, j.id) != "2" || f.str(`SELECT active_asset_id FROM tracks WHERE id=?`, old.track) != j.asset || !f.exists(oldKey) {
+				t.Fatal("decode retry failed or old playback grace lost")
+			}
+		})
 	}
 }

@@ -213,7 +213,14 @@ func (r *Runner) convert(ctx context.Context, source, out, peaks string) (int64,
 		return 0, &mediaError{"invalid_result"}
 	}
 	w, e := decodeWave(ctx, output)
-	if e != nil || !validTiming(sourceWave.Duration, duration, w.Duration) {
+	if e != nil {
+		var media *mediaError
+		if errors.As(e, &media) {
+			return 0, &mediaError{"invalid_result"}
+		}
+		return 0, e
+	}
+	if !validTiming(sourceWave.Duration, duration, w.Duration) {
 		return 0, &mediaError{"invalid_result"}
 	}
 	w.Duration = duration
@@ -376,7 +383,7 @@ func decodeWave(ctx context.Context, input *os.File) (wave, error) {
 }
 
 func decodeError(e error, diagnostic bounded) error {
-	// Classify temporary I/O failures in source decode as well as conversion.
+	// Classify temporary I/O failures in source/playback decode as well as conversion.
 	// Diagnostics never enter API errors or logs.
 	for _, temporary := range []string{"No space left on device", "Input/output error", "Permission denied", "failed to execute"} {
 		if strings.Contains(string(diagnostic.data), temporary) {

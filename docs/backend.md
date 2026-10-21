@@ -581,7 +581,7 @@ crash stages и артефакты без committed ссылок; referenced ori
 | --- | --- |
 | `decode_failed` | Не удалось полностью декодировать original; файл сохранён, автоматического повтора нет |
 | `invalid_result` | Playback/тайминг/PCM не прошли проверку; original сохранён |
-| `storage_error` | Временный I/O-отказ чтения original, записи, публикации или SQLite; до двух повторов |
+| `storage_error` | Временный I/O-отказ чтения original/playback, записи, публикации или SQLite; до двух повторов |
 | `processing_timeout` | Истёк wall timeout; до двух повторов |
 | `processing_interrupted` | Lease восстановлена после прерывания; после трёх попыток failed |
 
@@ -645,7 +645,11 @@ SQLite, FS, worker и public GET/HEAD/Range/peaks без готовых asset fi
 20 ms проходит, 21 ms отклоняется. Padding 20 ms
 проходит, 21/22 ms отклоняется до ready/удаления original. Fault injection меняет
 только параметры конвертации или probe metadata, PCM/артефакты остаются настоящими.
-Временный I/O-отказ декодирования source сохраняет original и допускает успешный retry.
+Временный I/O-отказ декодирования source или playback сохраняет original и старый
+active asset и допускает успешный retry. Поведенческий тест внедряет отказ только
+на выбранном этапе PCM decode: конвертация и FFprobe остаются настоящими. После
+второй попытки новый asset становится active, original удаляется, старый playback
+сохраняется на grace-период. Некорректный playback/тайминг остаётся `invalid_result`.
 Удаление дорожки во время заблокированной конвертации не допускает второе задание
 той же песни, сохраняя доступность второго слота для независимой песни; после
 выхода subprocess ожидающее задание успешно обрабатывается.
