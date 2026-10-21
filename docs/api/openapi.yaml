@@ -725,7 +725,7 @@ components:
         trackId: {$ref: '#/components/schemas/Id'}
         state: {type: string, enum: [queued, processing, succeeded, failed, canceled]}
         attempts: {type: integer, minimum: 0, maximum: 3}
-        errorCode: {type: [string, 'null'], enum: [null, unsupported_codec, corrupt_audio, too_long, probe_timeout, processing_timeout, processing_failed, canceled]}
+        errorCode: {type: [string, 'null'], enum: [null, unsupported_codec, corrupt_audio, too_long, probe_timeout, processing_timeout, processing_failed, decode_failed, invalid_result, storage_error, processing_interrupted, canceled]}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
       examples:

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"github.com/Axepuff/choral-training-tool/backend/internal/auth"
 	"github.com/Axepuff/choral-training-tool/backend/internal/platform"
+	"github.com/Axepuff/choral-training-tool/backend/internal/processing"
 	"github.com/Axepuff/choral-training-tool/backend/internal/sharing"
 	"github.com/Axepuff/choral-training-tool/backend/internal/storage"
 	"github.com/Axepuff/choral-training-tool/backend/internal/users"
@@ -111,7 +112,7 @@ func check(t *testing.T, w *httptest.ResponseRecorder, status int) {
 func audio(t *testing.T, format string) []byte {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "fixture."+format)
-	if b, e := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.1", "-y", p).CombinedOutput(); e != nil {
+	if b, e := exec.Command(fixtureFFmpeg(), "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.1", "-y", p).CombinedOutput(); e != nil {
 		t.Fatalf("fixture: %v %s", e, b)
 	}
 	b, e := os.ReadFile(p)
@@ -439,7 +440,7 @@ func TestNonAudioAndTooLong(t *testing.T) {
 				path = filepath.Join(t.TempDir(), "fixture.mp4")
 				args = []string{"-v", "error", "-f", "lavfi", "-i", "color=size=16x16:duration=0.1", "-an", "-y", path}
 			}
-			if b, e := exec.Command("ffmpeg", args...).CombinedOutput(); e != nil {
+			if b, e := exec.Command(fixtureFFmpeg(), args...).CombinedOutput(); e != nil {
 				t.Fatalf("fixture: %v %s", e, b)
 			}
 			b, e := os.ReadFile(path)
@@ -776,4 +777,93 @@ func TestServerConcurrency(t *testing.T) {
 	if len(f.s.busy) != 0 || f.count("jobs") != 2 || len(f.files()) != 2 {
 		t.Fatal("concurrency reservation leak")
 	}
+}
+
+// End to end: real upload + auth + durable runner + public media, no asset fixtures.
+func TestProcessedUploadPublicMedia(t *testing.T) {
+	f := setup(t)
+	check(t, f.send(f.request(audio(t, "flac"), users.ID(), `"1"`)), 202)
+	worker, e := processing.New(context.Background(), f.db, f.store)
+	if e != nil {
+		t.Fatal(e)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); worker.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		var state string
+		if e = f.db.QueryRow(`SELECT state FROM jobs`).Scan(&state); e != nil {
+			t.Fatal(e)
+		}
+		if state == "succeeded" {
+			break
+		}
+		if state == "failed" || time.Now().After(deadline) {
+			t.Fatal("worker", state)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	var source, playback string
+	if e = f.db.QueryRow(`SELECT source_path,playback_path FROM assets`).Scan(&source, &playback); e != nil {
+		t.Fatal(e)
+	}
+	// Cleanup can follow job commit, so wait for quota release separately.
+	for source != "" && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+		if e = f.db.QueryRow(`SELECT source_path FROM assets`).Scan(&source); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if source != "" {
+		t.Fatal("source not cleaned")
+	}
+	media, e := f.store.Open(ctx, playback)
+	if e != nil {
+		t.Fatal(e)
+	}
+	data, e := io.ReadAll(media)
+	media.Close()
+	if e != nil {
+		t.Fatal(e)
+	}
+	f.exec(`UPDATE songs SET publication='published'`)
+	raw := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	hash := sha256.Sum256([]byte(raw))
+	f.exec(`INSERT INTO shares(id,kind,owner_id,song_id,token_hash,created_at,updated_at) SELECT ?,'song',owner_id,id,?,'now','now' FROM songs`, users.ID(), hash[:])
+	path := origin + "/api/v1/public/shares/" + raw + "/songs/" + f.song + "/tracks/" + f.track
+	get := f.send(httptest.NewRequest("GET", path+"/media", nil))
+	check(t, get, 200)
+	if !bytes.Equal(get.Body.Bytes(), data) || !bytes.Contains(data[:32], []byte("ftyp")) {
+		t.Fatal("wrong playback")
+	}
+	req := httptest.NewRequest("GET", path+"/media", nil)
+	req.Header.Set("Range", "bytes=0-15")
+	ranged := f.send(req)
+	check(t, ranged, 206)
+	if !bytes.Equal(ranged.Body.Bytes(), data[:16]) {
+		t.Fatal("range")
+	}
+	check(t, f.send(httptest.NewRequest("HEAD", path+"/media", nil)), 200)
+	peaks := f.send(httptest.NewRequest("GET", path+"/peaks", nil))
+	check(t, peaks, 200)
+	var w struct {
+		Duration int          `json:"durationMs"`
+		Points   [][2]float64 `json:"points"`
+	}
+	if e = json.Unmarshal(peaks.Body.Bytes(), &w); e != nil || w.Duration <= 0 || len(w.Points) == 0 {
+		t.Fatal("invalid peaks", e)
+	}
+	f.exec(`UPDATE shares SET disabled_at='now'`)
+	check(t, f.send(httptest.NewRequest("GET", path+"/media", nil)), 404)
+}
+
+// A minimal deployment build need not include lavfi or fixture encoders.
+// Only generation uses this override; probe/conversion always use PATH binaries.
+func fixtureFFmpeg() string {
+	if binary := os.Getenv("CHORAL_TEST_FIXTURE_FFMPEG"); binary != "" {
+		return binary
+	}
+	return "ffmpeg"
 }

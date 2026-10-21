@@ -505,3 +505,160 @@ PyYAML; `git diff --check` проходит. UI не изменялся, бра�
 предупреждение о размере bundle. Тесты дополнительно проверяют предел двух
 одновременных HTTP uploads, rollback после publish при отказе SQLite и отсутствие
 FFprobe (503 без asset/job), replay после полного повторного открытия SQLite/FS.
+
+## Обработка аудио (Issue #8)
+
+`internal/processing` подключён к `cmd/server`: после upload recovery, до listener
+проверяются `prlimit`, FFmpeg AAC encoder/decoder, PCM float encoder, MP4/float PCM
+muxers, фильтры resampling/timestamps и FFprobe. Недоступные инструменты
+останавливают запуск (`processing_startup_failed`), queued success не имитируется.
+Linux и util-linux `prlimit` теперь обязательны. На одном data dir разрешён один
+процесс сервиса. При остановке сервер ждёт оба worker слота до закрытия SQLite/FS.
+
+SQLite claim выполняется транзакционно: не более двух processing jobs и одного
+на песню. Дополнительно worker держит слот песни в памяти от claim до возврата
+из обработки (после остановки subprocess и уборки временных результатов). Отмена
+job/удаление дорожки в SQLite не освобождает этот слот досрочно; ожидающая дорожка
+той же песни запускается лишь после выхода предыдущей обработки. Lease — 6 минут, wall timeout всей попытки — 5 минут. Проверка результата
+FFprobe имеет отдельный лимит 15 секунд; его превышение даёт
+`processing_timeout` с повтором и сохранением original. После рестарта
+processing leases сбрасываются до listener, оригиналы сохраняются, попытка
+повторяется с новым fencing number (`attempts`). Просроченные leases восстанавливает
+также poll. Максимум три попытки (первая и два повтора); временный отказ Storage/
+SQLite и timeout повторяется через 5 секунд. Остановка сервиса не выдаётся за
+ошибку аудио. Исчерпанная прерванная попытка остаётся failed, original сохраняется.
+Удалённая/замещённая pending-ссылка отменяет работу; completion повторно проверяет
+song/track tombstones, asset ownership, pending ID, job state и номер попытки.
+
+FFmpeg запускается argv через `prlimit`, без shell и пользовательских путей/имён.
+Input/output — заранее открытые Storage descriptors (`/proc/self/fd/3`, `4`).
+Разрешены локальные file/pipe protocols и тот же список контейнеров, что в upload;
+выбирается первый audio stream. Полное декодирование использует `-xerror`, никаких
+успешных обрезок через `-t`/`-fs`. На subprocess: address space 1 GiB, CPU 300 s,
+file size 64 MiB, 64 descriptors, decoder/encoder/filter threads=1; max allocation
+FFmpeg — 64 MiB. Wall cancellation убивает процесс; Linux parent-death signal
+убивает его и при SIGKILL сервиса. Для двух слотов необходимо предусмотреть до
+2 GiB виртуального адресного пространства плюс память Go/HTTP. Это ограничение
+процессов, а не обещание общего container RSS лимита: container limits — #14.
+
+Playback — AAC-LC, MP4, mono, 48 kHz, 96 kbit/s. Нет нормализации громкости,
+обрезки начальной тишины или выравнивания по первой ноте. `asetpts=N/SR/TB`
+устанавливает timestamp начала в 0, включая контейнеры с ненулевым start time.
+FFprobe проверяет единственный AAC-LC stream, mono/48 kHz, начало 0 и длительность
+в пределах 20 минут. До конвертации исходник полностью декодируется в mono/48 kHz
+для измерения реальной длины по samples, без доверия к оценке длины контейнера.
+Длительность playback должна отличаться от неё не более чем на 20 ms; укороченный
+результат даже при exit=0 FFmpeg получает `invalid_result`, original сохраняется.
+Playback полностью декодируется ещё раз; peaks — настоящие
+min/max float samples по окнам 100 ms, амплитуды ограничены [-1,1]. PCM читается
+потоком с ограниченной памятью. MP4 edit list учитывает AAC priming; финальный
+padding допускается максимум 20 ms (как требует API-контракт) и не расширяет timeline.
+`durationMs` берётся из проверенного playback stream; `points.length` соответствует
+`ceil(durationMs/100)`. Короткие дорожки не дополняются до длины песни.
+
+Оба результата fsync + publish выполняются до SQLite commit. В одной транзакции
+asset становится ready, переключается active ID, очищается pending, job становится
+succeeded, повышается song version. Старый рабочий asset сохраняется до этого
+commit, затем становится retired. Ошибка транзакции сохраняет original и старый
+active asset; неопубликованный результат удаляется. Stale attempt не публикуется.
+Sharing использует существующие защищённые media/peaks endpoints и реальные
+Storage keys, включая GET/HEAD/Range и отзыв public grant. Frontend не изменён.
+
+После commit уборщик удаляет ready original и очищает `source_path`, освобождая
+квоту. Если удалить не удалось, путь остаётся для следующей попытки. Периодическая
+уборка — раз в минуту, максимум 64 assets за проход; также после успеха. Retired
+файлы удаляются лишь после 24 часов без active/pending references и queued/processing
+jobs. Строки истории остаются. Failed original не истекает по возрасту: он сохраняется
+до удаления песни/дорожки либо успешной замены на той же дорожке. Успешная замена
+переводит прежние failed assets в retired. Startup recovery из uploads удаляет
+crash stages и артефакты без committed ссылок; referenced originals сохраняются.
+Сбой удаления после файловой операции, но до очистки пути безопасен: Remove
+идемпотентен. Если ошибка SQLite мешает записать failed, lease восстановит работу.
+
+Коды job errorCode (HTTP job DTO остаётся прежним):
+
+| Код | Значение / действие |
+| --- | --- |
+| `decode_failed` | Не удалось полностью декодировать original; файл сохранён, автоматического повтора нет |
+| `invalid_result` | Playback/тайминг/PCM не прошли проверку; original сохранён |
+| `storage_error` | Временный I/O-отказ чтения original/playback, записи, публикации или SQLite; до двух повторов |
+| `processing_timeout` | Истёк wall timeout; до двух повторов |
+| `processing_interrupted` | Lease восстановлена после прерывания; после трёх попыток failed |
+
+Проверенные импорты: WAV PCM, FLAC, MP3, Ogg Vorbis, MP4/M4A AAC, AIFF PCM,
+raw AAC/ADTS, ASF/WMA, WebM Opus. Тесты генерируют синтетический stereo 44.1 kHz
+сигнал и проверяют настоящий mono/48 kHz AAC-LC, duration и непустые peaks.
+Поддержка определяется decoder/demuxer конкретной сборки, а не расширением.
+Проверяются системная **FFmpeg/FFprobe 6.1.1-3ubuntu5** и локальная сборка
+**7.1.5** (deployment baseline ADR — 7.1.x), Go **1.27.3**. Важно проверять
+конкретную конфигурацию, а не только версию: первоначальная минимальная сборка
+7.1.5 имела AAC, но не float PCM muxer, поэтому не могла формировать peaks.
+Worker теперь отклоняет такую сборку до listener. В configure этот muxer
+называется `pcm_f32le`, хотя CLI использует `-f f32le`. Для production в #14
+следует повторить набор проверок с поставляемыми binary. Новых зависимостей нет.
+
+Минимальная конфигурация проверяемой 7.1.5 (Linux, util-linux `prlimit`):
+
+```sh
+./configure --disable-everything --disable-doc --disable-debug --disable-x86asm \
+  --enable-protocol=file,pipe \
+  --enable-demuxer=wav,mp3,flac,ogg,mov,matroska,aac,aiff,asf \
+  --enable-decoder=aac,flac,mp3,mp3float,pcm_s16le,pcm_s16be,vorbis,opus,wmav2 \
+  --enable-encoder=aac,pcm_f32le --enable-muxer=mp4,pcm_f32le \
+  --enable-filter=aresample,asetpts,aformat,anull
+make -j2
+```
+
+Запуск полного backend набора с этой сборкой, после помещения её ffmpeg/ffprobe
+в `/tmp/choral-ffmpeg71-bin`:
+
+```sh
+cd backend
+PATH=/tmp/choral-ffmpeg71-bin:/tmp/choral-toolchain/go/bin:$PATH \
+  CHORAL_TEST_FIXTURE_FFMPEG=/usr/bin/ffmpeg \
+  GOCACHE=/tmp/choral-gocache GOPATH=/tmp/choral-gopath \
+  go test -count=1 ./...
+```
+
+`CHORAL_TEST_FIXTURE_FFMPEG` действует только на генерацию синтетических файлов
+в тестах (ей нужны lavfi и дополнительные encoders). Probe, worker, проверка
+результата и peaks используют проверяемую сборку из PATH. В приложении этого
+параметра нет; при обычном тестировании генерация тоже использует PATH.
+
+Поведенческие проверки #8: настоящая конвертация девяти форматов; лимиты claim
+server/song; fencing повторной попытки; corrupt input, настоящий wall timeout,
+запрет filesystem write и ошибки результата/SQLite transaction; сохранение старого
+active asset и source при каждом отказе; успешный retry, исчерпание попыток;
+удаление во время работы; grace cleanup/failed retention. Отдельный процесс
+убивается SIGKILL после появления непустого stage при конвертации 1190-секундного
+FLAC; startup recovery удаляет leftovers, повтор обрабатывает тот же original и
+только после успеха удаляет его. Upload integration использует реальные auth,
+SQLite, FS, worker и public GET/HEAD/Range/peaks без готовых asset fixtures.
+
+Дополнительные проверки: сохранение начальной тишины и исходного уровня сигнала,
+отказ FFprobe для настоящего PCM вместо playback AAC, зависший result probe
+(15 секунд, original остаётся, последующий retry успешен), отказ старта при
+отсутствующем float PCM muxer. Job error codes согласованы с OpenAPI.
+
+Проверки исправлений ревью #8: успешная FFmpeg-конвертация с принудительным
+сокращением до 100 ms не публикуется и сохраняет original; разница длины
+20 ms проходит, 21 ms отклоняется. Padding 20 ms
+проходит, 21/22 ms отклоняется до ready/удаления original. Fault injection меняет
+только параметры конвертации или probe metadata, PCM/артефакты остаются настоящими.
+Временный I/O-отказ декодирования source или playback сохраняет original и старый
+active asset и допускает успешный retry. Поведенческий тест внедряет отказ только
+на выбранном этапе PCM decode: конвертация и FFprobe остаются настоящими. После
+второй попытки новый asset становится active, original удаляется, старый playback
+сохраняется на grace-период. Некорректный playback/тайминг остаётся `invalid_result`.
+Удаление дорожки во время заблокированной конвертации не допускает второе задание
+той же песни, сохраняя доступность второго слота для независимой песни; после
+выхода subprocess ожидающее задание успешно обрабатывается.
+
+Исправление retry result FFprobe: отказ запуска/завершения процесса (включая
+временный `Input/output error`) получает `storage_error` с общим лимитом трёх
+попыток. Успешный probe с невалидным JSON или playback metadata получает
+`invalid_result`; превышение 15 секунд — `processing_timeout`. stderr не
+публикуется. Поведенческий `TestResultProbeFailureRetries` внедряет отказ только
+result probe после настоящей конвертации и проверяет сохранение original/старого
+active asset, затем успешную вторую попытку с настоящим FFprobe, переключение
+asset и удаление original после commit. Старый playback сохраняется на grace-период.

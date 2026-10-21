@@ -212,3 +212,10 @@ Unicode validation, If-Match, идемпотентное создание, по�
 Issue #7: backend принимает настоящие аудиозагрузки, проверяет FFprobe, сохраняет
 приватные originals и durable jobs. UI остаётся макетом, конвертация — следующая
 задача #8. Лимиты, запуск, проверки и границы: [docs/backend.md](docs/backend.md#загрузка-и-приватное-хранилище-issue-7).
+
+Issue #8: сервер запускает настоящий SQLite-backed FFmpeg worker (Linux,
+`ffmpeg`, `ffprobe`, util-linux `prlimit` обязательны). После upload проверенные
+AAC-LC mono/48 kHz и peaks появляются через существующий media API; original
+удаляется после commit, failed original и старый playback при замене сохраняются.
+Лимиты, retry/recovery, проверенные форматы и ограничение проверки FFmpeg 7.1.x:
+[документация worker](docs/backend.md#обработка-аудио-issue-8).

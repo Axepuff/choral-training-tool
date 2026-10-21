@@ -11,6 +11,7 @@ import (
 
 	"github.com/Axepuff/choral-training-tool/backend/internal/auth"
 	"github.com/Axepuff/choral-training-tool/backend/internal/platform"
+	"github.com/Axepuff/choral-training-tool/backend/internal/processing"
 	"github.com/Axepuff/choral-training-tool/backend/internal/sharing"
 	"github.com/Axepuff/choral-training-tool/backend/internal/songs"
 	"github.com/Axepuff/choral-training-tool/backend/internal/storage"
@@ -78,6 +79,15 @@ func run() int {
 		log.Error("share_key_startup_failed")
 		return 1
 	}
+	worker, err := processing.New(ctx, db, store)
+	if err != nil {
+		log.Error("processing_startup_failed")
+		return 1
+	}
+	workerCtx, workerStop := context.WithCancel(ctx)
+	workerDone := make(chan struct{})
+	go func() { defer close(workerDone); worker.Run(workerCtx) }()
+	defer func() { workerStop(); <-workerDone }()
 	listener, err := net.Listen("tcp", c.Addr)
 	if err != nil {
 		log.Error("listen_failed")
