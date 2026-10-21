@@ -477,6 +477,21 @@ read timeout, занятая песня, traversal, повтор/cleanup/recover
 asset, реальный Storage + public GET/HEAD/Range и отказ выдавать original.
 Остальные тесты sharing продолжают проверять области доступа.
 
+Регрессия ревью #7: `TestUploadAndJobAccess` вызывает именно upload/job HTTP
+handlers с реальными login-сессиями admin, teacher-владельца и другого teacher.
+Владелец успешно загружает реальный WAV и получает queued job; owner/admin читают
+job, другой teacher получает 404 как для draft, так и для published/ready песни.
+Чужая загрузка даёт соответственно 404/403; анонимный запрос и запрос только с
+действующим public token получают 401 для обоих endpoints. Тест подтверждает,
+что этот token открывает опубликованную песню через public endpoint. При отказе
+upload тело не читается, строки songs/tracks/assets/jobs/idempotency_records и
+имена/содержимое файлов не меняются, admission не удерживается. После логического
+удаления песни job скрыт с 404 от owner, admin и другого teacher.
+После исправления замечания повторно прошли `go test ./...`,
+`go test -race ./...`, `go vet ./...`, `go build ./...` и `git diff --check`.
+Изменены только backend-тесты и эта документация; frontend/Storybook проверки
+в этом проходе не повторялись.
+
 Среда проверки #7: Go 1.27.3 из `/tmp/choral-toolchain`; установленный системный
 FFmpeg/FFprobe — **6.1.1**, а не исторические 7.1.5 из handoff. На этой сборке
 проверяются fixtures; проверка целевой production-сборки 7.1.x остаётся #8/#14.

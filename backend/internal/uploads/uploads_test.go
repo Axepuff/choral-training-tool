@@ -150,6 +150,168 @@ func (f *fixture) files() []os.DirEntry {
 	}
 	return v
 }
+
+func (f *fixture) teacher(email string) (string, *http.Cookie, string) {
+	f.t.Helper()
+	u, err := users.Create(context.Background(), f.db, email, "fictional password 123", "teacher", false)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	f.exec(`UPDATE users SET must_change_password=0 WHERE id=?`, u.ID)
+	r := httptest.NewRequest("POST", origin+"/api/v1/auth/login", strings.NewReader(`{"email":"`+email+`","password":"fictional password 123"}`))
+	r.Header.Set("Origin", origin)
+	r.Header.Set("Content-Type", "application/json")
+	w := f.send(r)
+	check(f.t, w, 200)
+	var v struct {
+		CSRF string `json:"csrfToken"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &v); err != nil {
+		f.t.Fatal(err)
+	}
+	return u.ID, w.Result().Cookies()[0], v.CSRF
+}
+
+// Compare persisted upload state, including existing rows and file contents,
+// rather than only counting new assets: a denial must not mutate a prior upload.
+func (f *fixture) uploadState() string {
+	f.t.Helper()
+	var state []any
+	for _, table := range []string{"songs", "tracks", "assets", "jobs", "idempotency_records"} {
+		rows, err := f.db.Query("SELECT * FROM " + table + " ORDER BY rowid")
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		columns, err := rows.Columns()
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		for rows.Next() {
+			values := make([]any, len(columns))
+			args := make([]any, len(columns))
+			for i := range values {
+				args[i] = &values[i]
+			}
+			if err := rows.Scan(args...); err != nil {
+				f.t.Fatal(err)
+			}
+			state = append(state, values)
+		}
+		if err := rows.Err(); err != nil {
+			f.t.Fatal(err)
+		}
+		rows.Close()
+	}
+	for _, file := range f.files() {
+		data, err := os.ReadFile(filepath.Join(f.dir, "files", file.Name()))
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		state = append(state, file.Name(), sha256.Sum256(data))
+	}
+	b, err := json.Marshal(state)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestUploadAndJobAccess(t *testing.T) {
+	f := setup(t)
+	adminCookie := f.cookie
+	owner, ownerCookie, ownerCSRF := f.teacher("owner@example.test")
+	_, otherCookie, otherCSRF := f.teacher("other@example.test")
+	f.exec(`UPDATE songs SET owner_id=? WHERE id=?`, owner, f.song)
+	f.cookie, f.csrf = ownerCookie, ownerCSRF
+	b := audio(t, "wav")
+	w := f.send(f.request(b, users.ID(), `"1"`))
+	check(t, w, 202)
+	jobPath := w.Header().Get("Location")
+	if jobPath == "" || f.count("assets") != 1 || f.count("jobs") != 1 || len(f.files()) != 1 {
+		t.Fatal("owner upload did not persist original and job")
+	}
+	var job struct {
+		ID, SongID, TrackID, State string
+	}
+	r := httptest.NewRequest("GET", origin+jobPath, nil)
+	r.AddCookie(ownerCookie)
+	w = f.send(r)
+	check(t, w, 200)
+	if err := json.Unmarshal(w.Body.Bytes(), &job); err != nil {
+		t.Fatal(err)
+	}
+	if job.ID == "" || job.SongID != f.song || job.TrackID != f.track || job.State != "queued" {
+		t.Fatal("owner received wrong job")
+	}
+	// A real, enabled song share still grants no session API permissions.
+	token := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32))
+	hash := sha256.Sum256([]byte(token))
+	f.exec(`INSERT INTO shares(id,kind,owner_id,song_id,token_hash,created_at,updated_at) VALUES(?,'song',?,?,?,'now','now')`, users.ID(), owner, f.song, hash[:])
+	for _, publication := range []string{"draft", "published"} {
+		if publication == "published" {
+			// Previously processed asset fixture; the new upload remains pending.
+			active := users.ID()
+			f.exec(`INSERT INTO assets(id,track_id,source_path,source_bytes,source_sha256,playback_path,peaks_path,duration_ms,mime,sample_rate,channels,state,created_at,updated_at) VALUES(?,?,'',1,x'01','playback-old','peaks-old',100,'audio/mp4',48000,1,'ready','now','now')`, active, f.track)
+			f.exec(`UPDATE tracks SET active_asset_id=? WHERE id=?`, active, f.track)
+			f.exec(`UPDATE songs SET publication='published' WHERE id=?`, f.song)
+			check(t, f.send(httptest.NewRequest("GET", origin+"/api/v1/public/shares/"+token, nil)), 200)
+		}
+		for _, tc := range []struct {
+			name   string
+			cookie *http.Cookie
+			csrf   string
+			status int
+		}{
+			{"other_teacher", otherCookie, otherCSRF, 404},
+			{"anonymous", nil, "", 401},
+			{"public_token", nil, "", 401},
+		} {
+			t.Run(publication+"/"+tc.name, func(t *testing.T) {
+				before := f.uploadState()
+				r := httptest.NewRequest("GET", origin+jobPath, nil)
+				if tc.cookie != nil {
+					r.AddCookie(tc.cookie)
+				}
+				if tc.name == "public_token" {
+					r.URL.RawQuery = "token=" + token
+					r.Header.Set("Authorization", "Bearer "+token)
+				}
+				check(t, f.send(r), tc.status)
+				r = f.request(b, users.ID(), `"2"`)
+				r.Header.Del("Cookie")
+				r.Header.Set("X-CSRF-Token", tc.csrf)
+				if tc.cookie != nil {
+					r.AddCookie(tc.cookie)
+				}
+				if tc.name == "public_token" {
+					r.URL.RawQuery = "token=" + token
+					r.Header.Set("Authorization", "Bearer "+token)
+				}
+				read := false
+				r.Body = io.NopCloser(&hookReader{r: r.Body, hook: func() { read = true }})
+				status := tc.status
+				if publication == "published" && tc.name == "other_teacher" {
+					status = 403
+				}
+				check(t, f.send(r), status)
+				if read || f.uploadState() != before || len(f.s.busy) != 0 {
+					t.Fatal("denied upload read body, changed persisted state, or retained admission")
+				}
+			})
+		}
+	}
+	for _, cookie := range []*http.Cookie{ownerCookie, adminCookie} {
+		r := httptest.NewRequest("GET", origin+jobPath, nil)
+		r.AddCookie(cookie)
+		check(t, f.send(r), 200)
+	}
+	f.exec(`UPDATE songs SET deleted_at='now' WHERE id=?`, f.song)
+	for _, cookie := range []*http.Cookie{ownerCookie, adminCookie, otherCookie} {
+		r := httptest.NewRequest("GET", origin+jobPath, nil)
+		r.AddCookie(cookie)
+		check(t, f.send(r), 404)
+	}
+}
 func TestRealFormatsAndReplay(t *testing.T) {
 	for _, format := range []string{"wav", "flac", "mp3", "ogg", "m4a", "aiff"} {
 		t.Run(format, func(t *testing.T) {
