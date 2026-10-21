@@ -1,7 +1,7 @@
 # Каркас backend (Issue #3)
 
 Frontend остаётся в корне и сохраняет согласованный дизайн. Go-сервис обслуживает `GET /livez`, `GET /readyz` и auth endpoints Issue #4
-(описаны ниже); songs, storage и worker реализуются следующими задачами.
+и songs endpoints Issue #5 (описаны ниже); storage и worker реализуются следующими задачами.
 Не реализованные URL возвращают 404 без мок-успеха.
 Pages публикует только статический UI и не запускает backend.
 
@@ -247,3 +247,60 @@ Unicode и отсутствие секретов в HTTP-логах. Прове�
 login → logout. Также прошли `npm ci`, typecheck, lint, build, build-storybook,
 `node scripts/assemble-pages.mjs`. Браузерные play-проверки не запускались:
 frontend-код и дизайн в #4 не менялись.
+
+## Песни и дорожки (Issue #5)
+
+`internal/songs` подключён в server к реальным auth IdentityProvider/Authorizer.
+CRUD, поиск и сортировка сохраняются в SQLite, транзакции защищены версией
+`If-Match: "N"`; отсутствие заголовка — 428, конфликт — 409. JSON creation
+требует UUIDv4 `Idempotency-Key`, Origin и X-CSRF-Token реальной сессии.
+Полный формат запросов/ответов — [OpenAPI](api/openapi.yaml), подробности
+пагинации, валидации и удаления — [контракт songs](api/README.md#реализация-songs-в-issue-5).
+
+Новая миграция `0003_songs.sql` перестраивает граф tracks/assets/jobs без отключения FK,
+сохраняет существующие строки и связи,
+добавляет tracks.deleted_at и уникальность live-позиции. Принятые миграции
+0001/0002 не меняются. Удалённые записи/файлы остаются для media grace period;
+очистка на диске относится к #8. Не очищайте оригиналы вручную при ошибке.
+
+При старте сервер создаёт в каталоге данных локальный случайный ключ
+`song-responses.key` (0600) для AES-GCM replay и подписей cursor. Это секрет
+приложения вне БД: храните на постоянном томе, не добавляйте в Git, не публикуйте
+и включайте в защищённую резервную копию. Потеря/замена ключа лишает возможности
+расшифровать ещё действующие replay (503); такие запросы не создают дубликат.
+Неверная длина/недоступность файла останавливает startup. Автоматической ротации
+нет; сохраняйте ключ как минимум до истечения replay 24 ч и cursor 15 минут.
+Ключ создаётся приложением; чтение сторонних credentials не требуется.
+
+Проверки:
+
+```sh
+cd backend
+go test ./...
+go test -race ./...
+go vet ./...
+go mod verify
+go build -o /tmp/choral-server ./cmd/server
+go build -o /tmp/choral-accounts ./cmd/accounts
+```
+
+Поведенческие тесты используют реальные временные SQLite, Argon2id login,
+cookie/CSRF и HTTP handler. Проверены CRUD после закрытия/открытия DB и сервисов,
+teacher/owner/other/admin/anonymous, подмена song/track ID, публикация, Unicode,
+границы 1–32 дорожек, перестановка и добавление ID, SQL failure rollback,
+конкурентный If-Match, encrypted idempotency/restart/expiry, снимок списка после
+редактирования/удаления/снятия публикации, поиск/сортировка, cursor scope/signature/
+expiry, отзыв сессии и связи медиа/jobs/shares. Отдельно проверено обновление
+заполненной схемы #3/#4 с pending asset/job и FK, повтор миграций.
+Frontend и дизайн не изменены; подключение формы/списка — #10.
+
+Фактическая проверка Issue #5: Go 1.27.3 из `/tmp/choral-toolchain`,
+`go test ./...`, `go test -race ./...`, `go vet ./...`, `go mod verify`, сборки
+server/accounts. Собранный server проверен по HTTP: bootstrap вымышленного
+аккаунта → login → смена временного пароля → новый login → создание песни →
+SIGTERM (exit 0) → новый процесс с тем же томом/сессией → чтение прежних данных →
+редактирование → удаление/404. Frontend: `npm ci`, typecheck, lint, build,
+build-storybook, assemble-pages прошли; браузерные play-проверки не запускались,
+поскольку UI не изменён. Обновлённый YAML OpenAPI прочитан YAML-парсером;
+это не полный OpenAPI validator. Ветка, настройки Git/агента/очереди не менялись;
+commit/push/PR/merge не выполнялись.
