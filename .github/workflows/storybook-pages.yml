@@ -28,7 +28,7 @@ jobs:
       - name: Lint
         run: npm run lint
       - name: Build application and check types
-        run: npm run build
+        run: VITE_APP_DEMO=true npm run build
       - name: Build Storybook
         run: npm run build-storybook
       - name: Include application preview

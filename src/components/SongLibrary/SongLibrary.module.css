@@ -1,5 +1,5 @@
 .page { min-height: 100dvh; background: var(--color-surface); padding: 12px 16px; }
-.content { max-width: 820px; margin: 0 auto; }
+.content { max-width: 820px; margin: 0 auto; overflow-wrap: anywhere; }
 .header { display: flex; gap: 8px; align-items: center; justify-content: space-between; min-height: 44px; margin-bottom: 8px; }
 .heading { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .header h1 { margin: 0; font-size: 22px; letter-spacing: -0.03em; line-height: 1.2; }

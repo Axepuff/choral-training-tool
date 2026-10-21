@@ -15,7 +15,9 @@
     "check:mcp": "node scripts/check-mcp.mjs",
     "agent:queue": "node scripts/agent-queue/runner.mjs",
     "test:agent-queue": "node --test scripts/agent-queue/queue.test.mjs",
-    "test:agent-cli": "node --test scripts/agent-queue/codex-config.check.mjs"
+    "test:agent-cli": "node --test scripts/agent-queue/codex-config.check.mjs",
+    "test:auth": "node --test tests/auth.test.mjs",
+    "test:auth:browser": "cd backend && CHORAL_BROWSER_TEST=true go test -count=1 ./internal/auth -run TestFrontendBrowser -v"
   },
   "dependencies": {
     "react": "19.3.0",
