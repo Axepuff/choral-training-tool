@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Axepuff/choral-training-tool/backend/internal/auth"
 	"github.com/Axepuff/choral-training-tool/backend/internal/platform"
 )
 
@@ -30,13 +31,35 @@ func run() int {
 		return 1
 	}
 	defer db.Close()
+	origin := os.Getenv("CHORAL_ORIGIN")
+	if origin == "" {
+		origin = "https://localhost"
+	}
+	local := os.Getenv("CHORAL_LOCAL_HTTP")
+	if local != "" && local != "true" && local != "false" {
+		log.Error("invalid_auth_configuration")
+		return 1
+	}
+	if local == "true" {
+		host, _, e := net.SplitHostPort(c.Addr)
+		ip := net.ParseIP(host)
+		if e != nil || ip == nil || !ip.IsLoopback() {
+			log.Error("local_auth_requires_loopback_listener")
+			return 1
+		}
+	}
+	identity, err := auth.New(db, origin, local == "true")
+	if err != nil {
+		log.Error("invalid_auth_configuration")
+		return 1
+	}
 	listener, err := net.Listen("tcp", c.Addr)
 	if err != nil {
 		log.Error("listen_failed")
 		return 1
 	}
 	log.Info("server_started")
-	if err := platform.NewService(c, db, log).Serve(ctx, listener); err != nil {
+	if err := platform.NewService(c, db, log, identity.Register).Serve(ctx, listener); err != nil {
 		log.Error("server_stopped_with_error")
 		return 1
 	}

@@ -59,7 +59,7 @@ func TestDatabaseLifecycle(t *testing.T) {
 		t.Fatalf("persistence/rollback: %s %v", role, err)
 	}
 	var count int
-	if err = db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != 1 {
+	if err = db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != 2 {
 		t.Fatalf("migration repeated: %d %v", count, err)
 	}
 	// Force a new connection to verify connection-level pragmas survive reconnect.
@@ -253,5 +253,33 @@ func TestReadyAssetRequiresMetadata(t *testing.T) {
 	}
 	if _, err := db.Exec(`INSERT INTO assets VALUES ('valid','t','source','playback.m4a','peaks.json',1,x'01',1000,'audio/mp4',48000,1,'ready','now','now')`); err != nil {
 		t.Fatalf("valid ready insert rejected: %v", err)
+	}
+}
+
+func TestAuthMigrationUpgradesFoundation(t *testing.T) {
+	ctx := context.Background()
+	db, err := OpenDatabase(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	// Reconstruct the accepted #3 schema in this disposable database.
+	for _, q := range []string{`DROP TABLE login_attempts`, `DROP INDEX sessions_user`, `DELETE FROM schema_migrations WHERE name='0002_auth.sql'`, `INSERT INTO users VALUES ('old','existing@example.test','existing-hash','teacher',NULL,1,'now','now')`} {
+		if _, err = db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if err = Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	var hash string
+	if err = db.QueryRow(`SELECT password_hash FROM users WHERE id='old'`).Scan(&hash); err != nil || hash != "existing-hash" {
+		t.Fatal("auth migration changed existing users")
+	}
+	if _, err = db.Exec(`INSERT INTO login_attempts VALUES (x'01',1,0,0)`); err != nil {
+		t.Fatal(err)
 	}
 }
