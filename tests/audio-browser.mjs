@@ -269,13 +269,28 @@ try {
   await poll(() => evaluate(`document.body.textContent.includes('Аудиофайл изменился')`));
   await poll(() => evaluate(`document.querySelector('[aria-label="Solo: Voice 0"]').getAttribute('aria-pressed') === 'false'`));
   await poll(() => evaluate(`document.querySelector('[aria-label="Пауза"]') !== null`));
+  assert.equal(await evaluate(`document.querySelector('[role="alert"]') === null`), true, 'one failed stream must not stop healthy output');
   await evaluate(`document.querySelector('[aria-label="Пауза"]').click()`);
   await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]') !== null`));
-  revokeMedia = true;
-  await evaluate(`document.querySelector('[aria-label="Воспроизвести"]').click()`);
-  await poll(() => evaluate(`document.body.textContent.includes('Нет доступных дорожек')`));
+  await evaluate(`(() => {
+    const slider = document.querySelector('input[type=range]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(slider, '0');
+    slider.dispatchEvent(new Event('input', {bubbles:true}));
+  })()`);
+  await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value) === 0`));
+  await clickPlayback('Воспроизвести');
+  await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value) > .3`));
+  revokeMedia = true; // Fail the next background windows, after real audio has started.
+  await poll(() => evaluate(`document.querySelector('[role="alert"]')?.textContent.includes('Воспроизведение остановлено')`));
   assert.equal(await evaluate(`document.querySelector('[aria-label="Пауза"]') === null`),true);
   await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]')?.disabled === false`));
+  const failedPosition = await evaluate(`Number(document.querySelector('input[type=range]').value)`);
+  const failedStarts = await evaluate('window.windowStarts.length');
+  assert.ok(failedPosition > 0 && failedPosition < 12, 'stop near the buffered audio, not the end of the song');
+  await sleep(300);
+  assert.equal(await evaluate(`Number(document.querySelector('input[type=range]').value)`), failedPosition);
+  assert.equal(await evaluate('window.windowStarts.length'), failedStarts, 'no new audio scheduled after losing every stream');
+  console.log('PASS background failures: one failed stream leaves others playing; losing all remaining streams stops sound and cursor, reports an error and restores Play.');
   console.log(`PASS long media: 32 real 20-minute AAC tracks, bounded Range windows, ${continuousSeconds} seconds continuous clock scheduling, repeated seeks/resume including end of recording; StrictMode all-solo reset. Largest Range: ${largestRange}`);
   console.log('PASS Chrome: real AAC-LC decode/play, sample-exact OfflineAudioContext mix, 32 channels with individual 404, peaks, gesture, clock cursor/pause, Solo, 320/360/landscape/desktop overflow.');
   // Exercise the diagnostic UI with a deliberately shortened real decode result.

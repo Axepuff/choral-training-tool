@@ -37,6 +37,7 @@ export class AudioEngine {
   private boundaryTimer: ReturnType<typeof setTimeout> | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private pending: Promise<unknown> = Promise.resolve();
+  private streaming = false;
   private scheduledUntil = 0;
   private nodes: { source: AudioBufferSourceNode; gain: GainNode; id: string }[] = [];
   private offset = 0;
@@ -46,7 +47,7 @@ export class AudioEngine {
   private generation = 0;
   constructor(readonly context: AudioContext, readonly duration: number) {}
   get playbackRequested() { return this.wantsPlayback; }
-  get position() { return Math.min(this.playing && this.streams.size ? this.scheduledUntil : this.duration, this.offset + (this.playing ? Math.max(0, this.context.currentTime - this.started) : 0)); }
+  get position() { return Math.min(this.playing && this.streaming ? this.scheduledUntil : this.duration, this.offset + (this.playing ? Math.max(0, this.context.currentTime - this.started) : 0)); }
   async play(mix: Record<string, Mix>) {
     this.wantsPlayback = true;
     const generation = ++this.generation;
@@ -55,9 +56,10 @@ export class AudioEngine {
     await this.context.resume();
     if (this.disposed || generation !== this.generation) return;
     this.stopNodes();
+    this.streaming = this.streams.size > 0;
     if (this.offset >= this.duration) this.offset = 0;
     this.error = '';
-    if (this.streams.size) {
+    if (this.streaming) {
       // Serialize against a canceled seek's in-flight decode; it must not accumulate windows.
       await this.pending;
       if (this.disposed || generation !== this.generation) return;
@@ -123,10 +125,17 @@ export class AudioEngine {
       if (!this.playing || generation !== this.generation) return;
       if (this.scheduledUntil < this.duration && this.scheduledUntil < this.position + 8) {
         const start = this.scheduledUntil, end = Math.min(this.duration, start + 4);
+        const requestedAudio = [...this.streams.values()].some(stream => start < stream.duration);
         const window = this.loadWindow(start, end);
         this.pending = window;
         const loaded = await window;
         if (!this.playing || generation !== this.generation) return;
+        if (requestedAudio && !loaded.length) {
+          this.pause();
+          this.error = 'Нет доступных дорожек. Воспроизведение остановлено.';
+          this.onError(this.error);
+          return;
+        }
         // Stop the entire transport on starvation rather than silently losing synchronization.
         if (this.context.currentTime >= this.started + (start - this.offset)) {
           this.starve();

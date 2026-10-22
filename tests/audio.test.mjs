@@ -261,3 +261,66 @@ test('solo file failing a later window immediately restores healthy output', asy
   assert.ok(context.gains.length > 2);
   assert.ok(context.gains.slice(2).every(g => g.value === .8), 'future healthy windows remain audible');
 });
+
+for (const [voices, failureTime, endedTrack] of [[1, 2, false], [1, 6, false], [3, 6, false], [1, 2, true]]) {
+  test(`last available streams failing stop playback: ${voices} voice(s), clock ${failureTime}, ended track ${endedTrack}`, async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const context = clock(), engine = new AudioEngine(context, 20);
+    t.after(() => engine.dispose());
+    const mix = {}, failures = [], reported = [], failedTracks = [];
+    engine.onError = message => reported.push(message);
+    engine.onTrackError = id => failedTracks.push(id);
+    let loads = 0;
+    for (let i = 0; i < voices; i++) {
+      const id = `voice-${i}`;
+      mix[id] = { volume: 100, muted: false, solo: false };
+      engine.streams.set(id, { duration: 20, load(start) {
+        loads++;
+        return start === 0 ? Promise.resolve({ duration: 4 }) : new Promise((_, reject) => failures.push(reject));
+      } });
+    }
+    if (endedTrack) {
+      mix.short = { volume: 100, muted: false, solo: false };
+      engine.streams.set('short', { duration: 1, async load() { return { duration: 1 }; } });
+    }
+    await engine.play(mix);
+    assert.equal(engine.playing, true);
+    assert.equal(failures.length, voices);
+    context.currentTime = failureTime;
+    for (const fail of failures) fail(new Error('Range unavailable'));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(engine.playing, false, 'losing the last playable streams must stop the transport');
+    assert.equal(engine.playbackRequested, false);
+    assert.equal(reported.length, 1);
+    assert.match(reported[0], /Нет доступных дорожек/);
+    assert.equal(engine.error, reported[0]);
+    assert.equal(failedTracks.length, voices);
+    const position = Math.min(4, failureTime - .1);
+    assert.ok(Math.abs(engine.position - position) < 1e-8, 'stop at audible position, never past buffered audio');
+    assert.equal(engine.streams.size, endedTrack ? 1 : 0);
+    assert.ok(context.sources.every(s => s.stopped && !s.buffer));
+    const requested = loads;
+    context.currentTime = 20;
+    t.mock.timers.tick(1000);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(loads, requested, 'no new windows after failure');
+    assert.ok(Math.abs(engine.position - position) < 1e-8, 'cursor stays stopped');
+  });
+}
+
+test('a natural silent tail after shorter tracks is not reported as failed streaming', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const context = clock(), engine = new AudioEngine(context, 6);
+  t.after(() => engine.dispose());
+  const reported = [];
+  engine.onError = message => reported.push(message);
+  engine.streams.set('short', { duration: 1, async load() { return { duration: 1 }; } });
+  await engine.play({ short: { volume: 100, muted: false, solo: false } });
+  await new Promise(resolve => setImmediate(resolve));
+  context.currentTime = 5;
+  t.mock.timers.tick(100);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(engine.playing, true);
+  assert.deepEqual(reported, []);
+  assert.ok(Math.abs(engine.position - 4.9) < 1e-8);
+});
