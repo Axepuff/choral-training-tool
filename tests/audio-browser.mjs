@@ -21,7 +21,10 @@ const requests = [];
 let changedTrack = false, revokeMedia = false;
 const server = createServer((req, res) => {
   requests.push({ url: req.url, cookie: req.headers.cookie, range: req.headers.range });
-  if (req.url.startsWith('/api/v1/public/shares/')) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ kind: 'song', songs: [req.url.includes('long-fixture') ? longSong : song], nextCursor: null })); }
+  if (req.url.startsWith('/api/v1/public/shares/')) {
+    const selected = req.url.includes('device-retry-fixture') ? { ...song, id: 'device-retry-fixture', tracks: song.tracks.slice(0, 1) } : req.url.includes('long-fixture') ? longSong : song;
+    res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ kind: 'song', songs: [selected], nextCursor: null }));
+  }
   else if (req.url === '/api/v1/peaks') res.end(JSON.stringify({ startMs: 0, stepMs: 100, durationMs: 8000, points: Array.from({ length: 80 }, () => [-.25, .25]) }));
   else if (req.url === '/api/v1/long-peaks') res.end(JSON.stringify({startMs:0,stepMs:100,durationMs:1200000,points:Array.from({length:12000},()=>[-.125,.125])}));
   else if ((req.url.startsWith('/api/v1/media/') && req.url !== '/api/v1/media/31') || req.url.startsWith('/api/v1/long/')) {
@@ -293,6 +296,54 @@ try {
   console.log('PASS background failures: one failed stream leaves others playing; losing all remaining streams stops sound and cursor, reports an error and restores Play.');
   console.log(`PASS long media: 32 real 20-minute AAC tracks, bounded Range windows, ${continuousSeconds} seconds continuous clock scheduling, repeated seeks/resume including end of recording; StrictMode all-solo reset. Largest Range: ${largestRange}`);
   console.log('PASS Chrome: real AAC-LC decode/play, sample-exact OfflineAudioContext mix, 32 channels with individual 404, peaks, gesture, clock cursor/pause, Solo, 320/360/landscape/desktop overflow.');
+  // Device construction failure must finish loading and allow an explicit retry.
+  revokeMedia = false; changedTrack = false;
+  await evaluate(`(() => {
+    window.nativeAudioContext = AudioContext;
+    window.audioConstructionAttempts = 0;
+    window.failAudioConstruction = true;
+    globalThis.AudioContext = new Proxy(AudioContext, {construct(target,args,newTarget) {
+      window.audioConstructionAttempts++;
+      if (window.failAudioConstruction) throw new Error('synthetic device unavailable');
+      return Reflect.construct(target,args,newTarget);
+    }});
+    history.pushState(null, '', '?song=device-retry-fixture'); window.dispatchEvent(new PopStateEvent('popstate'));
+  })()`);
+  await poll(() => evaluate(`document.querySelector('[role="alert"]')?.textContent.includes('не смог открыть аудиоустройство')`));
+  await poll(() => evaluate(`document.querySelector('[aria-label="Повторить подключение аудио"]')?.disabled === false`));
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Повторить подключение аудио"]').getAttribute('aria-busy')`), 'false');
+  assert.equal(await evaluate(`document.body.textContent.includes('Загрузка аудио…')`), false);
+  assert.equal(await evaluate(`document.querySelectorAll('small[role=status]').length`), 1);
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('small[role=status]')).every(e=>e.textContent==='Аудиоустройство недоступно')`), true);
+  const firstAttempts = await evaluate('window.audioConstructionAttempts');
+  await clickPlayback('Повторить подключение аудио');
+  await poll(() => evaluate(`window.audioConstructionAttempts > ${firstAttempts} && document.querySelector('[aria-label="Повторить подключение аудио"]')?.disabled === false`));
+  const failedAttempts = await evaluate('window.audioConstructionAttempts');
+  await sleep(200);
+  assert.equal(await evaluate('window.audioConstructionAttempts'), failedAttempts, 'persistent failure must not auto-retry or keep loading');
+  await evaluate(`(() => {
+    window.failAudioConstruction = false;
+    const fetch = window.fetch;
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    window.deferredPeakRequests = 0;
+    window.releasePeakRequests = () => { window.fetch = fetch; release(); };
+    window.fetch = async (...args) => {
+      if (args[0] === '/api/v1/peaks') { window.deferredPeakRequests++; await gate; }
+      return fetch(...args);
+    };
+  })()`);
+  const beforeRecoveryStarts = await evaluate('window.transportSourceStarts');
+  await clickPlayback('Повторить подключение аудио');
+  await poll(() => evaluate(`window.deferredPeakRequests > 0 && document.querySelector('small[role=status]')?.textContent.startsWith('Готово') && document.querySelector('[aria-label="Воспроизвести"]')?.disabled === false`));
+  assert.equal(await evaluate(`document.querySelector('[role="alert"]') === null`), true);
+  assert.equal(await evaluate('window.transportSourceStarts'), beforeRecoveryStarts, 'retry prepares audio without autoplay');
+  await clickPlayback('Воспроизвести');
+  await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value) > .2`));
+  await clickPlayback('Пауза');
+  await evaluate('window.releasePeakRequests()');
+  await evaluate('globalThis.AudioContext = window.nativeAudioContext');
+  console.log('PASS device initialization: throwing AudioContext ends busy states, repeated failure leaves Retry available, recovery reloads real media without autoplay; explicit Play works while the last peaks response is pending.');
   // Exercise the diagnostic UI with a deliberately shortened real decode result.
   // This models the failure shape; it is not a physical Safari compatibility test.
   revokeMedia = false; changedTrack = false;

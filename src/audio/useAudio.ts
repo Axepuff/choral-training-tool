@@ -4,24 +4,42 @@ import { AudioDecodeError, MP4Reader } from './mp4';
 import type { AudioDecodeDiagnostics } from './mp4';
 import type { AudioSong } from './engine';
 export interface Wave { startMs: number; stepMs: number; durationMs: number; points: [number, number][] }
+function trackStates(song: AudioSong | undefined, state: string): Record<string, string> {
+  return Object.fromEntries((song?.tracks ?? []).map(track => [track.id, state]));
+}
 export function useAudio(song: AudioSong | undefined, publicAccess: boolean) {
   const engine = useRef<AudioEngine | null>(null);
-  const [states, setStates] = useState<Record<string, string>>({});
+  const [states, setStates] = useState(() => trackStates(song, 'Загрузка…'));
   const [waves, setWaves] = useState<Record<string, Wave>>({});
   const [error, setError] = useState('');
   const [diagnostics, setDiagnostics] = useState<Record<string, AudioDecodeDiagnostics>>({});
+  const [initialization, setInitialization] = useState<'loading' | 'complete' | 'unavailable'>(song ? 'loading' : 'complete');
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    if (!song) return;
+    setStates(trackStates(song, 'Загрузка…')); setWaves({}); setError(''); setDiagnostics({});
+    if (!song) { setInitialization('complete'); return; }
+    setInitialization('loading');
     const abort = new AbortController();
     let context: AudioContext;
     try { context = new AudioContext({ sampleRate: 48000 }); }
-    catch { setError('Браузер не смог открыть аудиоустройство. Попробуйте другой браузер.'); return; }
+    catch {
+      setError('Браузер не смог открыть аудиоустройство. Повторите подключение аудио.');
+      setStates(trackStates(song, 'Аудиоустройство недоступно'));
+      setInitialization('unavailable');
+      return;
+    }
     const audio = new AudioEngine(context, (song.durationMs ?? 0) / 1000);
     engine.current = audio;
-    setStates({}); setWaves({}); setError(''); setDiagnostics({});
     audio.onError = message => { if (!abort.signal.aborted) setError(message); };
     context.onstatechange = () => { if (context.state !== 'running' && audio.playing) audio.pause(); };
-    const status = (id: string, value: string) => { if (!abort.signal.aborted) setStates(s => ({ ...s, [id]: value })); };
+    const indexed = new Set<string>();
+    const status = (id: string, value: string) => {
+      if (abort.signal.aborted) return;
+      setStates(s => ({ ...s, [id]: value }));
+      if (value !== 'Загрузка…') indexed.add(id);
+      // Peaks may still be loading after the last audio index is ready.
+      if (indexed.size === song.tracks.length) setInitialization('complete');
+    };
     const fetchMedia = async (url: string, headers?: HeadersInit) => {
       const response = await fetch(mediaURL(url), { credentials: publicAccess ? 'omit' : 'same-origin', redirect: 'error', ...(headers ? { headers } : {}), signal: AbortSignal.any([abort.signal, AbortSignal.timeout(60000)]) });
       if (!response.ok) throw new Error('Аудио недоступно. Ссылка могла быть отозвана.');
@@ -64,13 +82,17 @@ export function useAudio(song: AudioSong | undefined, publicAccess: boolean) {
         } catch (e) { status(track.id, e instanceof Error ? e.message : 'Ошибка загрузки'); }
         if (abort.signal.aborted) return;
       }
-    })();
+    })().finally(() => { if (!abort.signal.aborted) setInitialization('complete'); });
     const hide = () => { if (document.hidden) audio.pause(); };
     document.addEventListener('visibilitychange', hide);
     const stop = () => audio.pause();
     window.addEventListener('pagehide', stop);
     return () => { window.removeEventListener('pagehide', stop); abort.abort(); document.removeEventListener('visibilitychange', hide); audio.dispose(); engine.current = null; };
-  }, [song, publicAccess]);
+  }, [song, publicAccess, attempt]);
+  function retryInitialization() {
+    setInitialization('loading');
+    setAttempt(value => value + 1);
+  }
   async function run(action: (audio: AudioEngine) => Promise<void>) {
     const audio = engine.current;
     if (!audio) return;
@@ -79,5 +101,6 @@ export function useAudio(song: AudioSong | undefined, publicAccess: boolean) {
       await action(audio); setError('');
     } catch (e) { audio.pause(); setError(e instanceof Error ? e.message : 'Не удалось запустить звук. Нажмите воспроизведение ещё раз.'); }
   }
-  return { engine, states, waves, error, diagnostics, run };
+  return { engine, states, waves, error, diagnostics, run,
+    loading: initialization === 'loading', retryRequired: initialization === 'unavailable', retryInitialization };
 }

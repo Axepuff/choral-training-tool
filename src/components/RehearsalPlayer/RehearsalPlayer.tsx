@@ -48,8 +48,8 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   const [loop, setLoop] = useState(initialLoop);
   const [metronome, setMetronome] = useState(false);
   const isPlaying = playing && time < duration;
-  const playbackLoading = pendingPlayback || Boolean(song && song.tracks.some(t => !audio.states[t.id] || audio.states[t.id] === 'Загрузка…'));
-  const playbackLabel = playbackLoading ? 'Загрузка аудио' : isPlaying ? 'Пауза' : 'Воспроизвести';
+  const playbackLoading = audio.loading || (pendingPlayback && !audio.retryRequired);
+  const playbackLabel = playbackLoading ? 'Загрузка аудио' : audio.retryRequired ? 'Повторить подключение аудио' : isPlaying ? 'Пауза' : 'Воспроизвести';
   const mix = Object.fromEntries(tracks.map(t => [t.id, t]));
   const loopStart = realBarDuration;
   const loopEnd = Math.min(duration, realBarDuration * 3);
@@ -115,6 +115,11 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   }
   function togglePlayback() {
     if (song) {
+      if (audio.retryRequired) {
+        setPendingPlayback(false);
+        audio.retryInitialization();
+        return;
+      }
       const engine = audio.engine.current;
       if (!engine || (engine.playbackRequested && !engine.playing)) return;
       if (engine.playing) engine.pause();
@@ -238,7 +243,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
             {tracks.map((track) => (
               <div className={styles.channel} key={track.id} role="group" aria-label={`Партия: ${track.name}`}>
                 <TrackControls
-                  loading={!!song && (!audio.states[track.id] || audio.states[track.id] === "Загрузка…")}
+                  loading={!!song && audio.states[track.id] === "Загрузка…"}
                   disabled={!!song && !audio.states[track.id]?.startsWith("Готово")}
                   name={track.name} volume={track.volume} muted={track.muted} solo={track.solo} tone={track.tone}
                   orientation="vertical"
