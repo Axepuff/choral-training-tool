@@ -136,6 +136,38 @@ test('a canceled in-flight streaming decode cannot restart a changed song', asyn
   engine.dispose(); finish({ duration: 4 }); await play;
   assert.equal(engine.playing, false); assert.equal(context.sources.length, 0);
 });
+for (const action of ['first play', 'seek while playing']) {
+  test(`pause cancels ${action} before its window finishes loading`, async t => {
+    const context = clock(), engine = new AudioEngine(context, 120);
+    t.after(() => engine.dispose());
+    const mix = { voice: { volume: 100, muted: false, solo: false } };
+    let release;
+    const heldStart = action === 'first play' ? 0 : 20;
+    engine.streams.set('voice', { duration: 120, load(start, end) {
+      return start === heldStart ? new Promise(resolve => { release = resolve; }) : Promise.resolve({ duration: end - start });
+    } });
+    if (action === 'seek while playing') {
+      await engine.play(mix);
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(engine.playbackRequested, true);
+      assert.equal(engine.playing, true);
+    }
+    const pending = action === 'first play' ? engine.play(mix) : engine.seek(20, mix);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(engine.playbackRequested, true);
+    assert.equal(engine.playing, false);
+    const starts = context.sources.length;
+    engine.pause();
+    assert.equal(engine.playbackRequested, false);
+    release({ duration: 4 });
+    await pending;
+    assert.equal(engine.playbackRequested, false);
+    assert.equal(engine.playing, false);
+    assert.equal(engine.position, heldStart);
+    assert.equal(context.sources.length, starts, 'late window must not schedule any sound');
+    assert.ok(context.sources.every(s => s.stopped));
+  });
+}
 test('streaming gain/solo/mute apply to current and future windows; a failed file is isolated', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const context = clock(), engine = new AudioEngine(context, 20);

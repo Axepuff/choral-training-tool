@@ -37,6 +37,43 @@ await new Promise(r => server.listen(5188, '127.0.0.1', r));
 let ws; const pending = new Map(); let id = 0;
 function send(method, params = {}) { return new Promise((resolve, reject) => { pending.set(++id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); }); }
 async function evaluate(expression) { const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails)); return r.result.value; }
+async function clickPlayback(label) {
+  const point = await evaluate(`(() => { const r = document.querySelector('[aria-label="${label}"]').getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`);
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point });
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point });
+}
+async function deferMedia() {
+  await evaluate(`(() => {
+    const fetch = window.fetch;
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    window.deferredMediaRequests = 0;
+    window.releaseMediaRequests = () => { window.fetch = fetch; release(); };
+    window.fetch = async (...args) => {
+      if (typeof args[0] === 'string' && args[0].startsWith('/api/v1/media/')) {
+        window.deferredMediaRequests++;
+        await gate;
+      }
+      return fetch(...args);
+    };
+  })()`);
+}
+async function cancelPendingPlayback(position) {
+  await poll(() => evaluate('window.deferredMediaRequests > 0'));
+  await poll(() => evaluate(`document.querySelector('[aria-label="Отменить воспроизведение"]')?.getAttribute('aria-busy') === 'true'`));
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Отменить воспроизведение"]').disabled`), false);
+  assert.equal(await evaluate(`document.body.textContent.includes('Загрузка аудио…')`), true);
+  const starts = await evaluate('window.transportSourceStarts');
+  await clickPlayback('Отменить воспроизведение');
+  await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]') !== null`));
+  await evaluate('window.releaseMediaRequests()');
+  await evaluate('window.transportPlay');
+  await sleep(200);
+  assert.equal(await evaluate('window.transportSourceStarts'), starts, 'canceled load must not schedule sound');
+  assert.equal(await evaluate(`Number(document.querySelector('input[type=range]').value)`), position);
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Воспроизвести"]').getAttribute('aria-busy')`), 'false');
+  assert.equal(await evaluate(`document.body.textContent.includes('Загрузка аудио…')`), false);
+}
 try {
   start(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '5189', '--strictPort'], { CHORAL_API_PROXY: 'http://127.0.0.1:5188', VITE_APP_DEMO: 'false' });
   await poll(async () => (await fetch('http://127.0.0.1:5189')).ok);
@@ -102,10 +139,29 @@ try {
     assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true, `${width} overflow ${await evaluate('JSON.stringify({inner:innerWidth,doc:document.documentElement.scrollWidth,body:document.body.scrollWidth,sections:Array.from(document.querySelectorAll("section")).map(e=>[e.className,e.clientWidth,e.scrollWidth,getComputedStyle(e).overflowX])})')}: ${await evaluate("JSON.stringify(Array.from(document.querySelectorAll('*')).filter(e=>e.getBoundingClientRect().right>innerWidth+1).slice(0,12).map(e=>[e.tagName,e.className,e.getBoundingClientRect().width,e.getBoundingClientRect().right]))")}`);
   }
   // CDP mouse input is a trusted user gesture; autoplay policy stays enabled.
-  const point = await evaluate(`(() => { const r = document.querySelector('[aria-label="Воспроизвести"]').getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`);
-  await send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point });
-  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point });
+  await evaluate(`(async () => {
+    const { AudioEngine } = await import('/src/audio/engine.ts');
+    const play = AudioEngine.prototype.play;
+    AudioEngine.prototype.play = function(...args) { window.transportPlay = play.apply(this,args); return window.transportPlay; };
+    window.transportSourceStarts = 0;
+    const start = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function(...args) { window.transportSourceStarts++; return start.apply(this,args); };
+  })()`);
+  await deferMedia();
+  await clickPlayback('Воспроизвести');
+  await cancelPendingPlayback(0);
+  await clickPlayback('Воспроизвести');
   await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value) > .2`));
+  await deferMedia();
+  await evaluate(`(() => {
+    const slider = document.querySelector('input[type=range]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(slider, '4');
+    slider.dispatchEvent(new Event('input', {bubbles:true}));
+  })()`);
+  await cancelPendingPlayback(4);
+  await clickPlayback('Воспроизвести');
+  await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value) > 4.1`));
+  console.log('PASS transport cancellation: delayed first Play and seek resume show cancelable loading, late media/decode cannot schedule sound; explicit Play works afterwards.');
   await evaluate(`document.querySelector('[aria-label="Пауза"]').click()`); await sleep(100);
   const stopped = await evaluate(`Number(document.querySelector('input[type=range]').value)`); await sleep(150);
   assert.equal(await evaluate(`Number(document.querySelector('input[type=range]').value)`), stopped);

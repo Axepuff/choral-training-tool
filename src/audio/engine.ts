@@ -45,6 +45,7 @@ export class AudioEngine {
   disposed = false;
   private generation = 0;
   constructor(readonly context: AudioContext, readonly duration: number) {}
+  get playbackRequested() { return this.wantsPlayback; }
   get position() { return Math.min(this.playing && this.streams.size ? this.scheduledUntil : this.duration, this.offset + (this.playing ? Math.max(0, this.context.currentTime - this.started) : 0)); }
   async play(mix: Record<string, Mix>) {
     this.wantsPlayback = true;
