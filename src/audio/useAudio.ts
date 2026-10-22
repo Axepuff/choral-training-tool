@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AudioEngine, mediaURL } from './engine';
-import type { AudioSong, Mix } from './engine';
+import { MP4Reader } from './mp4';
+import type { AudioSong } from './engine';
 export interface Wave { startMs: number; stepMs: number; durationMs: number; points: [number, number][] }
 export function useAudio(song: AudioSong | undefined, publicAccess: boolean) {
   const engine = useRef<AudioEngine | null>(null);
@@ -11,30 +12,41 @@ export function useAudio(song: AudioSong | undefined, publicAccess: boolean) {
     if (!song) return;
     const abort = new AbortController();
     let context: AudioContext;
-    try { context = new AudioContext({ sampleRate: 24000 }); }
+    try { context = new AudioContext({ sampleRate: 48000 }); }
     catch { setError('Браузер не смог открыть аудиоустройство. Попробуйте другой браузер.'); return; }
     const audio = new AudioEngine(context, (song.durationMs ?? 0) / 1000);
     engine.current = audio;
-    context.onstatechange = () => { if (context.state === 'suspended' && audio.playing) audio.pause(); };
+    setStates({}); setWaves({}); setError('');
+    audio.onError = message => { if (!abort.signal.aborted) setError(message); };
+    context.onstatechange = () => { if (context.state !== 'running' && audio.playing) audio.pause(); };
     const status = (id: string, value: string) => { if (!abort.signal.aborted) setStates(s => ({ ...s, [id]: value })); };
-    const fetchMedia = async (url: string) => {
-      const response = await fetch(mediaURL(url), { credentials: publicAccess ? 'omit' : 'same-origin', redirect: 'error', signal: AbortSignal.any([abort.signal, AbortSignal.timeout(60000)]) });
+    const fetchMedia = async (url: string, headers?: HeadersInit) => {
+      const response = await fetch(mediaURL(url), { credentials: publicAccess ? 'omit' : 'same-origin', redirect: 'error', ...(headers ? { headers } : {}), signal: AbortSignal.any([abort.signal, AbortSignal.timeout(60000)]) });
       if (!response.ok) throw new Error('Аудио недоступно. Ссылка могла быть отозвана.');
       return response;
     };
+    audio.onTrackError = (id, e) => status(id, e instanceof Error ? e.message : 'Ошибка загрузки');
     void (async () => {
-      let bytes = 0;
-      // Sequential decode bounds temporary memory; mono playback is guaranteed by the API.
+      // Keep only the MP4 index and a small scheduled PCM horizon, independent of song length.
       for (const track of song.tracks) {
         status(track.id, 'Загрузка…');
         try {
           if (!track.mediaUrl || !track.durationMs) throw new Error('Файл ещё не готов');
-          const estimate = Math.ceil(track.durationMs / 1000 * context.sampleRate) * 4;
-          if (bytes + estimate > 256 * 1024 * 1024) throw new Error('Лимит памяти аудио (256 MiB). Сократите число или длину дорожек.');
-          const buffer = await context.decodeAudioData(await (await fetchMedia(track.mediaUrl)).arrayBuffer());
+          let etag: string | null = null;
+          const url = track.mediaUrl;
+          const reader = await MP4Reader.open(async (start, end) => {
+            const response = await fetchMedia(url, { Range: `bytes=${start}-${end}` });
+            if (response.status !== 206 || !response.headers.get('Content-Range')?.startsWith(`bytes ${start}-${end}/`)) throw new Error('Сервер не поддерживает загрузку фрагментов аудио');
+            const version = response.headers.get('ETag');
+            if (!version || (etag && version !== etag)) throw new Error('Аудиофайл изменился. Обновите страницу.');
+            etag = version;
+            const bytes = new Uint8Array(await response.arrayBuffer());
+            if (bytes.length !== end - start + 1) throw new Error('Неполный фрагмент аудио');
+            return bytes;
+          });
           if (abort.signal.aborted) return;
-          bytes += buffer.length * buffer.numberOfChannels * 4;
-          audio.buffers.set(track.id, buffer);
+          const duration = track.durationMs / 1000;
+          audio.streams.set(track.id, { duration, load: (start, end) => reader.decode(context, start, end) });
           status(track.id, 'Готово');
           if (track.peaksUrl) {
             try {
@@ -54,12 +66,12 @@ export function useAudio(song: AudioSong | undefined, publicAccess: boolean) {
     window.addEventListener('pagehide', stop);
     return () => { window.removeEventListener('pagehide', stop); abort.abort(); document.removeEventListener('visibilitychange', hide); audio.dispose(); engine.current = null; };
   }, [song, publicAccess]);
-  async function run(action: (audio: AudioEngine) => Promise<void>, mix: Record<string, Mix>) {
+  async function run(action: (audio: AudioEngine) => Promise<void>) {
     const audio = engine.current;
     if (!audio) return;
     try {
-      if (!audio.buffers.size) throw new Error('Нет загруженных дорожек');
-      await action(audio); audio.setMix(mix); setError('');
+      if (!audio.buffers.size && !audio.streams.size) throw new Error('Нет загруженных дорожек');
+      await action(audio); setError('');
     } catch (e) { audio.pause(); setError(e instanceof Error ? e.message : 'Не удалось запустить звук. Нажмите воспроизведение ещё раз.'); }
   }
   return { engine, states, waves, error, run };

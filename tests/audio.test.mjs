@@ -51,3 +51,106 @@ test('late resume cannot start disposed or paused song; media URLs remain local'
   engine.dispose(); resume(); await pending; assert.equal(engine.playing, false); assert.equal(context.sources.length, 0);
   assert.throws(() => mediaURL('https://other.test/audio')); assert.throws(() => mediaURL('/api/v1/../private'));
 });
+test('all-solo reset is immutable and repeatable under StrictMode updater replay', () => {
+  const mix = Object.freeze({
+    a: Object.freeze({ volume: 40, muted: false, solo: true }),
+    b: Object.freeze({ volume: 80, muted: false, solo: false }),
+  });
+  const before = structuredClone(mix);
+  const first = updateMix(mix, 'b', { solo: true });
+  const replay = updateMix(mix, 'b', { solo: true });
+  assert.deepEqual(mix, before);
+  assert.deepEqual(first, replay);
+  assert.ok(Object.values(first).every(t => !t.solo));
+});
+test('streamed windows share a clock for 32 twenty-minute tracks and release scheduled nodes', async t => {
+  const context = clock(), engine = new AudioEngine(context, 1200), mix = {};
+  t.after(() => engine.dispose());
+  let requests = 0;
+  for (let i = 0; i < 32; i++) {
+    const id = `long-${i}`; mix[id] = { volume: 50, muted: false, solo: false };
+    engine.streams.set(id, { duration: 1200, async load(start, end) {
+      requests++; assert.ok(end - start <= 4); return { duration: end - start };
+    } });
+  }
+  await engine.play(mix);
+  assert.ok(context.sources.slice(0, 32).every(s => s.args[0] === .1));
+  engine.pause();
+  for (const offset of [600.123, 1196, 3.5, 1199]) {
+    await engine.seek(offset, mix); const before = context.sources.length; await engine.play(mix);
+    assert.ok(context.sources.slice(before,before+32).every(s => s.args[0] === context.currentTime + .1));
+    context.currentTime += .5; engine.pause();
+  }
+  assert.ok(requests < 32 * 20, 'seek only loads a bounded horizon, never entire tracks');
+  assert.ok(context.sources.every(s => s.stopped));
+  engine.dispose(); assert.equal(engine.streams.size, 0);
+});
+test('slow window stops all tracks at last buffered boundary instead of drifting', async () => {
+  const context = clock(), engine = new AudioEngine(context, 20);
+  let finish;
+  engine.streams.set('a', { duration: 20, load(start, end) {
+    return start === 0 ? Promise.resolve({ duration: end - start }) : new Promise(resolve => { finish = resolve; });
+  } });
+  let error; engine.onError = message => { error = message; };
+  await engine.play({ a: { volume: 100, muted: false, solo: false } });
+  context.currentTime = 6;
+  finish({ duration: 4 }); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(engine.playing, false); assert.equal(engine.position, 4); assert.ok(error);
+  assert.ok(context.sources.every(s => s.stopped)); engine.dispose();
+});
+test('all 300 streaming windows over twenty minutes stay on the original clock', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const context = clock(), engine = new AudioEngine(context, 1200), mix = {};
+  t.after(() => engine.dispose());
+  for (let i = 0; i < 32; i++) {
+    const id = `voice-${i}`; mix[id] = { volume: 50, muted: false, solo: false };
+    engine.streams.set(id, { duration: 1200, async load(start, end) { return { duration: end - start }; } });
+  }
+  await engine.play(mix);
+  await new Promise(resolve => setImmediate(resolve));
+  const epoch = context.sources[0].args[0];
+  for (let step = 0; step < 300; step++) {
+    context.currentTime = step * 4 + .2;
+    for (const source of context.sources) {
+      if (!source.ended && source.buffer && source.args[0] + source.buffer.duration <= context.currentTime) {
+        source.ended = true; source.onended();
+      }
+    }
+    t.mock.timers.tick(100);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(engine.playing, true);
+    assert.ok(context.sources.filter(s => s.buffer).length <= 96, 'at most three windows of PCM');
+  }
+  assert.equal(context.sources.length, 300 * 32);
+  for (let window = 0; window < 300; window++) {
+    assert.ok(context.sources.slice(window * 32, (window + 1) * 32).every(s => s.args[0] === epoch + window * 4));
+  }
+  engine.pause(); assert.ok(context.sources.every(s => !s.buffer));
+});
+test('a canceled in-flight streaming decode cannot restart a changed song', async () => {
+  const context = clock(), engine = new AudioEngine(context, 1200);
+  let finish;
+  engine.streams.set('late', { duration: 1200, load: () => new Promise(resolve => { finish = resolve; }) });
+  const play = engine.play({ late: { volume: 100, muted: false, solo: false } });
+  await new Promise(resolve => setImmediate(resolve));
+  engine.dispose(); finish({ duration: 4 }); await play;
+  assert.equal(engine.playing, false); assert.equal(context.sources.length, 0);
+});
+test('streaming gain/solo/mute apply to current and future windows; a failed file is isolated', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const context = clock(), engine = new AudioEngine(context, 20);
+  t.after(() => engine.dispose());
+  engine.streams.set('a', { duration: 20, async load() { return { duration: 4 }; } });
+  engine.streams.set('b', { duration: 20, async load() { return { duration: 4 }; } });
+  engine.streams.set('bad', { duration: 20, async load() { throw new Error('404'); } });
+  let failed; engine.onTrackError = id => { failed = id; };
+  const mix = { a: { volume: 40, muted: false, solo: false }, b: { volume: 80, muted: false, solo: false }, bad: { volume: 100, muted: false, solo: false } };
+  await engine.play(mix); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(failed, 'bad'); assert.equal(engine.streams.size, 2);
+  engine.setMix(updateMix(mix, 'a', { solo: true }));
+  assert.ok(context.gains.every((gain, i) => gain.value === (i % 2 ? 0 : .4)));
+  context.currentTime = 4; t.mock.timers.tick(100); await new Promise(resolve => setImmediate(resolve));
+  assert.ok(context.gains.every((gain, i) => gain.value === (i % 2 ? 0 : .4)), 'future windows preserve latest solo');
+  engine.setMix(updateMix(mix, 'b', { muted: true }));
+  assert.ok(context.gains.every((gain, i) => gain.value === (i % 2 ? 0 : .4)));
+});

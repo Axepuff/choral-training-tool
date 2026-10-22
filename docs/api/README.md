@@ -161,6 +161,11 @@ songs/sharing/media не читают role или owner из клиентско�
   возможность полного decode, число каналов, sample rate и фактическую длину.
   Не менять tempo или обрезать паузы. Допустимая погрешность длины после decode
   ≤20 ms; иначе job failed. `durationMs` отражает декодированную длительность.
+- Runtime player #11 читает выход существующего FFmpeg worker окнами через
+  Range/ETag: нефрагментированный MP4, один непрерывный mono AAC stream,
+  `stco`, sample duration 1024 (последний может быть короче), начальный edit
+  encoder delay. Это описание фактического выхода worker; смена muxer/контейнера
+  требует проверки оконного reader. Подробнее: [audio-player](../audio-player.md).
 - Peaks — массив пар min/max амплитуд в `[-1,1]`, шаг 100 ms, из декодированного
   playback, `startMs=0`, `stepMs=100`, `durationMs` и `points.length =
   ceil(durationMs/100)`. Последнее окно может быть короче. Клиент рисует их по

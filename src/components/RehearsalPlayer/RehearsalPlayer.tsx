@@ -85,21 +85,24 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
     }
   }, [time, duration]);
 
+  useEffect(() => {
+    audio.engine.current?.setMix(Object.fromEntries(tracks.map(t => [t.id, t])));
+  }, [tracks, audio.engine]);
+
   function updateTrack(id: string, patch: Partial<Mix>) {
     setTracks(current => {
       const updated = updateMix(Object.fromEntries(current.map(t => [t.id, t])), id, patch);
-      audio.engine.current?.setMix(updated);
       return current.map(t => ({ ...t, ...updated[t.id]! }));
     });
   }
   function seek(value: number) {
-    if (song) void audio.run(e => e.seek(value, mix), mix);
+    if (song) void audio.run(e => e.seek(value, mix));
     else setTime(value);
   }
   function togglePlayback() {
     if (song) {
       if (audio.engine.current?.playing) audio.engine.current.pause();
-      else void audio.run(e => e.play(mix), mix);
+      else void audio.run(e => e.play(mix));
     } else {
       if (!isPlaying && time >= duration) setTime(0);
       setPlaying(!isPlaying);

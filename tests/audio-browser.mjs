@@ -14,14 +14,25 @@ wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8
 for (let i = 0; i < 48000 * 8; i++) wav.writeInt16LE(Math.round(Math.sin(i * Math.PI * 2 * 440 / 48000) * 8000), 44 + i * 2);
 await writeFile(join(dir, 'fixture.wav'), wav);
 execFileSync('ffmpeg', ['-v', 'error', '-i', join(dir, 'fixture.wav'), '-ac', '1', '-ar', '48000', '-c:a', 'aac', '-b:a', '96k', join(dir, 'fixture.m4a')]);
+execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=1200', '-ac', '1', '-c:a', 'aac', '-b:a', '96k', join(dir, 'long.m4a')]);
+const longAAC = await readFile(join(dir, 'long.m4a'));
 const aac = await readFile(join(dir, 'fixture.m4a'));
 const song = { id: 'fixture', title: 'Audio fixture', bpm: 120, beatsPerBar: 3, beatUnit: 8, durationMs: 8000, barCount: 11, notes: 'Synthetic fixture', tracks: Array.from({ length: 32 }, (_, i) => ({ id: `stable-${i}`, name: `Voice ${i}`, gain: .5, durationMs: 8000, mediaUrl: `/api/v1/media/${i}`, peaksUrl: '/api/v1/peaks' })) };
+const longSong = { ...song, id:'long-fixture', durationMs:1200000, tracks: song.tracks.map((t,i) => ({...t, durationMs:1200000, mediaUrl:`/api/v1/long/${i}`, peaksUrl:'/api/v1/long-peaks'})) };
 const requests = [];
+let changedTrack = false, revokeMedia = false;
 const server = createServer((req, res) => {
-  requests.push({ url: req.url, cookie: req.headers.cookie });
-  if (req.url.startsWith('/api/v1/public/shares/')) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ kind: 'song', songs: [song], nextCursor: null })); }
+  requests.push({ url: req.url, cookie: req.headers.cookie, range: req.headers.range });
+  if (req.url.startsWith('/api/v1/public/shares/')) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ kind: 'song', songs: [req.url.includes('long-fixture') ? longSong : song], nextCursor: null })); }
   else if (req.url === '/api/v1/peaks') res.end(JSON.stringify({ startMs: 0, stepMs: 100, durationMs: 8000, points: Array.from({ length: 80 }, () => [-.25, .25]) }));
-  else if (req.url.startsWith('/api/v1/media/') && req.url !== '/api/v1/media/31') { res.setHeader('Content-Type', 'audio/mp4'); res.end(aac); }
+  else if (req.url === '/api/v1/long-peaks') res.end(JSON.stringify({startMs:0,stepMs:100,durationMs:1200000,points:Array.from({length:12000},()=>[-.125,.125])}));
+  else if ((req.url.startsWith('/api/v1/media/') && req.url !== '/api/v1/media/31') || req.url.startsWith('/api/v1/long/')) {
+    if (revokeMedia) { res.statusCode=404; res.end(); return; }
+    res.setHeader('Content-Type', 'audio/mp4'); res.setHeader('ETag', changedTrack && req.url==='/api/v1/long/0' ? '"changed"' : '"fixture"');
+    const payload = req.url.startsWith('/api/v1/long/') ? longAAC : aac;
+    const range = /bytes=(\d+)-(\d+)/.exec(req.headers.range ?? '');
+    if (range) { const start = Number(range[1]), end = Math.min(payload.length - 1, Number(range[2])); res.statusCode = 206; res.setHeader('Content-Range', `bytes ${start}-${end}/${payload.length}`); res.end(payload.subarray(start, end + 1)); }
+    else res.end(payload); }
   else { res.statusCode = 404; res.end(); }
 });
 await new Promise(r => server.listen(5188, '127.0.0.1', r));
@@ -37,8 +48,27 @@ try {
   await new Promise(r => { ws.onopen = r; });
   ws.onmessage = e => { const d = JSON.parse(e.data), p = pending.get(d.id); if (p) { pending.delete(d.id); if (d.error) p.reject(d.error); else p.resolve(d.result); } };
   await send('Page.enable'); await send('Runtime.enable');
+  await send('Network.setCookie', {name:'audio-test',value:'synthetic',url:'http://127.0.0.1:5189/',path:'/'});
   await send('Page.navigate', { url: 'http://127.0.0.1:5189/?song=fixture' });
   await poll(() => evaluate(`document.body.textContent.includes('Аудио недоступно')`));
+  const chunkDecode = await evaluate(`(async () => {
+    const {MP4Reader} = await import('/src/audio/mp4.ts');
+    const context = new AudioContext({sampleRate:48000});
+    const read = async (a,b) => new Uint8Array(await (await fetch('/api/v1/media/0', {credentials:'omit',headers:{Range:'bytes='+a+'-'+b}})).arrayBuffer());
+    const reader = await MP4Reader.open(read);
+    const reference = await context.decodeAudioData(await (await fetch('/api/v1/media/0', {credentials:'omit'})).arrayBuffer());
+    const errors = [];
+    for (const [start,end] of [[0,2],[2,4],[3.123,5.456],[6,8]]) {
+      const part = await reader.decode(context, start, end);
+      let max = 0, rms = 0;
+      const original = reference.getChannelData(0), actual = part.getChannelData(0);
+      for (let i=0;i<actual.length;i++) { const difference = actual[i]-original[Math.round(start*48000)+i]; max=Math.max(max,Math.abs(difference)); rms += difference*difference; }
+      errors.push({start,length:part.length,max,rms:Math.sqrt(rms/part.length)});
+    }
+    await context.close(); return errors;
+  })()`);
+  console.log('Window decode comparison', chunkDecode);
+  assert.ok(chunkDecode.every(p => p.max < .001), 'window decode must match full decode');
   assert.equal(await evaluate(`document.querySelectorAll('polygon').length`), 32);
   assert.equal(await evaluate(`document.querySelectorAll('polygon')[0].getAttribute('points').length > 100`), true);
   for (const [width, height] of [[320, 640], [360, 740], [740, 360], [1280, 800]]) {
@@ -88,5 +118,67 @@ try {
     return {before:data[1919],first:data[1920],middle:data[10000]};
   })()`);
   assert.equal(rendered.before, 0); assert.equal(rendered.first, .5); assert.equal(rendered.middle, .5);
+  await evaluate(`(() => {
+    window.windowStarts = []; window.activePCM = 0; window.peakPCM = 0;
+    const start = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function(...args) {
+      window.windowStarts.push({at:args[0], duration:this.buffer.duration, length:this.buffer.length});
+      const bytes=this.buffer.length*4;window.activePCM+=bytes;window.peakPCM=Math.max(window.peakPCM,window.activePCM);
+      this.addEventListener('ended',()=>{window.activePCM-=bytes;},{once:true});
+      return start.apply(this,args);
+    };
+    history.pushState(null, '', '?song=long-fixture'); window.dispatchEvent(new PopStateEvent('popstate'));
+  })()`);
+  await poll(() => evaluate(`document.querySelectorAll('small[role=status]').length === 32 && Array.from(document.querySelectorAll('small[role=status]')).every(e=>e.textContent.startsWith('Готово'))`));
+  for (const [width,height] of [[320,640],[360,740],[740,360],[1280,800]]) {
+    await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<800});
+    await evaluate('new Promise(r=>requestAnimationFrame(r))');
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,'long song page overflow');
+  }
+  // React StrictMode actually replays updater functions in this runtime.
+  for (let i = 0; i < 32; i++) await evaluate(`document.querySelector('[aria-label="Solo: Voice ${i}"]').click()`);
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('[aria-label^="Solo:"]')).every(e=>e.getAttribute('aria-pressed')==='false')`), true);
+  await evaluate(`document.querySelector('[aria-label="Воспроизвести"]').click()`);
+  await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value) > .3`));
+  const continuousSeconds = Number(process.env.CHORAL_AUDIO_SECONDS ?? 12.5);
+  for (let elapsed=0; elapsed<continuousSeconds;) {
+    const step = Math.min(30,continuousSeconds-elapsed); await sleep(step*1000); elapsed+=step;
+    assert.equal(await evaluate(`document.querySelector('[aria-label="Пауза"]') !== null`),true,'continuous playback must not underrun');
+    console.log(`Continuous 32-track playback: ${elapsed}s, peak scheduled PCM ${await evaluate('window.peakPCM')} bytes`);
+  }
+  assert.ok(await evaluate('window.peakPCM < 90*1024*1024'), 'bounded PCM independent of recording length');
+  const starts = await evaluate('window.windowStarts');
+  assert.ok(starts.length >= 128, '32 tracks scheduled across at least four windows');
+  for (let i=0; i<starts.length; i+=32) {
+    assert.equal(starts.slice(i,i+32).length,32);
+    assert.ok(starts.slice(i,i+32).every(s=>s.at===starts[i].at && s.duration<=4));
+    if(i) assert.ok(Math.abs(starts[i].at-starts[i-32].at-4)<1e-8, 'no cumulative timing error');
+  }
+  for (const offset of [600.123,1196,3.5,1198]) {
+    await evaluate(`document.querySelector('[aria-label="Пауза"]').click()`);
+    await evaluate(`(() => { const s=document.querySelector('input[type=range]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(s,'${offset}');s.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+    await poll(() => evaluate(`Math.abs(Number(document.querySelector('input[type=range]').value)-${offset})<.02`));
+    await evaluate(`document.querySelector('[aria-label="Воспроизвести"]').click()`);
+    await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value) > ${offset+.1}`));
+  }
+  await evaluate(`document.querySelector('[aria-label="Пауза"]').click()`);
+  const longRequests = requests.filter(r=>r.url.startsWith('/api/v1/long/'));
+  assert.equal(new Set(longRequests.map(r=>r.url)).size,32);
+  assert.ok(longRequests.every(r=>!r.cookie), 'public streaming requests omit an existing cookie');
+  assert.ok(longRequests.every(r=>r.range), 'no full recording download');
+  const largestRange = Math.max(...longRequests.map(r=> {const [,a,b]=/bytes=(\d+)-(\d+)/.exec(r.range);return Number(b)-Number(a)+1;}));
+  assert.ok(largestRange < 1024*1024, 'bounded requests for 20 minute tracks');
+  await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]') !== null`));
+  changedTrack = true;
+  await evaluate(`document.querySelector('[aria-label="Воспроизвести"]').click()`);
+  await poll(() => evaluate(`document.body.textContent.includes('Аудиофайл изменился')`));
+  await poll(() => evaluate(`document.querySelector('[aria-label="Пауза"]') !== null`));
+  await evaluate(`document.querySelector('[aria-label="Пауза"]').click()`);
+  await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]') !== null`));
+  revokeMedia = true;
+  await evaluate(`document.querySelector('[aria-label="Воспроизвести"]').click()`);
+  await poll(() => evaluate(`document.body.textContent.includes('Нет доступных дорожек')`));
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Пауза"]') === null`),true);
+  console.log(`PASS long media: 32 real 20-minute AAC tracks, bounded Range windows, ${continuousSeconds} seconds continuous clock scheduling, repeated seeks/resume including end of recording; StrictMode all-solo reset. Largest Range: ${largestRange}`);
   console.log('PASS Chrome: real AAC-LC decode/play, sample-exact OfflineAudioContext mix, 32 channels with individual 404, peaks, gesture, clock cursor/pause, Solo, 320/360/landscape/desktop overflow.');
 } finally { ws?.close(); for (const child of children) child.kill('SIGTERM'); server.closeAllConnections(); server.close(); await sleep(300); await rm(dir, { recursive: true, force: true }); }
