@@ -6,9 +6,18 @@ import { join } from 'node:path';
 import ts from 'typescript';
 import { encodePlayback, makeWav } from './helpers/audio-fixture.mjs';
 
-const source = await readFile(new URL('../src/audio/mp4.ts', import.meta.url), 'utf8');
-const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-const { MP4Reader, AudioDecodeError } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+function moduleURL(source) {
+  const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+  return `data:text/javascript;base64,${Buffer.from(js).toString('base64')}`;
+}
+const decoderURL = moduleURL(await readFile(new URL('../src/audio/aac-decoder.ts', import.meta.url), 'utf8'));
+const workerURL = moduleURL((await readFile(new URL('../src/audio/aac.ts', import.meta.url), 'utf8'))
+  .replace("from './aac-decoder'", `from '${decoderURL}'`)
+  .replace("new URL('./aac.worker.ts', import.meta.url)", "new URL('file:///mock-aac.worker.ts')"));
+const { decodePacketWindow } = await import(workerURL);
+const source = (await readFile(new URL('../src/audio/mp4.ts', import.meta.url), 'utf8'))
+  .replace("from './aac-decoder'", `from '${decoderURL}'`).replace("from './aac'", `from '${workerURL}'`);
+const { MP4Reader, AudioDecodeError } = await import(moduleURL(source));
 const dir = await mkdtemp(join(tmpdir(), 'choral-mp4-test-'));
 after(() => rm(dir, { recursive: true, force: true }));
 const fixtures = new Map();
@@ -81,25 +90,23 @@ for (const [code, sampleRate, length] of [
     const context = { sampleRate: 48000, async decodeAudioData() { return { sampleRate, length, numberOfChannels: 1 }; } };
     await assert.rejects(reader.decode(context, 0, 4), error => {
       assert.ok(error instanceof AudioDecodeError);
-      assert.deepEqual(error.diagnostics, { code, contextRate: 48000, decodedRate: sampleRate, channels: 1,
+      assert.deepEqual(error.diagnostics, { code, readerVersion: 2, decoder: 'decodeAudioData', contextRate: 48000, decodedRate: sampleRate, channels: 1,
         encodedSamples: 194560, decodedSamples: length, offset: 1024, requiredSamples: 192000, start: 0, end: 4 });
       return true;
     });
   });
 }
 
-test('window metadata prevents implicit 2112-sample AAC trimming at start and after seeks', async () => {
+test('native fallback describes the packet window without stale full-song metadata', async () => {
   const reader = await open(await fixture(44100));
   let metadata;
-  // Models the missing-edit priming policy suggested by the device report.
-  // It does not run Apple's decoder; Safari still needs a physical retest.
   const context = {
     sampleRate: 48000,
     async decodeAudioData(input) {
       const b = Buffer.from(input), table = timingOffset(b);
       const frames = b.readUInt32BE(table + 8), encoded = frames * b.readUInt32BE(table + 12);
       const elst = payloadOffset(b, ['moov', 'trak', 'edts', 'elst']);
-      const trim = elst === null ? 2112 : b.readUInt32BE(elst + 12);
+      const trim = b.readUInt32BE(elst + 12);
       metadata = { b, encoded, elst, trim };
       const pcm = Float32Array.from({ length: encoded - trim }, (_, i) => i + trim);
       return { sampleRate: 48000, numberOfChannels: 1, length: pcm.length, getChannelData() { return pcm; } };
@@ -112,7 +119,7 @@ test('window metadata prevents implicit 2112-sample AAC trimming at start and af
   for (const [start, end] of [[0, 4], [3.123, 5.456], [4, 8], [7.95, 8.137]]) {
     const output = await reader.decode(context, start, end);
     assert.equal(output.length, Math.round((end - start) * 48000));
-    assert.equal(metadata.trim, 0, 'explicit zero edit disables the implicit AAC priming policy');
+    assert.equal(metadata.trim, 0, 'the container describes the full packet window');
     assert.equal(metadata.b.readUInt32BE(metadata.elst + 8), metadata.encoded, 'edit duration covers all encoded samples');
     const mvhd = payloadOffset(metadata.b, ['moov', 'mvhd']);
     const tkhd = payloadOffset(metadata.b, ['moov', 'trak', 'tkhd']);
@@ -123,4 +130,130 @@ test('window metadata prevents implicit 2112-sample AAC trimming at start and af
     assert.equal(metadata.b.readUInt32BE(mdhd + 16), metadata.encoded);
     for (const type of ['sgpd', 'sbgp']) assert.equal(payloadOffset(metadata.b, ['moov', 'trak', 'mdia', 'minf', 'stbl', type]), null, 'full-song sample groups must not leak into a short window');
   }
+});
+
+function packetContext() {
+  return Object.assign(new EventTarget(), {
+    sampleRate: 48000, state: 'suspended',
+    decodeAudioData() { throw new Error('must not use the short-MP4 decoder'); },
+    createBuffer(channels, length, sampleRate) {
+      const pcm = new Float32Array(length);
+      return { length, sampleRate, copyToChannel(data) { pcm.set(data); }, getChannelData() { return pcm; } };
+    },
+  });
+}
+async function withPackets(mode, run) {
+  const originalDecoder = globalThis.AudioDecoder, originalChunk = globalThis.EncodedAudioChunk;
+  const instances = []; let frameCount = 0, closedFrames = 0, supportChecks = 0;
+  const flushing = Promise.withResolvers();
+  class Decoder {
+    state = 'unconfigured'; chunks = []; closes = 0;
+    static async isConfigSupported(config) { supportChecks++; return { supported: mode !== 'unsupported', config }; }
+    constructor(callbacks) { this.callbacks = callbacks; instances.push(this); }
+    configure(config) { assert.deepEqual([...config.description], [0x11, 0x88]); this.state = 'configured'; }
+    decode(chunk) { this.chunks.push(chunk); }
+    async flush() {
+      if (mode === 'pending') {
+        this.pending = Promise.withResolvers(); flushing.resolve();
+        await this.pending.promise;
+      }
+      if (mode === 'error') { this.state = 'closed'; this.callbacks.error(new Error('codec failure')); throw new Error('flush failed'); }
+      for (let i = 0; i < this.chunks.length; i++) {
+        const remaining = this.chunks.length * 1024 - (mode === 'short' ? 2112 : 0) - i * 1024;
+        if (remaining <= 0) break;
+        const frame = { sampleRate: 48000, numberOfChannels: 1, numberOfFrames: Math.min(1024, remaining),
+          timestamp: this.chunks[i].timestamp + (mode === 'gap' && i === 1 ? 1000 : 0),
+          copyTo(target) { for (let j = 0; j < target.length; j++) target[j] = i * 1024 + j; },
+          close() { closedFrames++; },
+        };
+        frameCount++; this.callbacks.output(frame);
+      }
+    }
+    close() { this.closes++; this.state = 'closed'; this.pending?.reject(new Error('decoder closed')); }
+  }
+  globalThis.AudioDecoder = Decoder;
+  globalThis.EncodedAudioChunk = class { constructor(init) { Object.assign(this, init); } };
+  try { await run({ instances, flushing: flushing.promise, counts: () => ({ frameCount, closedFrames, supportChecks }) }); }
+  finally {
+    if (originalDecoder === undefined) delete globalThis.AudioDecoder; else globalThis.AudioDecoder = originalDecoder;
+    if (originalChunk === undefined) delete globalThis.EncodedAudioChunk; else globalThis.EncodedAudioChunk = originalChunk;
+  }
+}
+
+test('packet decoder bypasses short-MP4 decode and crops priming once at start, seeks and tail', async () => {
+  await withPackets('ok', async ({ instances, counts }) => {
+    const reader = await open(await fixture(44100)), context = packetContext();
+    for (const [start, end] of [[0, 4], [3.123, 5.456], [4, 8], [7.95, 8.137]]) {
+      const pcm = await reader.decode(context, start, end);
+      const sampleStart = Math.round(start * 48000) + 1024;
+      const expectedOffset = sampleStart - Math.max(0, Math.floor(sampleStart / 1024) - 2) * 1024;
+      assert.equal(pcm.length, Math.round((end - start) * 48000));
+      assert.equal(pcm.getChannelData(0)[0], expectedOffset);
+      assert.equal(pcm.getChannelData(0).at(-1), expectedOffset + pcm.length - 1);
+    }
+    assert.equal(instances.length, 4);
+    assert.ok(instances.every(d => d.closes === 1 && d.state === 'closed'));
+    assert.equal(counts().frameCount, counts().closedFrames, 'all AudioData outputs are released');
+    assert.equal(counts().supportChecks, 1, 'codec support is checked once per reader');
+  });
+});
+for (const [mode, code] of [['gap', 'AAC_PACKET_DECODE'], ['error', 'AAC_PACKET_DECODE'], ['short', 'AAC_SHORT_PCM']]) {
+  test(`packet decoder rejects ${mode} and releases its outputs and decoder`, async () => {
+    await withPackets(mode, async ({ instances, counts }) => {
+      const reader = await open(await fixture(44100));
+      await assert.rejects(reader.decode(packetContext(), 0, 4), error => error instanceof AudioDecodeError &&
+        error.diagnostics.code === code && error.diagnostics.decoder === 'webcodecs' && error.diagnostics.readerVersion === 2);
+      assert.ok(instances.every(d => d.state === 'closed'));
+      assert.equal(counts().frameCount, counts().closedFrames);
+    });
+  });
+}
+test('unsupported AAC WebCodecs config uses the guarded native fallback', async () => {
+  await withPackets('unsupported', async ({ instances }) => {
+    const reader = await open(await fixture(44100));
+    const context = { sampleRate: 48000, async decodeAudioData() { return { sampleRate: 48000, length: 192448, numberOfChannels: 1 }; } };
+    await assert.rejects(reader.decode(context, 0, 4), error => error instanceof AudioDecodeError &&
+      error.diagnostics.code === 'AAC_SHORT_PCM' && error.diagnostics.decoder === 'decodeAudioData' && error.diagnostics.readerVersion === 2);
+    assert.equal(instances.length, 0);
+  });
+});
+test('closing the audio context releases a packet decoder while flush is pending', async () => {
+  await withPackets('pending', async ({ instances, flushing }) => {
+    const reader = await open(await fixture(44100)), context = packetContext();
+    const decoding = reader.decode(context, 0, 4);
+    await flushing;
+    const rejected = assert.rejects(decoding, error => error instanceof AudioDecodeError && error.diagnostics.code === 'AAC_PACKET_DECODE');
+    context.state = 'closed'; context.dispatchEvent(new Event('statechange'));
+    await rejected;
+    assert.equal(instances[0].closes, 1);
+    assert.equal(instances[0].state, 'closed');
+  });
+});
+
+test('worker routes concurrent replies by request ID and rejects all pending jobs on context close', async () => {
+  const original = globalThis.Worker, instances = [];
+  globalThis.Worker = class {
+    jobs = []; terminations = 0;
+    constructor() { instances.push(this); }
+    postMessage(request) { this.jobs.push(request); }
+    terminate() { this.terminations++; }
+  };
+  try {
+    const context = packetContext();
+    const first = decodePacketWindow(context, new Uint8Array([1]), [1]);
+    const second = decodePacketWindow(context, new Uint8Array([2]), [1]);
+    assert.equal(instances.length, 1, 'one worker is shared by tracks of one context');
+    const worker = instances[0], result = value => ({ sampleRate: 48000, numberOfChannels: 1, length: 1, pcm: new Float32Array([value]) });
+    worker.onmessage({ data: { id: worker.jobs[1].id, result: result(.5) } });
+    worker.onmessage({ data: { id: worker.jobs[0].id, result: result(.25) } });
+    assert.equal((await first).getChannelData(0)[0], .25);
+    assert.equal((await second).getChannelData(0)[0], .5);
+    const pending = [decodePacketWindow(context, new Uint8Array([3]), [1]), decodePacketWindow(context, new Uint8Array([4]), [1])];
+    const rejected = pending.map(p => assert.rejects(p, /Аудиоустройство закрыто/));
+    context.state = 'closed'; context.dispatchEvent(new Event('statechange'));
+    await Promise.all(rejected);
+    assert.equal(worker.terminations, 1);
+    await assert.rejects(decodePacketWindow(context, new Uint8Array([5]), [1]), /Аудиоустройство закрыто/);
+    assert.equal(instances.length, 1, 'a closed context never creates another worker');
+  } finally { if (original === undefined) delete globalThis.Worker; else globalThis.Worker = original; }
 });

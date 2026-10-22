@@ -6,6 +6,7 @@ import { barDuration, formatTime, mockScore, mockTracks } from './mockScore';
 import { updateMix } from '../../audio/engine';
 import type { AudioSong, Mix } from '../../audio/engine';
 import { useAudio } from '../../audio/useAudio';
+import type { Wave } from '../../audio/useAudio';
 import { PlayerIcon } from './PlayerIcon';
 import styles from './RehearsalPlayer.module.css';
 
@@ -54,10 +55,13 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
 
   useEffect(() => {
     if (song) {
-      let frame: number;
-      const tick = () => {
+      let frame: number, lastUpdate = -Infinity;
+      const tick = (now: number) => {
         const engine = audio.engine.current;
-        if (engine) {
+        // Read the audio clock at 20 Hz without reconciling a long score on
+        // every display frame; audio scheduling keeps its own clock.
+        if (engine && now - lastUpdate >= 50) {
+          lastUpdate = now;
           if (engine.playing && engine.position >= duration) engine.pause();
           setTime(engine.position); setPlaying(engine.playing);
         }
@@ -112,20 +116,30 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
     }
   }
 
-  // Peaks do not change with the audio cursor: avoid rebuilding long SVG strings every frame.
-  const wavePaths = useMemo(() => Object.fromEntries(tracks.map(track => {
+  // Neither the cursor nor Solo/Mute changes geometry. Cache each immutable
+  // peaks response so loading another track does not rebuild all earlier paths.
+  const waveCache = useMemo(() => ({ duration, paths: new WeakMap<Wave, string>() }), [duration]);
+  const wavePaths = useMemo(() => Object.fromEntries((song
+    ? song.tracks.map(track => ({ id: track.id, waveform: [] as number[] })) : mockTracks).map(track => {
     const wave = audio.waves[track.id];
     if (wave) {
+      const cached = waveCache.paths.get(wave);
+      if (cached !== undefined) return [track.id, cached];
       const upper = wave.points.map((p, i) => `${i * wave.stepMs / duration},${50 - p[1] * 46}`).join(' ');
       const lower = wave.points.map((p, i) => `${Math.min(wave.durationMs, (i + 1) * wave.stepMs) / duration},${50 - p[0] * 46}`).reverse().join(' ');
-      return [track.id, `${upper} ${lower}`];
+      const points = `${upper} ${lower}`;
+      waveCache.paths.set(wave, points);
+      return [track.id, points];
     }
     if (song) return [track.id, ''];
     const waveform = Array.from({ length: 24 * bars }, (_, i) => track.waveform[i % track.waveform.length] ?? 0);
     const upper = waveform.map((height, i) => `${i / (waveform.length - 1) * 1000},${50 - height * 0.46}`).join(' ');
     const lower = waveform.map((height, i) => `${i / (waveform.length - 1) * 1000},${50 + height * 0.46}`).reverse().join(' ');
     return [track.id, `${upper} ${lower}`];
-  })), [tracks, audio.waves, duration, bars, song]);
+  })), [audio.waves, duration, bars, song, waveCache]);
+  const barNumbers = useMemo(() => Array.from({ length: count }, (_, index) =>
+    <span key={index} style={song ? { flex: `0 0 ${realBarDuration / (duration || 1) * 100}%` } : undefined}>{index + 1}</span>
+  ), [count, realBarDuration, duration, song]);
 
   const gridStyle = {
     '--bars': song && duration ? duration / realBarDuration : count,
@@ -133,7 +147,6 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
     '--loop-left': `${100 / bars}%`,
     '--loop-width': `${200 / bars}%`,
     '--beats': song ? duration / realBarDuration * beatsPerBar : count * beatsPerBar,
-    '--position': `${time / (duration || 1) * 100}%`,
   } as CSSProperties;
 
   return (
@@ -181,7 +194,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
           <div className={styles.timelineViewport} ref={timelineRef} tabIndex={0} role="region" aria-label="Прокрутка тактов">
           <div className={styles.timelineContent}>
           <div className={styles.barNumbers} style={song ? { display: "flex", overflow: "hidden" } : undefined} aria-hidden="true">
-            {Array.from({ length: count }, (_, index) => <span key={index} style={song ? { flex: `0 0 ${realBarDuration / (duration || 1) * 100}%` } : undefined}>{index + 1}</span>)}
+            {barNumbers}
           </div>
           <div className={styles.waveStack}>
             <svg className={styles.waves} viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true">
@@ -193,7 +206,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
               })}
             </svg>
             {loop && <div className={styles.loopRegion} aria-hidden="true" />}
-            <div className={styles.cursor} aria-hidden="true"><span /></div>
+            <div className={styles.cursor} style={{ '--position': `${time / (duration || 1) * 100}%` } as CSSProperties} aria-hidden="true"><span /></div>
           </div>
           </div>
           </div>

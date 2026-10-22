@@ -53,20 +53,47 @@ try {
     const {MP4Reader} = await import('/src/audio/mp4.ts');
     const context = new AudioContext({sampleRate:48000});
     const read = async (a,b) => new Uint8Array(await (await fetch('/api/v1/media/0', {credentials:'omit',headers:{Range:'bytes='+a+'-'+b}})).arrayBuffer());
-    const reader = await MP4Reader.open(read);
     const reference = await context.decodeAudioData(await (await fetch('/api/v1/media/0', {credentials:'omit'})).arrayBuffer());
+    const nativeDecoder = globalThis.AudioDecoder, nativeDecode = context.decodeAudioData.bind(context);
+    const support = await nativeDecoder.isConfigSupported({codec:'mp4a.40.2',sampleRate:48000,numberOfChannels:1,description:new Uint8Array([0x11,0x88])});
+    if (!support.supported) throw new Error('This browser must support AAC WebCodecs for the packet regression');
     const errors = [];
+    for (const decoder of ['webcodecs','decodeAudioData']) {
+    globalThis.AudioDecoder = decoder === 'webcodecs' ? nativeDecoder : undefined;
+    // The packet path must work even when the MP4 decoder fails, as on the iPhone.
+    context.decodeAudioData = decoder === 'webcodecs' ? async () => { throw new Error('broken short-MP4 decode'); } : nativeDecode;
+    const reader = await MP4Reader.open(read);
     for (const [start,end] of [[0,2],[0,4],[2,4],[3.123,5.456],[4,8],[6,8],[7.95,8]]) {
       const part = await reader.decode(context, start, end);
       let max = 0, rms = 0;
       const original = reference.getChannelData(0), actual = part.getChannelData(0);
       for (let i=0;i<actual.length;i++) { const difference = actual[i]-original[Math.round(start*48000)+i]; max=Math.max(max,Math.abs(difference)); rms += difference*difference; }
-      errors.push({start,length:part.length,max,rms:Math.sqrt(rms/part.length)});
+      errors.push({decoder,start,length:part.length,max,rms:Math.sqrt(rms/part.length)});
     }
+    }
+    globalThis.AudioDecoder = nativeDecoder;
     await context.close(); return errors;
   })()`);
   console.log('Window decode comparison', chunkDecode);
   assert.ok(chunkDecode.every(p => p.max < .001), 'window decode must match full decode');
+  await evaluate(`(() => {
+    window.nativeAudioDecode = AudioContext.prototype.decodeAudioData;
+    AudioContext.prototype.decodeAudioData = async () => { throw new Error('short-MP4 decode intentionally disabled'); };
+    window.packetDecoderTimes = [];
+    window.packetWorkerTerminations = 0;
+    globalThis.AudioDecoder = new Proxy(AudioDecoder, {construct() { throw new Error('packet decoding must run in the worker'); }});
+    globalThis.Worker = new Proxy(Worker, {construct(target,args) {
+      const worker = new target(...args), post = worker.postMessage.bind(worker), terminate = worker.terminate.bind(worker);
+      const pending = new Map();
+      worker.postMessage = (...args) => {
+        const record = {start:performance.now(),end:null}; window.packetDecoderTimes.push(record); pending.set(args[0].id,record);
+        return post(...args);
+      };
+      worker.addEventListener('message',e=>{const record=pending.get(e.data.id);if(record){record.end=performance.now();pending.delete(e.data.id);}});
+      worker.terminate = () => { window.packetWorkerTerminations++; return terminate(); };
+      return worker;
+    }});
+  })()`);
   assert.equal(await evaluate(`document.querySelectorAll('polygon').length`), 32);
   assert.equal(await evaluate(`document.querySelectorAll('polygon')[0].getAttribute('points').length > 100`), true);
   for (const [width, height] of [[320, 640], [360, 740], [740, 360], [1280, 800]]) {
@@ -99,6 +126,7 @@ try {
     history.pushState(null, '', '?song=next-fixture'); window.dispatchEvent(new PopStateEvent('popstate'));
   })()`);
   await poll(() => evaluate('window.closedAudioContexts > 0'));
+  await poll(() => evaluate('window.packetWorkerTerminations > 0'));
   await poll(() => evaluate(`document.body.textContent.includes('Аудио недоступно')`));
   assert.equal(await evaluate(`document.querySelector('[aria-label="Пауза"]') === null`), true);
   assert.ok(requests.filter(r => r.url.includes('/media/') || r.url.includes('/peaks')).every(r => !r.cookie));
@@ -141,7 +169,13 @@ try {
   const continuousSeconds = Number(process.env.CHORAL_AUDIO_SECONDS ?? 12.5);
   for (let elapsed=0; elapsed<continuousSeconds;) {
     const step = Math.min(30,continuousSeconds-elapsed); await sleep(step*1000); elapsed+=step;
-    assert.equal(await evaluate(`document.querySelector('[aria-label="Пауза"]') !== null`),true,'continuous playback must not underrun');
+    const playing = await evaluate(`document.querySelector('[aria-label="Пауза"]') !== null`);
+    if (!playing) console.log('Continuous playback failure state:', await evaluate(`JSON.stringify({
+      errors:Array.from(document.querySelectorAll('[role=alert]')).map(e=>e.textContent),
+      position:document.querySelector('input[type=range]').value, starts:window.windowStarts.length,closed:window.closedAudioContexts,
+      decoders:window.packetDecoderTimes.slice(-96).map(t=>t.end===null?{pending:performance.now()-t.start}:{ms:t.end-t.start})
+    })`));
+    assert.equal(playing,true,'continuous playback must not underrun');
     console.log(`Continuous 32-track playback: ${elapsed}s, peak scheduled PCM ${await evaluate('window.peakPCM')} bytes`);
   }
   assert.ok(await evaluate('window.peakPCM < 90*1024*1024'), 'bounded PCM independent of recording length');
@@ -186,7 +220,8 @@ try {
   // This models the failure shape; it is not a physical Safari compatibility test.
   revokeMedia = false; changedTrack = false;
   await evaluate(`(() => {
-    const decode = AudioContext.prototype.decodeAudioData;
+    globalThis.AudioDecoder = undefined;
+    const decode = window.nativeAudioDecode;
     AudioContext.prototype.decodeAudioData = async function(...args) {
       const pcm = await decode.apply(this, args);
       const shortened = this.createBuffer(pcm.numberOfChannels, pcm.length - 4096, pcm.sampleRate);
@@ -212,6 +247,8 @@ try {
   })()`);
   assert.equal(diagnostic.length, 31);
   assert.equal(diagnostic[0].code, 'AAC_SHORT_PCM');
+  assert.equal(diagnostic[0].readerVersion, 2);
+  assert.equal(diagnostic[0].decoder, 'decodeAudioData');
   assert.equal(diagnostic[0].decodedRate, 48000);
   assert.ok(diagnostic[0].decodedSamples < diagnostic[0].offset + diagnostic[0].requiredSamples);
   assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
