@@ -35,7 +35,12 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   const duration = song ? (song.durationMs ?? 0) / 1000 : bars * barDuration;
   const count = song ? Math.max(1, Math.ceil(duration / realBarDuration)) : bars;
   const audio = useAudio(song, publicAccess);
-  const [tracks, setTracks] = useState(() => song ? song.tracks.map((t, i) => ({ id: t.id, name: t.name, volume: t.gain * 100, muted: false, solo: false, waveform: [] as number[], tone: (['soprano', 'alto', 'tenor', 'bass', 'backing'] as TrackTone[])[i % 5]! })) : mockTracks.map(t => ({ ...t, tone: t.id })));
+  const [storedTracks, setTracks] = useState(() => song ? song.tracks.map((t, i) => ({ id: t.id, name: t.name, volume: t.gain * 100, muted: false, solo: false, waveform: [] as number[], tone: (['soprano', 'alto', 'tenor', 'bass', 'backing'] as TrackTone[])[i % 5]! })) : mockTracks.map(t => ({ ...t, tone: t.id })));
+  const tracks = useMemo(() => storedTracks.map(track => {
+    const status = audio.states[track.id];
+    return song && status && status !== 'Загрузка…' && !status.startsWith('Готово')
+      ? { ...track, solo: false } : track;
+  }), [storedTracks, audio.states, song]);
   const [time, setTime] = useState(() => Math.min(duration, Math.max(0, initialTime)));
   const [playing, setPlaying] = useState(initialPlaying);
   const [loop, setLoop] = useState(initialLoop);
@@ -90,10 +95,8 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   }, [tracks, audio.engine]);
 
   function updateTrack(id: string, patch: Partial<Mix>) {
-    setTracks(current => {
-      const updated = updateMix(Object.fromEntries(current.map(t => [t.id, t])), id, patch);
-      return current.map(t => ({ ...t, ...updated[t.id]! }));
-    });
+    const updated = updateMix(mix, id, patch);
+    setTracks(tracks.map(t => ({ ...t, ...updated[t.id]! })));
   }
   function seek(value: number) {
     if (song) void audio.run(e => e.seek(value, mix));

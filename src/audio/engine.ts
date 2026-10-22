@@ -33,6 +33,8 @@ export class AudioEngine {
   error = '';
   onError: (message: string) => void = () => {};
   private mix: Record<string, Mix> = {};
+  private wantsPlayback = false;
+  private boundaryTimer: ReturnType<typeof setTimeout> | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private pending: Promise<unknown> = Promise.resolve();
   private scheduledUntil = 0;
@@ -43,8 +45,9 @@ export class AudioEngine {
   disposed = false;
   private generation = 0;
   constructor(readonly context: AudioContext, readonly duration: number) {}
-  get position() { return Math.min(this.duration, this.offset + (this.playing ? Math.max(0, this.context.currentTime - this.started) : 0)); }
+  get position() { return Math.min(this.playing && this.streams.size ? this.scheduledUntil : this.duration, this.offset + (this.playing ? Math.max(0, this.context.currentTime - this.started) : 0)); }
   async play(mix: Record<string, Mix>) {
+    this.wantsPlayback = true;
     const generation = ++this.generation;
     // resume is called directly from the click, before any network/decode await.
     this.mix = mix;
@@ -86,7 +89,7 @@ export class AudioEngine {
     const loaded = await Promise.all([...this.streams].map(async ([id, stream]) => {
       if (start >= stream.duration) return null;
       try { return { id, buffer: await stream.load(start, Math.min(end, stream.duration)) }; }
-      catch (error) { this.streams.delete(id); this.onTrackError(id, error); return null; }
+      catch (error) { this.streams.delete(id); this.setMix(this.mix); this.onTrackError(id, error); return null; }
     }));
     return loaded.filter(item => item !== null);
   }
@@ -105,6 +108,16 @@ export class AudioEngine {
     this.setMix(this.mix);
   }
   private pump(generation: number) {
+    // Watch the buffered boundary independently of the pending network/decode.
+    const watchBoundary = () => {
+      if (!this.playing || generation !== this.generation) return;
+      if (this.scheduledUntil < this.duration && this.context.currentTime >= this.started + (this.scheduledUntil - this.offset)) {
+        this.starve();
+        return;
+      }
+      this.boundaryTimer = setTimeout(watchBoundary, 50);
+    };
+    watchBoundary();
     const tick = async () => {
       if (!this.playing || generation !== this.generation) return;
       if (this.scheduledUntil < this.duration && this.scheduledUntil < this.position + 8) {
@@ -115,10 +128,7 @@ export class AudioEngine {
         if (!this.playing || generation !== this.generation) return;
         // Stop the entire transport on starvation rather than silently losing synchronization.
         if (this.context.currentTime >= this.started + (start - this.offset)) {
-          const bufferedEnd = this.scheduledUntil;
-          this.pause(); this.offset = bufferedEnd;
-          this.error = 'Аудио не успело загрузиться. Нажмите воспроизведение ещё раз.';
-          this.onError(this.error);
+          this.starve();
           return;
         }
         this.schedule(loaded, start); this.scheduledUntil = end;
@@ -127,21 +137,28 @@ export class AudioEngine {
     };
     void tick();
   }
+  private starve() {
+    const bufferedEnd = this.scheduledUntil;
+    this.pause(); this.offset = bufferedEnd;
+    this.error = 'Аудио не успело загрузиться. Нажмите воспроизведение ещё раз.';
+    this.onError(this.error);
+  }
   private stopNodes() {
+    clearTimeout(this.boundaryTimer);
     clearTimeout(this.timer);
     this.nodes.forEach(({ source, gain }) => { source.stop(); source.disconnect(); source.buffer = null; gain.disconnect(); });
     this.nodes = [];
   }
-  pause() { ++this.generation; this.offset = this.position; this.playing = false; this.stopNodes(); }
+  pause() { this.wantsPlayback = false; ++this.generation; this.offset = this.position; this.playing = false; this.stopNodes(); }
   seek(time: number, mix: Record<string, Mix>) {
-    const playing = this.playing;
+    const playing = this.wantsPlayback;
     this.pause(); this.offset = Math.max(0, Math.min(this.duration, time));
     if (playing) return this.play(mix);
     return Promise.resolve();
   }
   setMix(mix: Record<string, Mix>) {
     this.mix = mix;
-    const solo = Object.values(mix).some(t => t.solo);
+    const solo = Object.entries(mix).some(([id, t]) => t.solo && (this.streams.has(id) || this.buffers.has(id)));
     for (const { id, gain } of this.nodes) {
       const t = mix[id]!;
       gain.gain.setTargetAtTime(t.muted || (solo && !t.solo) ? 0 : t.volume / 100, this.context.currentTime, 0.005);

@@ -154,3 +154,78 @@ test('streaming gain/solo/mute apply to current and future windows; a failed fil
   engine.setMix(updateMix(mix, 'b', { muted: true }));
   assert.ok(context.gains.every((gain, i) => gain.value === (i % 2 ? 0 : .4)));
 });
+
+test('overlapping seeks resume only the latest position; explicit pause cancels pending resume', async t => {
+  const context = clock(), engine = new AudioEngine(context, 120);
+  t.after(() => engine.dispose());
+  const mix = { a: { volume: 100, muted: false, solo: false } };
+  let release;
+  engine.streams.set('a', { duration: 120, load(start, end) {
+    return start === 20 ? new Promise(resolve => { release = resolve; }) : Promise.resolve({ duration: end - start });
+  } });
+  await engine.play(mix);
+  await new Promise(resolve => setImmediate(resolve));
+  const first = engine.seek(20, mix);
+  await new Promise(resolve => setImmediate(resolve));
+  const second = engine.seek(30, mix);
+  release({ duration: 4 });
+  await Promise.all([first, second]);
+  assert.equal(engine.playing, true);
+  assert.equal(engine.position, 30);
+  assert.equal(context.sources.filter(s => !s.stopped)[0].args[0], context.currentTime + .1);
+  const third = engine.seek(20, mix);
+  await new Promise(resolve => setImmediate(resolve));
+  engine.pause();
+  const fourth = engine.seek(40, mix);
+  release({ duration: 4 });
+  await Promise.all([third, fourth]);
+  assert.equal(engine.playing, false);
+  assert.equal(engine.position, 40);
+  assert.ok(context.sources.every(s => s.stopped));
+});
+
+test('unresolved network load cannot advance cursor beyond buffered audio', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const context = clock(), engine = new AudioEngine(context, 120);
+  t.after(() => engine.dispose());
+  let release, errors = 0;
+  engine.onError = () => errors++;
+  engine.streams.set('a', { duration: 120, load(start) {
+    return start === 0 ? Promise.resolve({ duration: 4 }) : new Promise(resolve => { release = resolve; });
+  } });
+  await engine.play({ a: { volume: 100, muted: false, solo: false } });
+  context.currentTime = 4.2;
+  assert.equal(engine.position, 4);
+  t.mock.timers.tick(50);
+  assert.equal(engine.playing, false);
+  assert.equal(engine.position, 4);
+  assert.equal(errors, 1);
+  context.currentTime = 20;
+  t.mock.timers.tick(1000);
+  assert.equal(engine.position, 4);
+  assert.ok(context.sources.every(s => s.stopped));
+  release({ duration: 4 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(context.sources.length, 1, 'late window must not restart transport');
+});
+
+test('solo file failing a later window immediately restores healthy output', async t => {
+  const context = clock(), engine = new AudioEngine(context, 20);
+  t.after(() => engine.dispose());
+  const mix = { a: { volume: 40, muted: false, solo: true }, b: { volume: 80, muted: false, solo: false } };
+  let fail;
+  engine.streams.set('a', { duration: 20, load(start) {
+    return start === 0 ? Promise.resolve({ duration: 4 }) : new Promise((_, reject) => { fail = reject; });
+  } });
+  engine.streams.set('b', { duration: 20, async load() { return { duration: 4 }; } });
+  await engine.play(mix);
+  assert.equal(context.gains[1].value, 0);
+  fail(new Error('Range unavailable'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(engine.playing, true);
+  assert.equal(engine.streams.has('a'), false);
+  engine.setMix(mix); // Even a stale React commit cannot restore an excluded Solo.
+  assert.equal(context.gains[1].value, .8, 'already scheduled healthy track becomes audible');
+  assert.ok(context.gains.length > 2);
+  assert.ok(context.gains.slice(2).every(g => g.value === .8), 'future healthy windows remain audible');
+});

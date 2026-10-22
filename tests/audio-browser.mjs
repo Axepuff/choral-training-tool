@@ -169,9 +169,12 @@ try {
   const largestRange = Math.max(...longRequests.map(r=> {const [,a,b]=/bytes=(\d+)-(\d+)/.exec(r.range);return Number(b)-Number(a)+1;}));
   assert.ok(largestRange < 1024*1024, 'bounded requests for 20 minute tracks');
   await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]') !== null`));
+  await evaluate(`document.querySelector('[aria-label="Solo: Voice 0"]').click()`);
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Solo: Voice 0"]').getAttribute('aria-pressed')`), 'true');
   changedTrack = true;
   await evaluate(`document.querySelector('[aria-label="Воспроизвести"]').click()`);
   await poll(() => evaluate(`document.body.textContent.includes('Аудиофайл изменился')`));
+  await poll(() => evaluate(`document.querySelector('[aria-label="Solo: Voice 0"]').getAttribute('aria-pressed') === 'false'`));
   await poll(() => evaluate(`document.querySelector('[aria-label="Пауза"]') !== null`));
   await evaluate(`document.querySelector('[aria-label="Пауза"]').click()`);
   await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]') !== null`));
