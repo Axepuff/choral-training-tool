@@ -21,7 +21,49 @@ test('очередь начинает с существующего PR #18 и и
   const task = selectTask(issues(), [pull()]);
   assert.equal(task.issue.number, 2);
   assert.equal(task.pr.number, 18);
-  for (const id of [1, 13, 16]) assert.ok(!queue.some(t => t.issue === id));
+  for (const id of [1, 13, 16, 32]) assert.ok(!queue.some(t => t.issue === id));
+});
+
+function playerStage() {
+  const list = issues(), prs = [];
+  const accept = number => {
+    Object.assign(list.find(i => i.number === number), { state: 'closed', state_reason: 'completed' });
+    prs.push({ ...pull(number), number: 100 + number, state: 'closed', merged_at: '2026-10-22' });
+  };
+  for (const task of queue.slice(0, queue.findIndex(t => t.issue === 11))) accept(task.issue);
+  return { list, prs, accept };
+}
+
+test('после player очередь выполняет редактор #31 и только после его merge выбирает #12', () => {
+  const { list, prs, accept } = playerStage();
+  assert.equal(selectTask(list, prs).issue.number, 11);
+  accept(11);
+  const editorPR = { ...pull(31), number: 131 };
+  assert.equal(selectTask(list, [...prs, editorPR]).issue.number, 31);
+  assert.equal(selectTask(list, [...prs, editorPR]).pr.number, editorPR.number);
+  accept(31);
+  assert.equal(selectTask(list, prs).issue.number, 12);
+});
+
+test('закрытие редактора без merged PR или недоступная Issue не позволяет перескочить к #12', () => {
+  const { list, prs, accept } = playerStage();
+  accept(11);
+  Object.assign(list.find(i => i.number === 31), { state: 'closed', state_reason: 'completed' });
+  assert.throws(() => selectTask(list, prs), /#31.*без подтверждённого merge/);
+  assert.throws(() => selectTask(list.filter(i => i.number !== 31), prs), /#31 недоступна/);
+});
+
+test('обновлённый план принимает сохранённую задачу #11 с тремя использованными исправлениями', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'choral-queue-resume-'));
+  try {
+    const runner = new Runner(dir);
+    runner.stateFile = join(dir, 'state.json');
+    const state = { repository, issue: 11, branch: 'issue-11-queue', fixRounds: 3, implemented: true, prepared: true, pr: 30 };
+    await writeFile(runner.stateFile, JSON.stringify(state));
+    assert.deepEqual(await runner.readState(), state);
+    const { list, prs } = playerStage();
+    assert.equal(selectTask(list, [...prs, { ...pull(11), number: 30 }]).issue.number, state.issue);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
 test('следующая задача требует и completed Issue, и merged PR в main', () => {
@@ -105,6 +147,15 @@ test('существующий PR проходит проверки и отде�
   assert.ok(io.events.indexOf('check') < io.events.indexOf('review'));
   assert.ok(io.events.indexOf('review') < io.events.indexOf('merge'));
   assert.equal(io.events.at(-1), 'merge');
+});
+
+test('готовое ручное исправление проходит новое ревью и merge без сброса fixRounds=3', async () => {
+  const io = fakeIO();
+  io.state.fixRounds = 3;
+  await processTask(io, {}, io.state);
+  assert.equal(io.events.includes('implement'), false);
+  assert.equal(io.events.at(-1), 'merge');
+  assert.equal(io.state.fixRounds, 3);
 });
 
 test('новая Issue: реализация → PR → отклонённое ревью → исправление → новое ревью → merge', async () => {

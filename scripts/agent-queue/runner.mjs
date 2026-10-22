@@ -13,9 +13,9 @@ import {
 import { processTask } from './engine.mjs';
 
 const help = `Локальная очередь Codex (ChatGPT login, без API-ключа).
-  node scripts/agent-queue/runner.mjs --dry-run  Только показать следующую задачу
+  node scripts/agent-queue/runner.mjs --dry-run  Следующая задача и весь план, без вызовов модели
   node scripts/agent-queue/runner.mjs --once     Одна задача: реализация → ревью → merge
-  node scripts/agent-queue/runner.mjs --run      Очередь, не более 13 задач за запуск
+  node scripts/agent-queue/runner.mjs --run      Очередь, не более ${queue.length} задач за запуск
   node scripts/agent-queue/runner.mjs --status   Локальное состояние
   node scripts/agent-queue/runner.mjs --unlock   Снять lock остановленного процесса
 Ctrl+C останавливает очередь. Повторный --once/--run продолжает сохранённую задачу.
@@ -420,7 +420,7 @@ async function main() {
   if (mode === '--dry-run') {
     const snapshot = await io.snapshot();
     const next = selectTask(snapshot.issues, snapshot.prs);
-    console.log(JSON.stringify({ localState: await io.readState(), next: next && { issue: next.issue.number, title: next.issue.title, existingPR: next.pr?.number ?? null }, excluded: [1, 13, 16], modelCalls: 0 }, null, 2));
+    console.log(JSON.stringify({ localState: await io.readState(), next: next && { issue: next.issue.number, title: next.issue.title, existingPR: next.pr?.number ?? null }, plan: queue, excluded: [1, 13, 16, 32], modelCalls: 0 }, null, 2));
     return;
   }
   await io.lock();
