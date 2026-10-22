@@ -31,8 +31,9 @@ async function evaluate(expression) {
   return result.result.value;
 }
 async function navigate(query) {
+  await evaluate('window.__leavingDocument = true');
   await send('Page.navigate', { url: `http://127.0.0.1:5179/${query}` });
-  await poll(() => evaluate('document.readyState === "complete" && !!document.getElementById("root")?.textContent'), 'Page did not load');
+  await poll(() => evaluate('!window.__leavingDocument && document.readyState === "complete" && !!document.getElementById("root")?.textContent'), 'Page did not load');
 }
 const bodyIncludes = (text) => evaluate(`document.body.textContent.includes(${JSON.stringify(text)})`);
 async function expectText(text) { await poll(() => bodyIncludes(text), `Missing expected UI: ${text}`); }
@@ -102,6 +103,7 @@ try {
   await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
   ws.onmessage = (message) => {
     const data = JSON.parse(message.data);
+    if (data.method === 'Page.javascriptDialogOpening') void send('Page.handleJavaScriptDialog', { accept: true });
     const entry = pending.get(data.id);
     if (entry) { pending.delete(data.id); if (data.error) entry.reject(new Error(data.error.message)); else entry.resolve(data.result); }
   };
@@ -135,7 +137,8 @@ try {
   assert.equal(await evaluate('window.__focusMeCalls'), 0, 'Focus competed with login');
   await evaluate('window.__releaseLogin(); window.__restoreFetch();');
 
-  await expectText('Сохранение песен ещё не подключено.');
+  await expectText('Новая песня');
+  await checkFormOnFocus('[name=title]');
   assert.equal(await evaluate('location.search'), '?page=create-song');
   await navigate('?page=library&role=admin');
   await expectText('Преподаватель');
@@ -222,7 +225,7 @@ try {
   await expectText('Вход');
   await submit(('a'.repeat(64) + '@' + 'b'.repeat(63) + '.test'), 'replacement password 456'); await expectText('Администратор');
   assert.equal(await evaluate('location.search'), '?page=library');
-  await checkResponsiveText('main header + p', 'a'.repeat(64) + '@' + 'b'.repeat(63) + '.test · Администратор');
+  await checkResponsiveText('header + p', 'a'.repeat(64) + '@' + 'b'.repeat(63) + '.test · Администратор');
   await navigate('?list=' + ('B'.repeat(42) + 'A') + '&role=admin&page=create-song');
   await expectText('Я'.repeat(160));
   assert.equal(await bodyIncludes('Создать песню'), false);
@@ -242,8 +245,8 @@ try {
     });
   ` });
   const index = await (await fetch('http://127.0.0.1:5179/storybook-static/index.json')).json();
-  const stories = Object.values(index.entries).filter((s) => s.type === 'story' && /pages-(sign-in|song-library)--/.test(s.id));
-  assert.equal(stories.length, 17);
+  const stories = Object.values(index.entries).filter((s) => s.type === 'story' && /pages-(sign-in|song-library|create-song)--/.test(s.id));
+  assert.equal(stories.length, 26);
   for (const story of stories) {
     await send('Page.navigate', { url: `http://127.0.0.1:5179/storybook-static/iframe.html?id=${story.id}&viewMode=story` });
     await poll(() => evaluate(`window.__storyResult?.storyId === ${JSON.stringify(story.id)}`), `Story did not finish: ${story.id}`, 30_000);

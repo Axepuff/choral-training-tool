@@ -79,3 +79,8 @@ export const ManySongs: Story = {
     owner: 'Преподаватель', updatedAt: '2026-10-17', shared: index % 3 !== 0,
   })) },
 };
+
+export const Loading: Story = { name: 'Загрузка API', args: { loading: true },
+  play: async ({ canvasElement }) => { await expect(within(canvasElement).getByRole('status')).toHaveTextContent('Загрузка песен'); } };
+export const ApiFailure: Story = { name: 'Ошибка API', args: { error: 'Нет соединения с сервером.' },
+  play: async ({ canvasElement }) => { await expect(within(canvasElement).getByRole('alert')).toHaveTextContent('Нет соединения'); } };

@@ -164,3 +164,10 @@ Worker проверяет также muxers/фильтры для peaks; пос�
 приватные маршруты и независимый guest scope. Pages собирается с явным demo flag;
 ошибки runtime не включают fixtures. Полная songs-интеграция — #10, плеер — #11.
 Настройка и поведенческие проверки: [frontend-auth.md](frontend-auth.md).
+
+## Frontend песни (Issue #10)
+
+`src/api/{songs,uploads,shares}.ts` адаптируют принятый API, `LiveLibrary` связывает
+общие компоненты формы/списка с сервером. Metadata PUT и upload/jobs — отдельные
+транзакции с явными частичными ошибками; серверная версия и active asset не
+подменяются локальными данными. Поведение и проверки: [frontend-songs.md](frontend-songs.md).

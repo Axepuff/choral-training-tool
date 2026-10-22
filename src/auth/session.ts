@@ -40,7 +40,7 @@ export async function restoreSession() {
       const unauthorized = error instanceof ApiError && error.status === 401;
       publish(unauthorized ? { status: 'ready', session: null }
         : previous.status === 'ready' && (!previous.session || previous.session.user.mustChangePassword)
-          ? previous : { status: 'error', session: null });
+          ? previous : { status: 'error', session: previous.session });
     }
   } finally {
     restoring = false;

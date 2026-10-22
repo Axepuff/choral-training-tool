@@ -1,8 +1,8 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import styles from './CreateSong.module.css';
 
 const defaultNames = ['Сопрано', 'Альт', 'Тенор', 'Бас', 'Минус'];
-export interface TrackDraft { name: string; file?: File; existingFileName?: string }
+export interface TrackDraft { id?: string; gain?: number; name: string; file?: File; existingFileName?: string }
 export interface SongFormValue {
   title: string;
   bpm: number;
@@ -16,7 +16,11 @@ export interface CreateSongProps {
   initialFilled?: boolean;
   /** Существующая песня: та же форма используется для редактирования. */
   initialSong?: SongFormValue;
-  onSave?: (song: SongFormValue) => void;
+  onSave?: (song: SongFormValue) => void | Promise<void>;
+  live?: boolean;
+  busy?: boolean;
+  status?: string;
+  error?: string;
   onCancel?: () => void;
 }
 
@@ -30,7 +34,7 @@ function TrackRow({ track, index, onChange }: {
     <span className={styles.number} aria-hidden="true">{index + 1}</span>
     <label className={styles.trackName}>
       <span className="visually-hidden">Название трека {index + 1}</span>
-      <input id={`${id}-name`} name={`tracks[${index}].name`} required maxLength={80} value={track.name} placeholder="Название партии"
+      <input id={`${id}-name`} name={`tracks[${index}].name`} required value={track.name} placeholder="Название партии"
         onChange={(event) => onChange({ ...track, name: event.target.value })} />
     </label>
     <button className={styles.upload} type="button" onClick={() => fileRef.current?.click()}
@@ -49,14 +53,14 @@ function TrackRow({ track, index, onChange }: {
       }} />
     <div className={styles.fileInfo}>
       <span title={selectedName}>{selectedName ?? 'Файл не выбран'}</span>
-      {selectedName && <button type="button" aria-label={`Убрать файл трека ${index + 1}`}
-        onClick={() => onChange({ name: track.name })}>Убрать</button>}
+      {selectedName && (track.file || !track.id) && <button type="button" aria-label={`Убрать файл трека ${index + 1}`}
+        onClick={() => { const { file: _file, ...rest } = track; void _file; onChange(track.id ? rest : { name: track.name }); }}>Убрать</button>}
     </div>
   </div>;
 }
 
-/** Макет формы: файлы остаются в памяти браузера, запросы на сервер не выполняются. */
-export function CreateSong({ initialFilled = false, initialSong, onSave, onCancel }: CreateSongProps) {
+/** Общая форма приложения и stories; сетевой сценарий передаётся через onSave. */
+export function CreateSong({ initialFilled = false, initialSong, onSave, onCancel, live = false, busy = false, status, error }: CreateSongProps) {
   const id = useId();
   const [title, setTitle] = useState(initialSong?.title ?? (initialFilled ? 'Тихий вечер' : ''));
   const [bpm, setBpm] = useState(String(initialSong?.bpm ?? 84));
@@ -66,27 +70,39 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
   const [tracks, setTracks] = useState<TrackDraft[]>(() => Array.from({ length: 32 }, (_, index) => (initialSong?.tracks[index] ?? { name: defaultNames[index] ?? `Трек ${index + 1}` })));
   const [notes, setNotes] = useState(initialSong?.notes ?? (initialFilled ? 'Вступление — мягко. Обратить внимание на дыхание перед третьим тактом.' : ''));
   const [message, setMessage] = useState('');
+  const leaving = useRef(false);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (!live || (!dirty && !busy)) return;
+    const warn = (event: BeforeUnloadEvent) => { if (!leaving.current) event.preventDefault(); };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [live, dirty, busy]);
   const visibleTracks = tracks.slice(0, count);
   const selected = visibleTracks.filter((track) => track.file || track.existingFileName).length;
 
   return <main className={styles.shell}>
-    <form className={styles.card} onChange={() => setMessage('')} onSubmit={(event) => {
+    <form className={styles.card} onChange={() => { setMessage(''); setDirty(true); }} onSubmit={(event) => {
       event.preventDefault();
       if (!title.trim() || visibleTracks.some((track) => !track.name.trim())) {
         setMessage('Укажите название песни и названия всех треков.'); return;
       }
-      if (selected !== count) { setMessage('Выберите файл для каждого трека.'); return; }
+      if (!live && selected !== count) { setMessage('Выберите файл для каждого трека.'); return; }
+      if ([...title.normalize('NFC').trim()].length > 160 || [...notes.normalize('NFC')].length > 1000 || visibleTracks.some(t => [...t.name.normalize('NFC').trim()].length > 80) || [title, notes, ...visibleTracks.map(t => t.name)].some(t => t.includes('\0'))) {
+        setMessage('Название: до 160 символов, трек: до 80, заметки: до 1000. Нулевой символ запрещён.'); return;
+      }
       if (onSave) {
-        onSave({ title: title.trim(), bpm: Number(bpm), beatsPerBar: Number(beats), beatUnit: Number(unit),
+        void onSave({ title: title.trim(), bpm: Number(bpm), beatsPerBar: Number(beats), beatUnit: Number(unit),
           tracks: visibleTracks.map((track) => ({ ...track, name: track.name.trim() })), notes });
         return;
       }
       setMessage('Форма заполнена. Это макет: песня не сохранена, файлы не отправлены.');
     }}>
+      <fieldset disabled={busy} className={styles.fields}>
       <h1>{initialSong ? 'Редактировать песню' : 'Новая песня'}</h1>
       <p className={styles.intro}>{initialSong ? 'Измените данные песни и голосовые партии.' : 'Добавьте партии, чтобы подготовить репетицию.'}</p>
       <label className={styles.field}>Название песни
-        <input id={`${id}-title`} name="title" required maxLength={160} placeholder="Например, Тихий вечер" value={title} onChange={(event) => setTitle(event.target.value)} />
+        <input id={`${id}-title`} name="title" required placeholder="Например, Тихий вечер" value={title} onChange={(event) => setTitle(event.target.value)} />
       </label>
       <div className={styles.settings}>
         <label className={styles.field}>Темп, BPM
@@ -106,7 +122,7 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
             {Array.from({ length: 32 }, (_, index) => <option key={index}>{index + 1}</option>)}
           </select></label>
         </div>
-        <p className={styles.help}>Один файл на партию. Можно добавить минус.</p>
+        <p className={styles.help}>Один файл на партию. Можно добавить минус.{live && ' Черновик можно сохранить без файлов.'}</p>
         <div className={styles.trackList}>
           {visibleTracks.map((track, index) => <TrackRow key={index} index={index} track={track} onChange={(updated) => {
             setTracks((current) => current.map((item, position) => position === index ? updated : item)); setMessage('');
@@ -119,14 +135,17 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
         </details>
       </section>
       <label className={styles.field}>Заметки <span className={styles.optional}>необязательно</span>
-        <textarea id={`${id}-notes`} name="notes" rows={4} maxLength={1000} value={notes} placeholder="Вступления, дыхание, сложные места…"
+        <textarea id={`${id}-notes`} name="notes" rows={4} value={notes} placeholder="Вступления, дыхание, сложные места…"
           aria-describedby={`${id}-notes-count`} onChange={(event) => setNotes(event.target.value)} />
       </label>
-      <div className={styles.counter} id={`${id}-notes-count`}>{notes.length} / 1000</div>
+      <div className={styles.counter} id={`${id}-notes-count`}>{[...notes.normalize('NFC')].length} / 1000</div>
       {message && <p className={styles.message} role="status">{message}</p>}
+      {status && <p role="status">{status}</p>}
+      {error && <p role="alert">{error}</p>}
       <button className={styles.submit} type="submit">{initialSong ? 'Сохранить изменения' : 'Создать песню'}</button>
-      {onCancel && <button className={styles.cancel} type="button" onClick={onCancel}>Отмена</button>}
-      <p className={styles.demo}>Демо: файлы остаются на устройстве и не загружаются на сервер.</p>
+      {onCancel && <button className={styles.cancel} type="button" onClick={() => { if (!live || !dirty || window.confirm('Отменить несохранённые изменения? Сохранённый черновик останется на сервере.')) { leaving.current = true; onCancel(); } }}>Отмена</button>}
+      </fieldset>
+      {!live && <p className={styles.demo}>Демо: файлы остаются на устройстве и не загружаются на сервер.</p>}
     </form>
   </main>;
 }

@@ -41,7 +41,10 @@ test('API/session/navigation behavior', async (t) => {
       assert.equal(calls[0].headers.get('X-CSRF-Token'), 'fictional-csrf');
       assert.equal(calls[1].credentials, 'omit');
       assert.equal(calls[1].headers.get('X-CSRF-Token'), null);
+      await client.request(`/songs?${new URLSearchParams({ q: "Песня .. ' *" })}`);
+      assert.match(calls[2].url, /q=/);
       await assert.rejects(client.request('//external.test'), /Invalid API path/);
+      await assert.rejects(client.request('/songs/../auth/me'), /Invalid API path/);
     });
     await t.test('login/reload use only server identity; 401 clears role and token', async () => {
       globalThis.fetch = async () => json(session);

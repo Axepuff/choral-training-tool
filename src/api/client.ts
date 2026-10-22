@@ -26,7 +26,7 @@ export class ApiClient {
 
   async request<T>(path: string, options: RequestInit = {}, access: 'session' | 'public' | 'login' | 'restore' = 'session'): Promise<T> {
     // Do not allow callers to send credentials to arbitrary URLs.
-    if (!/^\/[a-zA-Z0-9/_.?%=&-]*$/.test(path) || path.startsWith('//') || path.includes('..')) {
+    if (!/^\/[a-zA-Z0-9/_.%-]*(?:\?[^#]*)?$/.test(path) || path.startsWith('//') || path.split('?')[0]!.includes('..')) {
       throw new Error('Invalid API path');
     }
     const initialToken = this.csrfToken;
