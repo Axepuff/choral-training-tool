@@ -6,9 +6,10 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { hostname } from 'node:os';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 import {
   repository, queue, selectTask, completed, assertSubscriptionEnvironment, childEnvironment,
-  protectedPath, reviewSchema, assertChecks,
+  protectedPath, reviewSchema, assertChecks, defaultMaxFixRounds, validateFixRoundLimit,
 } from './policy.mjs';
 import { processTask } from './engine.mjs';
 
@@ -18,17 +19,37 @@ const help = `Локальная очередь Codex (ChatGPT login, без API
   node scripts/agent-queue/runner.mjs --run      Очередь, не более ${queue.length} задач за запуск
   node scripts/agent-queue/runner.mjs --status   Локальное состояние
   node scripts/agent-queue/runner.mjs --unlock   Снять lock остановленного процесса
+  --max-fix-rounds N  Общий лимит исправлений на задачу (по умолчанию ${defaultMaxFixRounds})
+Пример: npm run agent:queue -- --run --max-fix-rounds 15
 Ctrl+C останавливает очередь. Повторный --once/--run продолжает сохранённую задачу.
 Требуется отдельный clone, WSL2/Linux/macOS, Node 24+, Git, gh, Codex CLI 0.159.2+.
 `;
 
+export function parseOptions(args) {
+  const modes = ['dry-run', 'once', 'run', 'status', 'unlock'];
+  const { values } = parseArgs({ args, options: {
+    ...Object.fromEntries([...modes, 'help'].map(name => [name, { type: 'boolean' }])),
+    'max-fix-rounds': { type: 'string', multiple: true },
+  } });
+  const limits = values['max-fix-rounds'];
+  if (limits && (limits.length !== 1 || !/^[0-9]+$/.test(limits[0]))) {
+    throw new Error('Укажите один --max-fix-rounds с положительным целым числом.');
+  }
+  const maxFixRounds = validateFixRoundLimit(limits ? Number(limits[0]) : defaultMaxFixRounds);
+  if (!args.length || values.help) return { mode: '--help', maxFixRounds };
+  const selected = modes.filter(name => values[name]);
+  if (selected.length !== 1) throw new Error('Выберите один режим: --dry-run, --once, --run, --status или --unlock.');
+  return { mode: `--${selected[0]}`, maxFixRounds };
+}
+
 export class Runner {
-  constructor(root, { signal, log = console.log, env = process.env, wait = delay } = {}) {
+  constructor(root, { signal, log = console.log, env = process.env, wait = delay, maxFixRounds = defaultMaxFixRounds } = {}) {
     this.root = root;
     this.signal = signal;
     this.log = log;
     this.env = env;
     this.wait = wait;
+    this.maxFixRounds = validateFixRoundLimit(maxFixRounds);
     this.cleanEnv = { ...childEnvironment(env), CI: 'true', GIT_TERMINAL_PROMPT: '0', npm_config_update_notifier: 'false' };
   }
 
@@ -112,7 +133,7 @@ export class Runner {
     if (!existsSync(this.stateFile)) return null;
     const state = JSON.parse(await readFile(this.stateFile, 'utf8'));
     if (state.repository !== repository || !queue.some(t => t.issue === state.issue)
-      || !Number.isInteger(state.fixRounds) || state.fixRounds < 0 || state.fixRounds > 3
+      || !Number.isSafeInteger(state.fixRounds) || state.fixRounds < 0
       || !/^(?!main$|master$|HEAD$|refs\/)[a-zA-Z0-9][-\w./]*$/.test(state.branch)) throw new Error('Состояние очереди повреждено. Сохраните его и проверьте вручную.');
     return state;
   }
@@ -203,7 +224,7 @@ export class Runner {
     this.base = await this.git('rev-parse', 'origin/main');
     await this.git('merge', '--no-edit', 'origin/main');
     await this.clean();
-    this.log(`Issue #${task.issue.number}; ветка ${state.branch}; исправлений использовано: ${state.fixRounds}/3.`);
+    this.log(`Issue #${task.issue.number}; ветка ${state.branch}; исправлений использовано: ${state.fixRounds}/${this.maxFixRounds}.`);
   }
   async guard() {
     await this.clean();
@@ -402,25 +423,26 @@ Issue: ${JSON.stringify({ title: task.issue.title, body: task.issue.body })}
 }
 
 async function main() {
-  const mode = process.argv[2];
-  if (!['--dry-run', '--once', '--run', '--status', '--unlock'].includes(mode) || process.argv.length > 3) {
+  const { mode, maxFixRounds } = parseOptions(process.argv.slice(2));
+  if (mode === '--help') {
     console.log(help);
-    if (mode && mode !== '--help') process.exitCode = 1;
     return;
   }
   const controller = new AbortController();
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => controller.abort());
-  const io = new Runner(process.cwd(), { signal: controller.signal });
+  const io = new Runner(process.cwd(), { signal: controller.signal, maxFixRounds });
   await io.init();
   if (mode === '--status') {
-    console.log(JSON.stringify({ state: await io.readState(), lock: existsSync(io.lockFile) ? JSON.parse(await readFile(io.lockFile, 'utf8')) : null }, null, 2));
+    const state = await io.readState();
+    console.log(JSON.stringify({ state, maxFixRounds, remainingFixRounds: Math.max(0, maxFixRounds - (state?.fixRounds ?? 0)), lock: existsSync(io.lockFile) ? JSON.parse(await readFile(io.lockFile, 'utf8')) : null }, null, 2));
     return;
   }
   if (mode === '--unlock') { await io.unlock(); return; }
   if (mode === '--dry-run') {
     const snapshot = await io.snapshot();
     const next = selectTask(snapshot.issues, snapshot.prs);
-    console.log(JSON.stringify({ localState: await io.readState(), next: next && { issue: next.issue.number, title: next.issue.title, existingPR: next.pr?.number ?? null }, plan: queue, excluded: [1, 13, 16, 32], modelCalls: 0 }, null, 2));
+    const state = await io.readState();
+    console.log(JSON.stringify({ localState: state, maxFixRounds, remainingFixRounds: Math.max(0, maxFixRounds - (state?.fixRounds ?? 0)), next: next && { issue: next.issue.number, title: next.issue.title, existingPR: next.pr?.number ?? null }, plan: queue, excluded: [1, 13, 16, 32, 35], modelCalls: 0 }, null, 2));
     return;
   }
   await io.lock();

@@ -1,5 +1,12 @@
 // Loaded once by the controller, before checking out any candidate branch.
 export const repository = 'Axepuff/choral-training-tool';
+export const defaultMaxFixRounds = 10;
+export function validateFixRoundLimit(value) {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new Error('--max-fix-rounds должен быть положительным безопасным целым числом.');
+  }
+  return value;
+}
 export const queue = [
   [2, []], [3, [2]], [4, [3]], [5, [3, 4]], [6, [4, 5]],
   [7, [4, 5]], [8, [7]], [9, [2, 4]], [10, [2, 5, 6, 8, 9]],
