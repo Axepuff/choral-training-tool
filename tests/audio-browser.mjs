@@ -4,17 +4,15 @@ import { spawn, execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { encodePlayback, makeWav, playbackArgs } from './helpers/audio-fixture.mjs';
 const dir = await mkdtemp(join(tmpdir(), 'choral-audio-'));
 const children = [];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function poll(fn) { for (let i = 0; i < 200; i++) { try { if (await fn()) return; } catch { /* startup */ } await sleep(100); } throw new Error('Timeout'); }
 function start(cmd, args, env = {}) { const p = spawn(cmd, args, { env: { ...process.env, ...env }, stdio: 'ignore' }); children.push(p); }
-const wav = Buffer.alloc(44 + 48000 * 2 * 8);
-wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(48000, 24); wav.writeUInt32LE(96000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(wav.length - 44, 40);
-for (let i = 0; i < 48000 * 8; i++) wav.writeInt16LE(Math.round(Math.sin(i * Math.PI * 2 * 440 / 48000) * 8000), 44 + i * 2);
-await writeFile(join(dir, 'fixture.wav'), wav);
-execFileSync('ffmpeg', ['-v', 'error', '-i', join(dir, 'fixture.wav'), '-ac', '1', '-ar', '48000', '-c:a', 'aac', '-b:a', '96k', join(dir, 'fixture.m4a')]);
-execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=1200', '-ac', '1', '-c:a', 'aac', '-b:a', '96k', join(dir, 'long.m4a')]);
+await writeFile(join(dir, 'fixture.wav'), makeWav(44100));
+encodePlayback(join(dir, 'fixture.wav'), join(dir, 'fixture.m4a'));
+execFileSync('ffmpeg', ['-nostdin', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100:duration=1200', ...playbackArgs, '-y', join(dir, 'long.m4a')]);
 const longAAC = await readFile(join(dir, 'long.m4a'));
 const aac = await readFile(join(dir, 'fixture.m4a'));
 const song = { id: 'fixture', title: 'Audio fixture', bpm: 120, beatsPerBar: 3, beatUnit: 8, durationMs: 8000, barCount: 11, notes: 'Synthetic fixture', tracks: Array.from({ length: 32 }, (_, i) => ({ id: `stable-${i}`, name: `Voice ${i}`, gain: .5, durationMs: 8000, mediaUrl: `/api/v1/media/${i}`, peaksUrl: '/api/v1/peaks' })) };
@@ -42,7 +40,7 @@ async function evaluate(expression) { const r = await send('Runtime.evaluate', {
 try {
   start(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '5189', '--strictPort'], { CHORAL_API_PROXY: 'http://127.0.0.1:5188', VITE_APP_DEMO: 'false' });
   await poll(async () => (await fetch('http://127.0.0.1:5189')).ok);
-  start('/usr/bin/google-chrome', ['--headless', '--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--remote-debugging-port=0', `--user-data-dir=${dir}`, 'about:blank']);
+  start(process.env.CHORAL_CHROME_BIN ?? '/usr/bin/google-chrome', ['--headless', '--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--remote-debugging-port=0', `--user-data-dir=${dir}`, 'about:blank']);
   let port; await poll(async () => { port = (await readFile(join(dir, 'DevToolsActivePort'), 'utf8')).split('\n')[0]; return port; });
   const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); ws = new WebSocket(targets.find(t => t.type === 'page').webSocketDebuggerUrl);
   await new Promise(r => { ws.onopen = r; });

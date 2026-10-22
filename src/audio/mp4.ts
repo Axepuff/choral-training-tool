@@ -16,6 +16,25 @@ function boxes(data: Uint8Array) {
 }
 const child = (data: Uint8Array, type: string) => { const found = boxes(data).find(b => b.type === type); if (!found) throw new Error(`MP4: нет ${type}`); return found.data; };
 export type RangeReader = (start: number, end: number) => Promise<Uint8Array>;
+function validateTiming(stts: Uint8Array, sampleCount: number) {
+  if (stts.length < 8) throw new Error('Повреждённый AAC timing');
+  const entries = u32(stts, 4);
+  if (!entries || stts.length !== 8 + entries * 8) throw new Error('Повреждённый AAC timing');
+  let frames = 0, drift = 0;
+  for (let i = 0; i < entries; i++) {
+    const count = u32(stts, 8 + i * 8), delta = u32(stts, 12 + i * 8);
+    if (!count || !delta || count > sampleCount - frames) throw new Error('Повреждённый AAC timing');
+    // The worker's asetpts/resampling can round packet timestamps, e.g. to
+    // 1023/1025 ticks for a 44.1 kHz input. AAC still decodes 1024 PCM samples.
+    // Permit at most 1 ms of cumulative rounding; do not permit actual drift.
+    const fullFrames = Math.min(count, sampleCount - 1 - frames);
+    drift += fullFrames * (delta - 1024);
+    if (Math.abs(drift) > 48) throw new Error('Неподдерживаемый AAC timing');
+    frames += count;
+    if (frames === sampleCount && (delta + drift < 1 || delta + drift > 1024)) throw new Error('Неподдерживаемый AAC timing');
+  }
+  if (frames !== sampleCount) throw new Error('Повреждённый AAC timing');
+}
 export class MP4Reader {
   private constructor(private read: RangeReader, private moov: Uint8Array, private ftyp: Uint8Array, private offsets: number[], private sizes: number[], private priming: number) {}
   static async open(read: RangeReader) {
@@ -38,11 +57,7 @@ export class MP4Reader {
     const stsz = child(stbl, 'stsz'), stsc = child(stbl, 'stsc'), stco = child(stbl, 'stco');
     const count = u32(stsz, 8);
     if (!count || count > 60000 || stsz.length !== 12 + (u32(stsz, 4) ? 0 : count * 4)) throw new Error('Недопустимый индекс MP4');
-    const stts = child(stbl, 'stts');
-    for (let i = 0; i < u32(stts, 4); i++) {
-      const delta = u32(stts, 12 + i * 8);
-      if (delta < 1 || delta > 1024 || (delta !== 1024 && (i !== u32(stts, 4) - 1 || u32(stts, 8 + i * 8) !== 1))) throw new Error('Неподдерживаемый AAC timing');
-    }
+    validateTiming(child(stbl, 'stts'), count);
     const sizes = Array.from({ length: count }, (_, i) => u32(stsz, 4) || u32(stsz, 12 + i * 4));
     const runs = Array.from({ length: u32(stsc, 4) }, (_, i) => ({ first: u32(stsc, 8 + i * 12), samples: u32(stsc, 12 + i * 12) }));
     const offsets: number[] = []; let run = 0;
