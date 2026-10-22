@@ -2,8 +2,8 @@ import { api } from './client';
 import type { SongFormValue } from '../components/CreateSong/CreateSong';
 export interface Song {
   id: string; ownerId: string; title: string; bpm: number; beatsPerBar: number; beatUnit: number;
-  notes: string; publication: 'draft' | 'published'; ready: boolean; version: number; updatedAt: string;
-  tracks: { id: string; name: string; position: number; gain: number; status: string; mediaUrl: string | null; pendingJobId?: string }[];
+  notes: string; durationMs: number | null; barCount: number | null; publication: 'draft' | 'published'; ready: boolean; version: number; updatedAt: string;
+  tracks: { id: string; name: string; position: number; gain: number; status: string; mediaUrl: string | null; durationMs: number | null; peaksUrl: string | null; pendingJobId?: string }[];
 }
 export const getSong = (id: string) => api.request<Song>(`/songs/${encodeURIComponent(id)}`);
 export async function listSongs(q: string, sort: string, signal: AbortSignal) {

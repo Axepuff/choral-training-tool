@@ -78,3 +78,8 @@
 /* Keep native touch/trackpad scrolling without a visible scrollbar. */
 .timelineViewport { scrollbar-width: none; }
 .timelineViewport::-webkit-scrollbar { display: none; }
+
+/* Many channels scroll inside the mixer, never widen the document. */
+.mixerSection { position: relative; overflow-x: auto; }
+.mixer { grid-template-columns: repeat(5, minmax(52px, 1fr)); grid-auto-flow: column; grid-auto-columns: minmax(60px, 1fr); }
+.channel small { display: block; font-size: 10px; overflow-wrap: anywhere; }

@@ -121,3 +121,11 @@ fixtures; runtime fallback на моки отсутствует. Songs/forms —
 публикация и публичные ссылки подключены к существующему API. Реальные Chrome +
 Go/SQLite/FFmpeg проверки и ограничения описаны в [frontend-songs.md](frontend-songs.md).
 Плеер/звук остаётся #11. Commit/PR/merge выполняет контроллер очереди.
+
+## Локальный результат Issue #11
+
+Подключены реальные session/public media и peaks, синхронный Web Audio transport,
+микшер 1–32 произвольных ID и общий курсор. Поведенческие проверки и ограничения —
+[audio-player.md](audio-player.md). Предел PCM 256 MiB означает, что 32 максимально
+длинных файла одновременно не поддержаны; физические iOS/Android не проверены.
+Loop range/метроном остаются #12. Commit/PR/merge выполняет контроллер очереди.
