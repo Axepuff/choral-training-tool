@@ -48,7 +48,8 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   const [loop, setLoop] = useState(initialLoop);
   const [metronome, setMetronome] = useState(false);
   const isPlaying = playing && time < duration;
-  const playbackLabel = pendingPlayback ? 'Отменить воспроизведение' : isPlaying ? 'Пауза' : 'Воспроизвести';
+  const playbackLoading = pendingPlayback || Boolean(song && song.tracks.some(t => !audio.states[t.id] || audio.states[t.id] === 'Загрузка…'));
+  const playbackLabel = playbackLoading ? 'Загрузка аудио' : isPlaying ? 'Пауза' : 'Воспроизвести';
   const mix = Object.fromEntries(tracks.map(t => [t.id, t]));
   const loopStart = realBarDuration;
   const loopEnd = Math.min(duration, realBarDuration * 3);
@@ -106,13 +107,21 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
     setTracks(tracks.map(t => ({ ...t, ...updated[t.id]! })));
   }
   function seek(value: number) {
-    if (song) void audio.run(e => e.seek(value, mix));
+    if (song) {
+      if (audio.engine.current?.playbackRequested) setPendingPlayback(true);
+      void audio.run(e => e.seek(value, mix));
+    }
     else setTime(value);
   }
   function togglePlayback() {
     if (song) {
-      if (audio.engine.current?.playbackRequested) audio.engine.current.pause();
-      else void audio.run(e => e.play(mix));
+      const engine = audio.engine.current;
+      if (!engine || (engine.playbackRequested && !engine.playing)) return;
+      if (engine.playing) engine.pause();
+      else {
+        setPendingPlayback(true);
+        void audio.run(e => e.play(mix));
+      }
     } else {
       if (!isPlaying && time >= duration) setTime(0);
       setPlaying(!isPlaying);
@@ -170,8 +179,8 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
             <button className={styles.iconButton} type="button" aria-label="Вернуться к началу" title="Вернуться к началу" onClick={() => seek(0)}>
               <PlayerIcon name="restart" />
             </button>
-            <button className={styles.playButton} disabled={!!song && song.tracks.some(t => !audio.states[t.id] || audio.states[t.id] === "Загрузка…")} type="button" aria-label={playbackLabel} aria-busy={pendingPlayback} title={playbackLabel} onClick={togglePlayback}>
-              <PlayerIcon name={isPlaying || pendingPlayback ? 'pause' : 'play'} />
+            <button className={styles.playButton} disabled={playbackLoading} type="button" aria-label={playbackLabel} aria-busy={playbackLoading} title={playbackLabel} onClick={togglePlayback}>
+              <PlayerIcon name={isPlaying && !playbackLoading ? 'pause' : 'play'} />
             </button>
             <span className={styles.time} aria-label={`${formatTime(time)} из ${formatTime(duration)}`}>
               {formatTime(time)} <span>/ {formatTime(duration)}</span>
@@ -186,7 +195,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
             </button>
           </div>
           <div className={styles.transportStatus}>
-            <span role="status">{pendingPlayback ? 'Загрузка аудио…' : loop ? 'Повтор: такты 2–3' : `Все партии · ${count} ${bars === 4 ? 'такта' : 'тактов'}`}</span>
+            <span role="status">{playbackLoading ? 'Загрузка аудио…' : loop ? 'Повтор: такты 2–3' : `Все партии · ${count} ${bars === 4 ? 'такта' : 'тактов'}`}</span>
             {metronome && <span className={styles.beats} aria-label="Визуальный метроном">
               {Array.from({ length: mockScore.beatsPerBar }, (_, index) => <i key={index} data-active={isPlaying && index === currentBeat} />)}
             </span>}

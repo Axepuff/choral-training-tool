@@ -12,7 +12,8 @@
 .iconButton, .optionButton, .playButton { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 44px; min-height: 44px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface); color: var(--color-text-muted); padding: 8px; }
 .iconButton:hover, .optionButton:hover { background: var(--color-surface-soft); }
 .playButton { width: 48px; height: 48px; border-radius: 50%; background: var(--color-accent); border-color: var(--color-accent); color: white; }
-.playButton:hover { background: var(--color-accent-strong); }
+.playButton:hover:not(:disabled) { background: var(--color-accent-strong); }
+.playButton:disabled { opacity: 0.45; }
 .time { font-size: 12px; font-weight: 650; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .time > span { color: var(--color-text-muted); font-weight: 400; }
 .optionButton > span { display: none; }

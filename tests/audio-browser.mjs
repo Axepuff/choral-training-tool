@@ -58,20 +58,26 @@ async function deferMedia() {
     };
   })()`);
 }
-async function cancelPendingPlayback(position) {
+async function waitForPendingPlayback(position) {
   await poll(() => evaluate('window.deferredMediaRequests > 0'));
-  await poll(() => evaluate(`document.querySelector('[aria-label="Отменить воспроизведение"]')?.getAttribute('aria-busy') === 'true'`));
-  assert.equal(await evaluate(`document.querySelector('[aria-label="Отменить воспроизведение"]').disabled`), false);
+  await poll(() => evaluate(`document.querySelector('[aria-label="Загрузка аудио"]')?.disabled === true`));
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Загрузка аудио"]').getAttribute('aria-busy')`), 'true');
   assert.equal(await evaluate(`document.body.textContent.includes('Загрузка аудио…')`), true);
   const starts = await evaluate('window.transportSourceStarts');
-  await clickPlayback('Отменить воспроизведение');
-  await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]') !== null`));
+  const playCalls = await evaluate('window.transportPlayCalls');
+  await clickPlayback('Загрузка аудио');
+  await evaluate(`document.querySelector('[aria-label="Загрузка аудио"]').click()`);
+  await sleep(100);
+  assert.equal(await evaluate('window.transportPlayCalls'), playCalls, 'disabled transport must not restart loading');
+  assert.equal(await evaluate('window.transportSourceStarts'), starts, 'no sound before media arrives');
+  assert.equal(await evaluate(`Number(document.querySelector('input[type=range]').value)`), position);
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Загрузка аудио"]').disabled`), true);
   await evaluate('window.releaseMediaRequests()');
   await evaluate('window.transportPlay');
-  await sleep(200);
-  assert.equal(await evaluate('window.transportSourceStarts'), starts, 'canceled load must not schedule sound');
-  assert.equal(await evaluate(`Number(document.querySelector('input[type=range]').value)`), position);
-  assert.equal(await evaluate(`document.querySelector('[aria-label="Воспроизвести"]').getAttribute('aria-busy')`), 'false');
+  await poll(() => evaluate(`document.querySelector('[aria-label="Пауза"]')?.disabled === false`));
+  assert.equal(await evaluate('window.transportPlayCalls'), playCalls, 'one requested start after loading');
+  assert.ok(await evaluate('window.transportSourceStarts') > starts);
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Пауза"]').getAttribute('aria-busy')`), 'false');
   assert.equal(await evaluate(`document.body.textContent.includes('Загрузка аудио…')`), false);
 }
 try {
@@ -142,15 +148,15 @@ try {
   await evaluate(`(async () => {
     const { AudioEngine } = await import('/src/audio/engine.ts');
     const play = AudioEngine.prototype.play;
-    AudioEngine.prototype.play = function(...args) { window.transportPlay = play.apply(this,args); return window.transportPlay; };
+    window.transportPlayCalls = 0;
+    AudioEngine.prototype.play = function(...args) { window.transportPlayCalls++; window.transportPlay = play.apply(this,args); return window.transportPlay; };
     window.transportSourceStarts = 0;
     const start = AudioBufferSourceNode.prototype.start;
     AudioBufferSourceNode.prototype.start = function(...args) { window.transportSourceStarts++; return start.apply(this,args); };
   })()`);
   await deferMedia();
   await clickPlayback('Воспроизвести');
-  await cancelPendingPlayback(0);
-  await clickPlayback('Воспроизвести');
+  await waitForPendingPlayback(0);
   await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value) > .2`));
   await deferMedia();
   await evaluate(`(() => {
@@ -158,10 +164,9 @@ try {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(slider, '4');
     slider.dispatchEvent(new Event('input', {bubbles:true}));
   })()`);
-  await cancelPendingPlayback(4);
-  await clickPlayback('Воспроизвести');
+  await waitForPendingPlayback(4);
   await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value) > 4.1`));
-  console.log('PASS transport cancellation: delayed first Play and seek resume show cancelable loading, late media/decode cannot schedule sound; explicit Play works afterwards.');
+  console.log('PASS transport loading: delayed first Play and seek resume disable the button, repeated clicks cannot restart loading, one requested playback starts afterwards and Pause becomes available.');
   await evaluate(`document.querySelector('[aria-label="Пауза"]').click()`); await sleep(100);
   const stopped = await evaluate(`Number(document.querySelector('input[type=range]').value)`); await sleep(150);
   assert.equal(await evaluate(`Number(document.querySelector('input[type=range]').value)`), stopped);
@@ -270,6 +275,7 @@ try {
   await evaluate(`document.querySelector('[aria-label="Воспроизвести"]').click()`);
   await poll(() => evaluate(`document.body.textContent.includes('Нет доступных дорожек')`));
   assert.equal(await evaluate(`document.querySelector('[aria-label="Пауза"]') === null`),true);
+  await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]')?.disabled === false`));
   console.log(`PASS long media: 32 real 20-minute AAC tracks, bounded Range windows, ${continuousSeconds} seconds continuous clock scheduling, repeated seeks/resume including end of recording; StrictMode all-solo reset. Largest Range: ${largestRange}`);
   console.log('PASS Chrome: real AAC-LC decode/play, sample-exact OfflineAudioContext mix, 32 channels with individual 404, peaks, gesture, clock cursor/pause, Solo, 320/360/landscape/desktop overflow.');
   // Exercise the diagnostic UI with a deliberately shortened real decode result.
