@@ -204,6 +204,10 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
         </section>
 
         {audio.error && <p role="alert">{audio.error}</p>}
+        {import.meta.env.DEV && Object.keys(audio.diagnostics).length > 0 && <details className={styles.diagnostics}>
+          <summary>Диагностика воспроизведения</summary>
+          <pre>{JSON.stringify(Object.values(audio.diagnostics), null, 2)}</pre>
+        </details>}
         <section className={styles.mixerSection} aria-label="Микшер партий">
           <div className={styles.mixer}>
             {tracks.map((track) => (

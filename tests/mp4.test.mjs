@@ -8,7 +8,7 @@ import { encodePlayback, makeWav } from './helpers/audio-fixture.mjs';
 
 const source = await readFile(new URL('../src/audio/mp4.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-const { MP4Reader } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const { MP4Reader, AudioDecodeError } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 const dir = await mkdtemp(join(tmpdir(), 'choral-mp4-test-'));
 after(() => rm(dir, { recursive: true, force: true }));
 const fixtures = new Map();
@@ -64,5 +64,21 @@ for (const [name, mutate] of [
     const bytes = Buffer.from(await fixture(44100));
     mutate(bytes, timingOffset(bytes));
     await assert.rejects(open(bytes), /AAC timing/);
+  });
+}
+
+for (const [code, sampleRate, length] of [
+  ['AAC_SAMPLE_RATE', 44100, 194560],
+  ['AAC_SHORT_PCM', 48000, 194560 - 2112],
+]) {
+  test(`reports concrete decoder output for ${code} without accepting invalid PCM`, async () => {
+    const reader = await open(await fixture(44100));
+    const context = { sampleRate: 48000, async decodeAudioData() { return { sampleRate, length, numberOfChannels: 1 }; } };
+    await assert.rejects(reader.decode(context, 0, 4), error => {
+      assert.ok(error instanceof AudioDecodeError);
+      assert.deepEqual(error.diagnostics, { code, contextRate: 48000, decodedRate: sampleRate, channels: 1,
+        encodedSamples: 194560, decodedSamples: length, offset: 1024, requiredSamples: 192000, start: 0, end: 4 });
+      return true;
+    });
   });
 }

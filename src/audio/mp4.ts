@@ -16,6 +16,17 @@ function boxes(data: Uint8Array) {
 }
 const child = (data: Uint8Array, type: string) => { const found = boxes(data).find(b => b.type === type); if (!found) throw new Error(`MP4: нет ${type}`); return found.data; };
 export type RangeReader = (start: number, end: number) => Promise<Uint8Array>;
+export interface AudioDecodeDiagnostics {
+  code: 'AAC_SAMPLE_RATE' | 'AAC_SHORT_PCM' | 'AAC_EMPTY_WINDOW';
+  contextRate: number; decodedRate: number; channels: number;
+  encodedSamples: number; decodedSamples: number; offset: number; requiredSamples: number;
+  start: number; end: number;
+}
+export class AudioDecodeError extends Error {
+  constructor(readonly diagnostics: AudioDecodeDiagnostics) {
+    super('Неподдерживаемый декодер AAC');
+  }
+}
 function validateTiming(stts: Uint8Array, sampleCount: number) {
   if (stts.length < 8) throw new Error('Повреждённый AAC timing');
   const entries = u32(stts, 4);
@@ -108,7 +119,11 @@ export class MP4Reader {
     const decoded = await context.decodeAudioData(segment.buffer as ArrayBuffer);
     const offset = sampleStart - first * 1024;
     const samples = Math.round((end - start) * 48000);
-    if (decoded.sampleRate !== 48000 || samples <= 0 || decoded.length - offset < samples) throw new Error('Неподдерживаемый декодер AAC');
+    const code = decoded.sampleRate !== 48000 ? 'AAC_SAMPLE_RATE'
+      : samples <= 0 ? 'AAC_EMPTY_WINDOW' : decoded.length - offset < samples ? 'AAC_SHORT_PCM' : null;
+    if (code) throw new AudioDecodeError({ code, contextRate: context.sampleRate, decodedRate: decoded.sampleRate,
+      channels: decoded.numberOfChannels, encodedSamples: length, decodedSamples: decoded.length,
+      offset, requiredSamples: samples, start, end });
     const output = context.createBuffer(1, samples, 48000);
     output.copyToChannel(decoded.getChannelData(0).subarray(offset, offset + samples), 0);
     return output;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AudioEngine, mediaURL } from './engine';
-import { MP4Reader } from './mp4';
+import { AudioDecodeError, MP4Reader } from './mp4';
+import type { AudioDecodeDiagnostics } from './mp4';
 import type { AudioSong } from './engine';
 export interface Wave { startMs: number; stepMs: number; durationMs: number; points: [number, number][] }
 export function useAudio(song: AudioSong | undefined, publicAccess: boolean) {
@@ -8,6 +9,7 @@ export function useAudio(song: AudioSong | undefined, publicAccess: boolean) {
   const [states, setStates] = useState<Record<string, string>>({});
   const [waves, setWaves] = useState<Record<string, Wave>>({});
   const [error, setError] = useState('');
+  const [diagnostics, setDiagnostics] = useState<Record<string, AudioDecodeDiagnostics>>({});
   useEffect(() => {
     if (!song) return;
     const abort = new AbortController();
@@ -16,7 +18,7 @@ export function useAudio(song: AudioSong | undefined, publicAccess: boolean) {
     catch { setError('Браузер не смог открыть аудиоустройство. Попробуйте другой браузер.'); return; }
     const audio = new AudioEngine(context, (song.durationMs ?? 0) / 1000);
     engine.current = audio;
-    setStates({}); setWaves({}); setError('');
+    setStates({}); setWaves({}); setError(''); setDiagnostics({});
     audio.onError = message => { if (!abort.signal.aborted) setError(message); };
     context.onstatechange = () => { if (context.state !== 'running' && audio.playing) audio.pause(); };
     const status = (id: string, value: string) => { if (!abort.signal.aborted) setStates(s => ({ ...s, [id]: value })); };
@@ -25,7 +27,10 @@ export function useAudio(song: AudioSong | undefined, publicAccess: boolean) {
       if (!response.ok) throw new Error('Аудио недоступно. Ссылка могла быть отозвана.');
       return response;
     };
-    audio.onTrackError = (id, e) => status(id, e instanceof Error ? e.message : 'Ошибка загрузки');
+    audio.onTrackError = (id, e) => {
+      status(id, e instanceof Error ? e.message : 'Ошибка загрузки');
+      if (!abort.signal.aborted && e instanceof AudioDecodeError) setDiagnostics(current => ({ ...current, [id]: e.diagnostics }));
+    };
     void (async () => {
       // Keep only the MP4 index and a small scheduled PCM horizon, independent of song length.
       for (const track of song.tracks) {
@@ -74,5 +79,5 @@ export function useAudio(song: AudioSong | undefined, publicAccess: boolean) {
       await action(audio); setError('');
     } catch (e) { audio.pause(); setError(e instanceof Error ? e.message : 'Не удалось запустить звук. Нажмите воспроизведение ещё раз.'); }
   }
-  return { engine, states, waves, error, run };
+  return { engine, states, waves, error, diagnostics, run };
 }

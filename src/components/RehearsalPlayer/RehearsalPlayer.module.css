@@ -83,3 +83,6 @@
 .mixerSection { position: relative; overflow-x: auto; }
 .mixer { grid-template-columns: repeat(5, minmax(52px, 1fr)); grid-auto-flow: column; grid-auto-columns: minmax(60px, 1fr); }
 .channel small { display: block; font-size: 10px; overflow-wrap: anywhere; }
+.diagnostics { min-width: 0; margin-block: 8px; font-size: 12px; }
+.diagnostics summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
+.diagnostics pre { white-space: pre-wrap; overflow-wrap: anywhere; }

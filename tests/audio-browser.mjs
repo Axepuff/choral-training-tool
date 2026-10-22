@@ -182,4 +182,38 @@ try {
   assert.equal(await evaluate(`document.querySelector('[aria-label="Пауза"]') === null`),true);
   console.log(`PASS long media: 32 real 20-minute AAC tracks, bounded Range windows, ${continuousSeconds} seconds continuous clock scheduling, repeated seeks/resume including end of recording; StrictMode all-solo reset. Largest Range: ${largestRange}`);
   console.log('PASS Chrome: real AAC-LC decode/play, sample-exact OfflineAudioContext mix, 32 channels with individual 404, peaks, gesture, clock cursor/pause, Solo, 320/360/landscape/desktop overflow.');
+  // Exercise the diagnostic UI with a deliberately shortened real decode result.
+  // This models the failure shape; it is not a physical Safari compatibility test.
+  revokeMedia = false; changedTrack = false;
+  await evaluate(`(() => {
+    const decode = AudioContext.prototype.decodeAudioData;
+    AudioContext.prototype.decodeAudioData = async function(...args) {
+      const pcm = await decode.apply(this, args);
+      const shortened = this.createBuffer(pcm.numberOfChannels, pcm.length - 4096, pcm.sampleRate);
+      shortened.copyToChannel(pcm.getChannelData(0).subarray(0, shortened.length), 0);
+      return shortened;
+    };
+    history.pushState(null, '', '?song=decoder-diagnostic'); window.dispatchEvent(new PopStateEvent('popstate'));
+  })()`);
+  await poll(() => evaluate(`Array.from(document.querySelectorAll('small[role=status]')).filter(e=>e.textContent.startsWith('Готово')).length === 31 && !document.querySelector('[aria-label="Воспроизвести"]').disabled`));
+  await evaluate(`document.querySelector('[aria-label="Воспроизвести"]').click()`);
+  try {
+    await poll(() => evaluate(`(() => {
+      const details = Array.from(document.querySelectorAll('details')).find(e=>e.querySelector('summary')?.textContent==='Диагностика воспроизведения');
+      return details && JSON.parse(details.querySelector('pre').textContent).length === 31;
+    })()`));
+  } catch (error) {
+    console.log('Decoder diagnostic failure state:', await evaluate('document.body.innerText'));
+    throw error;
+  }
+  const diagnostic = await evaluate(`(() => {
+    const details = Array.from(document.querySelectorAll('details')).find(e=>e.querySelector('summary')?.textContent==='Диагностика воспроизведения');
+    details.open = true; return JSON.parse(details.querySelector('pre').textContent);
+  })()`);
+  assert.equal(diagnostic.length, 31);
+  assert.equal(diagnostic[0].code, 'AAC_SHORT_PCM');
+  assert.equal(diagnostic[0].decodedRate, 48000);
+  assert.ok(diagnostic[0].decodedSamples < diagnostic[0].offset + diagnostic[0].requiredSamples);
+  assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
+  console.log('PASS dev-only decoder diagnostics: actual rate/length/offset reported after an intentionally shortened decode.');
 } finally { ws?.close(); for (const child of children) child.kill('SIGTERM'); server.closeAllConnections(); server.close(); await sleep(300); await rm(dir, { recursive: true, force: true }); }
