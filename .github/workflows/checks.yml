@@ -17,6 +17,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
       - run: npm run lint
+      - run: npm run test:agent-queue
       - run: npm run build
       - run: npm run build-storybook
       - run: node scripts/assemble-pages.mjs
