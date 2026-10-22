@@ -56,7 +56,7 @@ try {
     const reader = await MP4Reader.open(read);
     const reference = await context.decodeAudioData(await (await fetch('/api/v1/media/0', {credentials:'omit'})).arrayBuffer());
     const errors = [];
-    for (const [start,end] of [[0,2],[2,4],[3.123,5.456],[6,8]]) {
+    for (const [start,end] of [[0,2],[0,4],[2,4],[3.123,5.456],[4,8],[6,8],[7.95,8]]) {
       const part = await reader.decode(context, start, end);
       let max = 0, rms = 0;
       const original = reference.getChannelData(0), actual = part.getChannelData(0);

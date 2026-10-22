@@ -27,16 +27,21 @@ function open(bytes) {
     return new Uint8Array(bytes.subarray(start, end + 1));
   });
 }
-function timingOffset(bytes) {
+function payloadOffset(bytes, path) {
   let start = 0, end = bytes.length;
-  for (const type of ['moov', 'trak', 'mdia', 'minf', 'stbl', 'stts']) {
+  for (const type of path) {
     let at = start;
     while (at < end && bytes.toString('ascii', at + 4, at + 8) !== type) at += bytes.readUInt32BE(at);
-    assert.ok(at < end, `missing ${type}`);
+    if (at >= end) return null;
     end = at + bytes.readUInt32BE(at); start = at + 8;
   }
   return start;
 }
+const timingOffset = bytes => {
+  const at = payloadOffset(bytes, ['moov', 'trak', 'mdia', 'minf', 'stbl', 'stts']);
+  assert.notEqual(at, null);
+  return at;
+};
 
 for (const rate of [8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000]) {
   test(`opens server AAC converted from a real ${rate} Hz stereo WAV`, async () => {
@@ -82,3 +87,40 @@ for (const [code, sampleRate, length] of [
     });
   });
 }
+
+test('window metadata prevents implicit 2112-sample AAC trimming at start and after seeks', async () => {
+  const reader = await open(await fixture(44100));
+  let metadata;
+  // Models the missing-edit priming policy suggested by the device report.
+  // It does not run Apple's decoder; Safari still needs a physical retest.
+  const context = {
+    sampleRate: 48000,
+    async decodeAudioData(input) {
+      const b = Buffer.from(input), table = timingOffset(b);
+      const frames = b.readUInt32BE(table + 8), encoded = frames * b.readUInt32BE(table + 12);
+      const elst = payloadOffset(b, ['moov', 'trak', 'edts', 'elst']);
+      const trim = elst === null ? 2112 : b.readUInt32BE(elst + 12);
+      metadata = { b, encoded, elst, trim };
+      const pcm = Float32Array.from({ length: encoded - trim }, (_, i) => i + trim);
+      return { sampleRate: 48000, numberOfChannels: 1, length: pcm.length, getChannelData() { return pcm; } };
+    },
+    createBuffer(channels, length, sampleRate) {
+      const pcm = new Float32Array(length);
+      return { length, sampleRate, copyToChannel(data) { pcm.set(data); }, getChannelData() { return pcm; } };
+    },
+  };
+  for (const [start, end] of [[0, 4], [3.123, 5.456], [4, 8], [7.95, 8.137]]) {
+    const output = await reader.decode(context, start, end);
+    assert.equal(output.length, Math.round((end - start) * 48000));
+    assert.equal(metadata.trim, 0, 'explicit zero edit disables the implicit AAC priming policy');
+    assert.equal(metadata.b.readUInt32BE(metadata.elst + 8), metadata.encoded, 'edit duration covers all encoded samples');
+    const mvhd = payloadOffset(metadata.b, ['moov', 'mvhd']);
+    const tkhd = payloadOffset(metadata.b, ['moov', 'trak', 'tkhd']);
+    const mdhd = payloadOffset(metadata.b, ['moov', 'trak', 'mdia', 'mdhd']);
+    assert.equal(metadata.b.readUInt32BE(mvhd + 12), 48000, 'movie timebase preserves exact sample durations');
+    assert.equal(metadata.b.readUInt32BE(mvhd + 16), metadata.encoded);
+    assert.equal(metadata.b.readUInt32BE(tkhd + 20), metadata.encoded);
+    assert.equal(metadata.b.readUInt32BE(mdhd + 16), metadata.encoded);
+    for (const type of ['sgpd', 'sbgp']) assert.equal(payloadOffset(metadata.b, ['moov', 'trak', 'mdia', 'minf', 'stbl', type]), null, 'full-song sample groups must not leak into a short window');
+  }
+});

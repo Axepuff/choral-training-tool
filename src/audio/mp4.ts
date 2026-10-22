@@ -99,22 +99,29 @@ export class MP4Reader {
     const sizes = this.sizes.slice(first, last), length = sizes.length * 1024;
     const bytes = await this.read(this.offsets[first]!, this.offsets[last - 1]! + sizes.at(-1)! - 1);
     const full = new Uint8Array(4);
-    const rewrite = (data: Uint8Array, parent: string): Uint8Array => join(...boxes(data).filter(b => b.type !== 'edts').map(({ type, data: body }) => {
-      let payload = body;
-      if (['trak', 'mdia', 'minf', 'stbl'].includes(type)) payload = rewrite(body, type);
-      else if (type === 'mvhd' || type === 'tkhd' || type === 'mdhd') {
-        if (body[0] !== 0) throw new Error('Неподдерживаемая версия MP4');
-        payload = body.slice();
-        const scale = type === 'mdhd' ? 48000 : u32(child(this.moov, 'mvhd'), 12);
-        new DataView(payload.buffer).setUint32(type === 'tkhd' ? 20 : 16, Math.ceil(length * scale / 48000));
-      } else if (parent === 'stbl') {
-        if (type === 'stts') payload = join(full, word(1), word(sizes.length), word(1024));
-        if (type === 'stsc') payload = join(full, word(1), word(1), word(sizes.length), word(1));
-        if (type === 'stsz') payload = join(full, word(0), word(sizes.length), ...sizes.map(word));
-        if (type === 'stco') payload = join(full, word(1), word(this.ftyp.length + 8)); // one mdat chunk after ftyp
-      }
-      return box(type, payload);
-    }));
+    // Without an explicit edit AVFoundation assumes 2112 priming samples.
+    // Decode the entire packet window; apply the original file's priming only
+    // once below. Keep every duration in the sample timebase, without rounding.
+    const edit = box('edts', box('elst', join(full, word(1), word(length), word(0), word(0x00010000))));
+    const rewrite = (data: Uint8Array, parent: string): Uint8Array => join(...boxes(data)
+      .filter(b => !['edts', 'sgpd', 'sbgp', 'udta'].includes(b.type))
+      .flatMap(({ type, data: body }) => {
+        let payload = body;
+        if (['trak', 'mdia', 'minf', 'stbl'].includes(type)) payload = rewrite(body, type);
+        else if (type === 'mvhd' || type === 'tkhd' || type === 'mdhd') {
+          if (body[0] !== 0) throw new Error('Неподдерживаемая версия MP4');
+          payload = body.slice();
+          const view = new DataView(payload.buffer);
+          if (type !== 'tkhd') view.setUint32(12, 48000);
+          view.setUint32(type === 'tkhd' ? 20 : 16, length);
+        } else if (parent === 'stbl') {
+          if (type === 'stts') payload = join(full, word(1), word(sizes.length), word(1024));
+          if (type === 'stsc') payload = join(full, word(1), word(1), word(sizes.length), word(1));
+          if (type === 'stsz') payload = join(full, word(0), word(sizes.length), ...sizes.map(word));
+          if (type === 'stco') payload = join(full, word(1), word(this.ftyp.length + 8)); // one mdat chunk after ftyp
+        }
+        return type === 'tkhd' ? [box(type, payload), edit] : [box(type, payload)];
+      }));
     const segment = join(this.ftyp, box('mdat', bytes), box('moov', rewrite(this.moov, 'moov')));
     const decoded = await context.decodeAudioData(segment.buffer as ArrayBuffer);
     const offset = sampleStart - first * 1024;
