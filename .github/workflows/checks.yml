@@ -22,6 +22,7 @@ jobs:
       - run: npm run test:audio
       - run: npm run typecheck
       - run: npm run lint
+      - run: npm run test:agent-queue
       - run: npm run build
       - run: npm run build-storybook
       - run: node scripts/assemble-pages.mjs
