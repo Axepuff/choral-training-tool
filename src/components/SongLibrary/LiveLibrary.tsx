@@ -64,18 +64,22 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
   const completed = useRef(new Set<File>());
   useEffect(() => { if (!id) return; let active = true; void getSong(id).then(s => { if (active) { setSong(s); setLoaded(true); } }, e => { if (active) setError(message(e)); }); return () => { active = false; }; }, [id]);
   const currentId = song?.id;
-  const pending = song?.tracks.map(t => t.pendingJobId).filter(Boolean).join(',') ?? '';
+  const [uploadJobs, setUploadJobs] = useState<Record<number, string>>({});
+  const pending = JSON.stringify(song?.tracks.map((t, index) => t.pendingJobId ?? uploadJobs[index] ?? null) ?? []);
   const [uploadStates, setUploadStates] = useState<Record<number, string>>({});
   const [jobs, setJobs] = useState<Record<string, string>>({});
   useEffect(() => {
-    if (!currentId || !pending || busy) return;
+    const jobIds = JSON.parse(pending) as (string | null)[];
+    if (!currentId || !jobIds.some(Boolean) || busy) return;
     let active = true;
     let timer: number;
     async function check() {
       try {
-        const results = await Promise.all(pending.split(',').map(async id => [id, (await getJob(id)).state] as const));
+        const results = await Promise.all(jobIds.filter((id): id is string => !!id).map(async id => [id, (await getJob(id)).state] as const));
         if (!active) return;
         setJobs(Object.fromEntries(results));
+        // A confirmed job state supersedes a transient upload/status request error.
+        setUploadStates(states => Object.fromEntries(Object.entries(states).filter(([index]) => !results.some(([id]) => jobIds[Number(index)] === id))));
         if (results.some(([, state]) => state === 'succeeded')) setSong(await getSong(currentId!));
         if (results.some(([, state]) => state === 'queued' || state === 'processing')) timer = window.setTimeout(() => void check(), 1500);
       } catch (e) { if (active) setError(message(e)); }
@@ -85,7 +89,7 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
   }, [currentId, pending, busy]);
   async function save(value: SongFormValue) {
     if (busy) return;
-    setBusy(true); setError(''); setUploadStates({}); setStatus('Сохраняем данные…');
+    setBusy(true); setError(''); setUploadStates({}); setUploadJobs({}); setStatus('Сохраняем данные…');
     let current = song;
     let uploadingIndex: number | undefined;
     try {
@@ -126,6 +130,8 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
           if (e instanceof ApiError && e.status === 422 && ['corrupt_audio', 'unsupported_codec', 'too_long', 'probe_timeout'].includes(e.problem.code)) attempts.current.delete(file);
           throw e;
         }
+        const jobId = job.id;
+        setUploadJobs(jobs => ({ ...jobs, [index]: jobId }));
         while (job.state === 'queued' || job.state === 'processing') {
           setUploadStates(s => ({ ...s, [index]: 'Обработка…' }));
           await new Promise(resolve => window.setTimeout(resolve, 1000));

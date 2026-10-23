@@ -86,9 +86,11 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [live, dirty, busy]);
-  const visibleTracks = tracks.slice(0, count).map(track => {
-    const saved = initialSong?.tracks.find(t => t.id && t.id === track.id);
-    return saved?.existingFileName ? { ...track, existingFileName: saved.existingFileName } : track;
+  const visibleTracks = tracks.slice(0, count).map((track, index) => {
+    // Rows can only be appended/trimmed, never reordered. The server assigns IDs
+    // in that order while the form is disabled; preserve local fields and Files.
+    const saved = track.id ? initialSong?.tracks.find(t => t.id === track.id) : initialSong?.tracks[index];
+    return saved ? { ...track, ...(saved.id ? { id: saved.id } : {}), ...(saved.existingFileName ? { existingFileName: saved.existingFileName } : {}) } : track;
   });
   const selected = visibleTracks.filter((track) => track.file || track.existingFileName).length;
 

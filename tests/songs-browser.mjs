@@ -22,6 +22,8 @@ let ws;
 let next = 0;
 let acceptDialog = false;
 let dialogs = 0;
+let failOneJob = false;
+let failedJobs = 0;
 const pending = new Map();
 const uploadKeys = [];
 function send(method, params = {}) {
@@ -61,9 +63,9 @@ async function api(path, method = 'GET', body, headers = {}) {
  return evaluate(`(async () => { const me = await (await fetch('/api/v1/auth/me')).json(); const response = await fetch('/api/v1' + ${JSON.stringify(path)}, {method:${JSON.stringify(method)}, headers:{'Content-Type':'application/json','X-CSRF-Token':me.csrfToken,...${JSON.stringify(headers)}}, ${body === undefined ? '' : `body:JSON.stringify(${JSON.stringify(body)}),`} }); return {status:response.status, body:response.status===204?null:await response.json()}; })()`);
 }
 async function save() { await evaluate(`document.querySelector('form').requestSubmit()`); }
-async function selectFile(path) {
+async function selectFile(path, index = 0) {
  const {root} = await send('DOM.getDocument');
- const {nodeId} = await send('DOM.querySelector', {nodeId:root.nodeId,selector:'input[type=file]'});
+ const {nodeId} = await send('DOM.querySelector', {nodeId:root.nodeId,selector:`input[name="tracks[${index}].file"]`});
  await send('DOM.setFileInputFiles',{nodeId,files:[path]});
 }
 try {
@@ -74,7 +76,11 @@ try {
  const targets=await (await fetch(`http://127.0.0.1:${port}/json`)).json();
  ws=new WebSocket(targets.find(t=>t.type==='page').webSocketDebuggerUrl);
  await new Promise((resolve,reject)=>{ws.onopen=resolve;ws.onerror=reject;});
- ws.onmessage=message=>{const data=JSON.parse(message.data);if(data.method==='Network.requestWillBeSent' && data.params.request.url.endsWith('/uploads')){uploadKeys.push(data.params.request.headers['Idempotency-Key']);}if(data.method==='Fetch.requestPaused'){void send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});}if(data.method==='Page.javascriptDialogOpening'){dialogs++;void send('Page.handleJavaScriptDialog',{accept:acceptDialog});}const entry=pending.get(data.id);if(entry){pending.delete(data.id);if(data.error)entry.reject(new Error(data.error.message));else entry.resolve(data.result);}};
+ ws.onmessage=message=>{const data=JSON.parse(message.data);if(data.method==='Network.requestWillBeSent' && data.params.request.url.endsWith('/uploads')){uploadKeys.push(data.params.request.headers['Idempotency-Key']);}if(data.method==='Fetch.requestPaused'){
+   if(failOneJob && data.params.request.url.includes('/jobs/')){failOneJob=false;failedJobs++;void send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});}
+   else if(data.params.request.url.includes('/jobs/')) void send('Fetch.continueRequest',{requestId:data.params.requestId});
+   else void send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});
+  }if(data.method==='Page.javascriptDialogOpening'){dialogs++;void send('Page.handleJavaScriptDialog',{accept:acceptDialog});}const entry=pending.get(data.id);if(entry){pending.delete(data.id);if(data.error)entry.reject(new Error(data.error.message));else entry.resolve(data.result);}};
  await send('Page.enable');await send('Runtime.enable');await send('Network.enable');
  await navigate('?page=create-song');await expectText('Вход');
  await submit('teacher@example.test','fictional password 123');await expectText('Новая песня');
@@ -124,6 +130,12 @@ try {
  await send('Fetch.disable');
  await save();await expectText('Изменения сохранены на сервере.');
  assert.equal(uploadKeys.at(-1),networkKey,'Unknown network outcome must retain the idempotency key');
+ media=(await api('/songs/'+id)).body.tracks[0].mediaUrl;
+ // Accepted upload, one failed status request, then real background recovery.
+ failOneJob=true;await send('Fetch.enable',{patterns:[{urlPattern:'*/api/v1/jobs/*',requestStage:'Request'}]});
+ await selectFile(file);await save();await expectText('Нет соединения с сервером');
+ await poll(()=>evaluate(`!document.querySelector('fieldset').disabled && [...document.querySelectorAll('form [role=status]')].some(e=>e.textContent==='Готово')`),'Background job did not replace the stale row error');
+ assert.equal(failedJobs,1);await send('Fetch.disable');
  media=(await api('/songs/'+id)).body.tracks[0].mediaUrl;
  // Replace with invalid bytes: old media survives, no success UI.
  const replacement=join(dir,'Длинное-имя-'.repeat(9)+'.wav');await writeFile(replacement,wav);await selectFile(replacement);await save();await expectText('Изменения сохранены на сервере.');
@@ -196,7 +208,21 @@ try {
  for(const [width,height] of [[320,640],[360,800],[800,360],[1280,900]]){await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<900});assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,`Overflow ${width}`);assert.equal(await evaluate(`[...document.querySelectorAll('form button, form input:not([hidden]), form select, form textarea')].every(e=>(e.tagName==='BUTTON' || e.id && e.name) && e.getBoundingClientRect().height>=44)`),true);}
  await input('title','Несохранённое название');await click('Отмена');assert.equal(dialogs,1);assert.equal(await evaluate(`document.querySelector('[name=title]').value`),'Несохранённое название');
  acceptDialog=true;await click('Отмена');await expectText('Мои изменения');assert.equal((await api('/songs/'+id)).body.title,'Мои изменения');
- console.log('Real Go/SQLite/FFmpeg + Chrome: lost creation response/edit/replay without duplicate or File loss, draft, upload/ready, probe timeout/retry, network key retention, failed replacement, persistence, conflict/retry, offline, publication conflict/retry, search, share rotation/revocation, anonymous song/list, admin, Unicode and responsive checks passed.');
+ // Partial multi-file success keeps server identity/name when local selection is removed.
+ await navigate('?page=create-song');await expectText('Новая песня');await input('title','Частичное сохранение');
+ for(const count of [2,4]) {
+   await evaluate(`(() => {const s=document.querySelector('[name=trackCount]');s.value='${count}';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+   await selectFile(file,count-2);await selectFile(bad,count-1);await save();await expectText('Файл повреждён');
+   const partialId=await evaluate(`new URLSearchParams(location.search).get('id')`);
+   const partial=(await api('/songs/'+partialId)).body;
+   assert.equal(partial.tracks[count-2].sourceName,'synthetic.wav');
+   await evaluate(`document.querySelector('[aria-label="Убрать файл трека ${count-1}"]').click()`);
+   assert.equal(await evaluate(`document.querySelector('[name="tracks[${count-2}].name"]').closest('div').textContent.includes('synthetic.wav')`),true,'Saved source name must survive removing the local File after partial success');
+   assert.equal(await evaluate(`document.querySelector('[name="tracks[${count-2}].name"]').closest('div').textContent.includes('Файл не выбран')`),false);
+   await evaluate(`document.querySelector('[aria-label="Убрать файл трека ${count}"]').click()`);
+   await save();await expectText('Изменения сохранены на сервере.');
+ }
+ console.log('Real Go/SQLite/FFmpeg + Chrome: background job recovery, partial multi-file saves for new and appended tracks, lost creation response/edit/replay without duplicate or File loss, draft, upload/ready, probe timeout/retry, network key retention, failed replacement, persistence, conflict/retry, offline, publication conflict/retry, search, share rotation/revocation, anonymous song/list, admin, Unicode and responsive checks passed.');
 } finally {
  if(ws)ws.close();for(const p of processes.reverse()){p.kill('SIGTERM');await Promise.race([new Promise(resolve=>p.once('exit',resolve)),delay(2000)]);if(p.exitCode===null)p.kill('SIGKILL');}await rm(dir,{recursive:true,force:true,maxRetries:5});
 }
