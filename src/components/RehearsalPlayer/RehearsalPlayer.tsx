@@ -16,17 +16,18 @@ export interface RehearsalPlayerProps {
   /** Название выбранной песни в демонстрационной библиотеке. */
   pieceTitle?: string;
   /** Длина демонстрационного фрагмента. */
-  bars?: 4 | 16;
+  bars?: 1 | 4 | 16;
   /** Начальная позиция демонстрационного курсора в секундах. */
   initialTime?: number;
   /** Запускает только визуальное воспроизведение, без аудио. */
   initialPlaying?: boolean;
-  /** Повторяет демонстрационный фрагмент: такты 2 и 3. */
+  /** Начальное состояние повтора. */
   initialLoop?: boolean;
+  initialLoopRange?: [number, number];
 }
 
 /** Мобильный макет репетиции. Приложение и Storybook используют этот же компонент. */
-export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initialLoop = false, bars = 4, pieceTitle = mockScore.title, song, publicAccess = false }: RehearsalPlayerProps) {
+export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initialLoop = false, initialLoopRange = [1, 1], bars = 4, pieceTitle = mockScore.title, song, publicAccess = false }: RehearsalPlayerProps) {
   const positionId = useId();
   const timelineRef = useRef<HTMLDivElement>(null);
   const bpm = song?.bpm ?? mockScore.bpm;
@@ -35,6 +36,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   const realBarDuration = 60 * beatsPerBar * 4 / (bpm * beatUnit);
   const duration = song ? (song.durationMs ?? 0) / 1000 : bars * barDuration;
   const count = song ? Math.max(1, Math.ceil(duration / realBarDuration)) : bars;
+  const barLabel = count % 100 >= 11 && count % 100 <= 14 ? 'тактов' : count % 10 === 1 ? 'такт' : count % 10 >= 2 && count % 10 <= 4 ? 'такта' : 'тактов';
   const audio = useAudio(song, publicAccess);
   const [storedTracks, setTracks] = useState(() => song ? song.tracks.map((t, i) => ({ id: t.id, name: t.name, volume: t.gain * 100, muted: false, solo: false, waveform: [] as number[], tone: (['soprano', 'alto', 'tenor', 'bass', 'backing'] as TrackTone[])[i % 5]! })) : mockTracks.map(t => ({ ...t, tone: t.id })));
   const tracks = useMemo(() => storedTracks.map(track => {
@@ -46,15 +48,20 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   const [playing, setPlaying] = useState(initialPlaying);
   const [pendingPlayback, setPendingPlayback] = useState(false);
   const [loop, setLoop] = useState(initialLoop);
+  const rangeId = useId();
+  const [range, setRange] = useState(initialLoopRange);
+  const validRange = range.every(Number.isInteger) && range[0] >= 1 && range[1] <= count && range[0] <= range[1];
+  const [loopError, setLoopError] = useState('');
   const [metronome, setMetronome] = useState(false);
   const isPlaying = playing && time < duration;
   const playbackLoading = audio.loading || (pendingPlayback && !audio.retryRequired);
   const playbackLabel = playbackLoading ? 'Загрузка аудио' : audio.retryRequired ? 'Повторить подключение аудио' : isPlaying ? 'Пауза' : 'Воспроизвести';
   const mix = Object.fromEntries(tracks.map(t => [t.id, t]));
-  const loopStart = realBarDuration;
-  const loopEnd = Math.min(duration, realBarDuration * 3);
+  const loopStart = (range[0] - 1) * realBarDuration;
+  const loopEnd = Math.min(duration, realBarDuration * range[1]);
+  const activeLoop = loop && validRange && loopEnd > loopStart;
   const hasSolo = tracks.some((track) => track.solo);
-  const currentBeat = Math.floor(time * mockScore.bpm / 60) % mockScore.beatsPerBar;
+  const currentBeat = Math.floor(time * bpm * beatUnit / 240) % beatsPerBar;
 
   useEffect(() => {
     if (song) {
@@ -82,12 +89,12 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
       previous = now;
       setTime((current) => {
         const next = current + elapsed;
-        if (loop && next >= loopEnd) return loopStart + (next - loopEnd) % (loopEnd - loopStart);
+        if (activeLoop && next >= loopEnd) return loopStart + (next - loopEnd) % (loopEnd - loopStart);
         return Math.min(next, duration);
       });
     }, 50);
     return () => window.clearInterval(timer);
-  }, [isPlaying, loop, loopEnd, loopStart, duration, song, audio.engine]);
+  }, [isPlaying, activeLoop, loopEnd, loopStart, duration, song, audio.engine]);
 
   useEffect(() => {
     const viewport = timelineRef.current;
@@ -102,6 +109,21 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
     audio.engine.current?.setMix(Object.fromEntries(tracks.map(t => [t.id, t])));
   }, [tracks, audio.engine]);
 
+  useEffect(() => {
+    if (!song) {
+      if (activeLoop) setTime(value => value < loopStart || value >= loopEnd ? loopStart : value);
+      return;
+    }
+    if (audio.loading) return;
+    setLoopError('');
+    const engine = audio.engine.current;
+    void engine?.setLoop(activeLoop ? { start: loopStart, end: loopEnd } : null)
+      .catch(error => { engine.pause(); setLoopError(error instanceof Error ? error.message : 'Не удалось изменить повтор'); });
+  }, [song, audio.loading, audio.engine, activeLoop, loopStart, loopEnd]);
+  useEffect(() => {
+    audio.engine.current?.setMetronome(metronome, bpm, beatsPerBar, beatUnit);
+  }, [audio.engine, audio.loading, metronome, bpm, beatsPerBar, beatUnit]);
+
   function updateTrack(id: string, patch: Partial<Mix>) {
     const updated = updateMix(mix, id, patch);
     setTracks(tracks.map(t => ({ ...t, ...updated[t.id]! })));
@@ -111,7 +133,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
       if (audio.engine.current?.playbackRequested) setPendingPlayback(true);
       void audio.run(e => e.seek(value, mix));
     }
-    else setTime(value);
+    else setTime(activeLoop && (value < loopStart || value >= loopEnd) ? loopStart : value);
   }
   function togglePlayback() {
     if (song) {
@@ -128,7 +150,8 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
         void audio.run(e => e.play(mix));
       }
     } else {
-      if (!isPlaying && time >= duration) setTime(0);
+      if (!isPlaying && activeLoop && (time < loopStart || time >= loopEnd)) setTime(loopStart);
+      else if (!isPlaying && time >= duration) setTime(0);
       setPlaying(!isPlaying);
     }
   }
@@ -161,8 +184,8 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   const gridStyle = {
     '--bars': song && duration ? duration / realBarDuration : count,
     '--timeline-width': `${Math.min(count * 76, 100000)}px`,
-    '--loop-left': `${100 / bars}%`,
-    '--loop-width': `${200 / bars}%`,
+    '--loop-left': `${loopStart / (duration || 1) * 100}%`,
+    '--loop-width': `${(loopEnd - loopStart) / (duration || 1) * 100}%`,
     '--beats': song ? duration / realBarDuration * beatsPerBar : count * beatsPerBar,
   } as CSSProperties;
 
@@ -175,7 +198,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
           <div className={styles.metadata}>
             <span className={styles.pill}>{bpm} BPM</span>
             <span className={styles.pill}>{beatsPerBar}/{beatUnit}</span>
-            <span className={styles.subtitle}>{`${song ? "Песня" : "Учебный фрагмент"} · ${count} ${bars === 4 ? 'такта' : 'тактов'}`}</span>
+            <span className={styles.subtitle}>{`${song ? "Песня" : "Учебный фрагмент"} · ${count} ${barLabel}`}</span>
           </div>
         </header>
 
@@ -192,21 +215,34 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
             </span>
           </div>
           <div className={styles.options}>
-            <button className={styles.optionButton} type="button" aria-label="Повтор фрагмента" aria-pressed={loop} disabled={!!song} title={song ? "Выбор диапазона повтора пока недоступен" : "Повторить такты 2–3"} onClick={() => setLoop(!loop)}>
+            <button className={styles.optionButton} type="button" aria-label="Повтор фрагмента" aria-pressed={activeLoop} disabled={!validRange || duration <= 0} title="Повторить выбранные такты" onClick={() => setLoop(!loop)}>
               <PlayerIcon name="loop" /><span>Повтор</span>
             </button>
-            <button className={styles.optionButton} type="button" aria-label="Метроном" aria-pressed={metronome} disabled={!!song} title={song ? "Метроном пока недоступен" : "Визуальный метроном"} onClick={() => setMetronome(!metronome)}>
+            <button className={styles.optionButton} type="button" aria-label="Метроном" aria-pressed={metronome} title={song ? "Звуковой метроном" : "Визуальный метроном (демо без звука)"} onClick={() => setMetronome(!metronome)}>
               <PlayerIcon name="metronome" /><span>Метроном</span>
             </button>
           </div>
           <div className={styles.transportStatus}>
-            <span role="status">{playbackLoading ? 'Загрузка аудио…' : loop ? 'Повтор: такты 2–3' : `Все партии · ${count} ${bars === 4 ? 'такта' : 'тактов'}`}</span>
+            <span role="status">{playbackLoading ? 'Загрузка аудио…' : activeLoop ? `Повтор: такты ${range[0]}–${range[1]}` : `Все партии · ${count} ${barLabel}`}</span>
             {metronome && <span className={styles.beats} aria-label="Визуальный метроном">
-              {Array.from({ length: mockScore.beatsPerBar }, (_, index) => <i key={index} data-active={isPlaying && index === currentBeat} />)}
+              {Array.from({ length: beatsPerBar }, (_, index) => <i key={index} data-active={isPlaying && index === currentBeat} />)}
             </span>}
           </div>
         </div>
 
+        <div className={styles.loopControls} role="group" aria-label="Такты повтора">
+          <label htmlFor={`${rangeId}-start`}>С такта
+            <input id={`${rangeId}-start`} name="loopStart" type="number" inputMode="numeric" min={1} max={count} step={1}
+              value={Number.isNaN(range[0]) ? '' : range[0]} aria-invalid={!validRange} aria-describedby={!validRange ? `${rangeId}-error` : undefined}
+              onChange={event => setRange([event.currentTarget.valueAsNumber, range[1]])} />
+          </label>
+          <label htmlFor={`${rangeId}-end`}>По такт
+            <input id={`${rangeId}-end`} name="loopEnd" type="number" inputMode="numeric" min={1} max={count} step={1}
+              value={Number.isNaN(range[1]) ? '' : range[1]} aria-invalid={!validRange} aria-describedby={!validRange ? `${rangeId}-error` : undefined}
+              onChange={event => setRange([range[0], event.currentTarget.valueAsNumber])} />
+          </label>
+          {!validRange && <span id={`${rangeId}-error`} role="alert">Укажите целые такты: 1 ≤ начало ≤ конец ≤ {count}.</span>}
+        </div>
         <section className={styles.timeline} style={gridStyle} aria-label="Общий таймлайн партий">
           <div className={styles.timelineViewport} ref={timelineRef} tabIndex={0} role="region" aria-label="Прокрутка тактов">
           <div className={styles.timelineContent}>
@@ -222,7 +258,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
                   vectorEffect="non-scaling-stroke" />;
               })}
             </svg>
-            {loop && <div className={styles.loopRegion} aria-hidden="true" />}
+            {activeLoop && <div className={styles.loopRegion} aria-hidden="true" />}
             <div className={styles.cursor} style={{ '--position': `${time / (duration || 1) * 100}%` } as CSSProperties} aria-hidden="true"><span /></div>
           </div>
           </div>
@@ -233,6 +269,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
             onChange={(event) => seek(Number(event.currentTarget.value))} />
         </section>
 
+        {loopError && <p role="alert">{loopError}</p>}
         {audio.error && <p role="alert">{audio.error}</p>}
         {import.meta.env.DEV && Object.keys(audio.diagnostics).length > 0 && <details className={styles.diagnostics}>
           <summary>Диагностика воспроизведения</summary>

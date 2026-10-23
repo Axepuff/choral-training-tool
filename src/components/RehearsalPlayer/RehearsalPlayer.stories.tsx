@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, userEvent, within } from 'storybook/test';
+import { expect, fireEvent, userEvent, within } from 'storybook/test';
 import { RehearsalPlayer } from './RehearsalPlayer';
 
 const meta = {
@@ -8,7 +8,7 @@ const meta = {
   component: RehearsalPlayer,
   parameters: {
     layout: 'fullscreen',
-    docs: { description: { component: 'Общий таймлайн с наложением пяти цветных волн, верхний транспорт и пять колонок микшера с вертикальными фейдерами. Курсор, Solo/Mute, громкость, повтор тактов 2–3 и визуальный метроном работают на локальных моках. Звук не воспроизводится.' } },
+    docs: { description: { component: 'Общий таймлайн с наложением пяти цветных волн, верхний транспорт и пять колонок микшера с вертикальными фейдерами. Курсор, Solo/Mute, громкость, выбор тактов повтора и визуальный метроном работают на локальных моках. Звук не воспроизводится.' } },
   },
   args: { initialTime: 0, initialPlaying: false, initialLoop: false },
 } satisfies Meta<typeof RehearsalPlayer>;
@@ -42,7 +42,7 @@ export const Default: Story = {
     const repeat = canvas.getByRole('button', { name: 'Повтор фрагмента' });
     await userEvent.click(repeat);
     await expect(repeat).toHaveAttribute('aria-pressed', 'true');
-    await expect(canvas.getByText('Повтор: такты 2–3')).toBeVisible();
+    await expect(canvas.getByText('Повтор: такты 1–1')).toBeVisible();
     await userEvent.click(repeat);
     const metronome = canvas.getByRole('button', { name: 'Метроном' });
     await userEvent.click(metronome);
@@ -52,7 +52,7 @@ export const Default: Story = {
 };
 
 export const Playing: Story = { name: 'Воспроизведение', args: { initialPlaying: true, initialTime: 1 } };
-export const FragmentLoop: Story = { name: 'Повтор фрагмента', args: { initialLoop: true, initialTime: 4 } };
+export const FragmentLoop: Story = { name: 'Повтор фрагмента', args: { initialLoop: true, initialLoopRange: [2, 3], initialTime: 4 } };
 export const Mobile: Story = {
   name: 'Мобильный · 360 px',
   globals: { viewport: { value: 'mobile360', isRotated: false } },
@@ -74,7 +74,8 @@ export const SixteenBars: Story = {
     await expect(viewport.scrollLeft).toBeGreaterThan(0);
     const position = canvas.getByRole('slider', { name: 'Позиция воспроизведения' });
     position.focus();
-    await userEvent.keyboard('{End}');
+    // userEvent cannot emulate a range input's native End default action.
+    fireEvent.input(position, { target: { value: (position as HTMLInputElement).max } });
     await expect(Number((position as HTMLInputElement).value)).toBeGreaterThan(45);
     await userEvent.click(canvas.getByRole('button', { name: 'Вернуться к началу' }));
     await expect(position).toHaveValue('0');
@@ -86,4 +87,48 @@ export const MobileLandscape: Story = {
   name: 'Мобильный · горизонтально · 16 тактов',
   args: { bars: 16 },
   globals: { viewport: { value: 'mobile360', isRotated: true } },
+};
+
+export const SingleBar: Story = {
+  name: 'Повтор · один такт и неверные границы',
+  args: { initialLoop: true, initialLoopRange: [1, 1] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const start = canvas.getByRole('spinbutton', { name: 'С такта' });
+    const end = canvas.getByRole('spinbutton', { name: 'По такт' });
+    await expect(canvas.getByText('Повтор: такты 1–1')).toBeVisible();
+    fireEvent.input(start, { target: { value: '5' } });
+    await expect(canvas.getByRole('alert')).toBeVisible();
+    await expect(canvas.getByRole('button', { name: 'Повтор фрагмента' })).toBeDisabled();
+    fireEvent.input(start, { target: { value: '1' } });
+    fireEvent.input(end, { target: { value: '2' } });
+    await expect(end).toHaveValue(2);
+    await expect(canvas.getByText('Повтор: такты 1–2')).toBeVisible();
+  },
+};
+export const FullSongLoop: Story = {
+  name: 'Повтор · весь длинный фрагмент',
+  args: { bars: 16, initialLoop: true, initialLoopRange: [1, 16] },
+  globals: { viewport: { value: 'mobile360', isRotated: false } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const repeat = canvas.getByRole('button', { name: 'Повтор фрагмента' });
+    await expect(canvas.getByText('Повтор: такты 1–16')).toBeVisible();
+    await userEvent.click(repeat);
+    await expect(repeat).toHaveAttribute('aria-pressed', 'false');
+    await expect(canvas.getByRole('spinbutton', { name: 'По такт' })).toHaveValue(16);
+    await userEvent.click(repeat);
+    await expect(repeat).toHaveAttribute('aria-pressed', 'true');
+  },
+};
+
+export const ShortSong: Story = {
+  name: 'Короткая песня · один такт',
+  args: { bars: 1, initialLoop: true, initialLoopRange: [1, 1] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('spinbutton', { name: 'По такт' })).toHaveAttribute('max', '1');
+    await userEvent.click(canvas.getByRole('button', { name: 'Повтор фрагмента' }));
+    await expect(canvas.getByRole('button', { name: 'Повтор фрагмента' })).toHaveAttribute('aria-pressed', 'false');
+  },
 };
