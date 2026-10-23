@@ -70,21 +70,16 @@ async function deferMedia() {
 }
 async function waitForPendingPlayback(position) {
   await poll(() => evaluate('window.deferredMediaRequests > 0'));
-  await poll(() => evaluate(`document.querySelector('[aria-label="Загрузка аудио"]')?.disabled === true`));
-  assert.equal(await evaluate(`document.querySelector('[aria-label="Загрузка аудио"]').getAttribute('aria-busy')`), 'true');
+  await poll(() => evaluate(`document.querySelector('[aria-label="Пауза"]')?.getAttribute('aria-busy') === 'true'`));
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Пауза"]').disabled`), false);
   assert.equal(await evaluate(`document.body.textContent.includes('Загрузка аудио…')`), true);
   const starts = await evaluate('window.transportSourceStarts');
   const playCalls = await evaluate('window.transportPlayCalls');
-  await clickPlayback('Загрузка аудио');
-  await evaluate(`document.querySelector('[aria-label="Загрузка аудио"]').click()`);
-  await sleep(100);
-  assert.equal(await evaluate('window.transportPlayCalls'), playCalls, 'disabled transport must not restart loading');
+  await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value) === ${position}`));
   assert.equal(await evaluate('window.transportSourceStarts'), starts, 'no sound before media arrives');
-  assert.equal(await evaluate(`Number(document.querySelector('input[type=range]').value)`), position);
-  assert.equal(await evaluate(`document.querySelector('[aria-label="Загрузка аудио"]').disabled`), true);
   await evaluate('window.releaseMediaRequests()');
   await evaluate('window.transportPlay');
-  await poll(() => evaluate(`document.querySelector('[aria-label="Пауза"]')?.disabled === false`));
+  await poll(() => evaluate(`document.querySelector('[aria-label="Пауза"]')?.getAttribute('aria-busy') === 'false'`));
   assert.equal(await evaluate('window.transportPlayCalls'), playCalls, 'one requested start after loading');
   assert.ok(await evaluate('window.transportSourceStarts') > starts);
   assert.equal(await evaluate(`document.querySelector('[aria-label="Пауза"]').getAttribute('aria-busy')`), 'false');
@@ -180,7 +175,7 @@ try {
   })()`);
   await waitForPendingPlayback(4);
   await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value) > 4.1`));
-  console.log('PASS transport loading: delayed first Play and seek resume disable the button, repeated clicks cannot restart loading, one requested playback starts afterwards and Pause becomes available.');
+  console.log('PASS transport loading: delayed first Play and seek resume expose Pause while busy; one requested playback starts after loading.');
   await evaluate(`document.querySelector('[aria-label="Пауза"]').click()`); await sleep(100);
   const stopped = await evaluate(`Number(document.querySelector('input[type=range]').value)`); await sleep(150);
   assert.equal(await evaluate(`Number(document.querySelector('input[type=range]').value)`), stopped);
@@ -305,7 +300,37 @@ try {
   for(let i=0;i<12;i++) {await sleep(150);positions.push(await evaluate(`Number(document.querySelector('input[type=range]').value)`));}
   assert.ok(positions.every(p=>p>=.75&&p<2.25));
   assert.ok(positions.some((p,i)=>i>0&&p<positions[i-1]),'cursor crosses loop boundary');
+  // Gate the real decoder after entry: Pause must cancel the new range's pending start.
+  await evaluate(`(async () => {
+    const {MP4Reader} = await import('/src/audio/mp4.ts');
+    const decode = MP4Reader.prototype.decode;
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    window.deferredDecodes = 0;
+    window.finishedDecodes = 0;
+    window.releaseDecode = () => { MP4Reader.prototype.decode = decode; release(); };
+    MP4Reader.prototype.decode = async function(...args) {
+      window.deferredDecodes++;
+      await gate;
+      try { return await decode.apply(this, args); }
+      finally { window.finishedDecodes++; }
+    };
+  })()`);
   await setLoopField('loopEnd', 4); await setLoopField('loopStart', 4);
+  await poll(() => evaluate(`window.deferredDecodes > 0 && document.querySelector('[aria-label="Пауза"]')?.getAttribute('aria-busy') === 'true'`));
+  const startsBeforeCancel = await evaluate('window.transportSourceStarts');
+  await clickPlayback('Пауза');
+  await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]')?.disabled === false`));
+  const cancelledPosition = await evaluate(`Number(document.querySelector('input[type=range]').value)`);
+  await evaluate('window.releaseDecode()');
+  await poll(() => evaluate('window.finishedDecodes === window.deferredDecodes'));
+  await evaluate('window.transportPlay');
+  await sleep(250);
+  assert.equal(await evaluate('window.transportSourceStarts'), startsBeforeCancel, 'late range decode must not start any audio after Pause');
+  assert.equal(await evaluate(`Number(document.querySelector('input[type=range]').value)`), cancelledPosition, 'cancelled cursor stays paused');
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Воспроизвести"]').getAttribute('aria-busy')`), 'false');
+  console.log('PASS pending live loop change: enabled Pause cancels delayed decode without late sound or cursor movement.');
+  await clickPlayback('Воспроизвести');
   await poll(() => evaluate(`document.querySelector('[aria-label="Пауза"]')!==null && Number(document.querySelector('input[type=range]').value)>=2.25`));
   await clickPlayback('Пауза');
   await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]')!==null`));

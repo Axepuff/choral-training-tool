@@ -55,7 +55,8 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   const [metronome, setMetronome] = useState(false);
   const isPlaying = playing && time < duration;
   const playbackLoading = audio.loading || (pendingPlayback && !audio.retryRequired);
-  const playbackLabel = playbackLoading ? 'Загрузка аудио' : audio.retryRequired ? 'Повторить подключение аудио' : isPlaying ? 'Пауза' : 'Воспроизвести';
+  const canPause = isPlaying || pendingPlayback;
+  const playbackLabel = canPause ? 'Пауза' : playbackLoading ? 'Загрузка аудио' : audio.retryRequired ? 'Повторить подключение аудио' : 'Воспроизвести';
   const mix = Object.fromEntries(tracks.map(t => [t.id, t]));
   const loopStart = (range[0] - 1) * realBarDuration;
   const loopEnd = Math.min(duration, realBarDuration * range[1]);
@@ -143,8 +144,12 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
         return;
       }
       const engine = audio.engine.current;
-      if (!engine || (engine.playbackRequested && !engine.playing)) return;
-      if (engine.playing) engine.pause();
+      if (!engine) return;
+      if (engine.playbackRequested || engine.playing) {
+        engine.pause();
+        setPendingPlayback(false);
+        setPlaying(false);
+      }
       else {
         setPendingPlayback(true);
         void audio.run(e => e.play(mix));
@@ -207,8 +212,8 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
             <button className={styles.iconButton} type="button" aria-label="Вернуться к началу" title="Вернуться к началу" onClick={() => seek(0)}>
               <PlayerIcon name="restart" />
             </button>
-            <button className={styles.playButton} disabled={playbackLoading} type="button" aria-label={playbackLabel} aria-busy={playbackLoading} title={playbackLabel} onClick={togglePlayback}>
-              <PlayerIcon name={isPlaying && !playbackLoading ? 'pause' : 'play'} />
+            <button className={styles.playButton} disabled={audio.loading} type="button" aria-label={playbackLabel} aria-busy={playbackLoading} title={playbackLabel} onClick={togglePlayback}>
+              <PlayerIcon name={canPause ? 'pause' : 'play'} />
             </button>
             <span className={styles.time} aria-label={`${formatTime(time)} из ${formatTime(duration)}`}>
               {formatTime(time)} <span>/ {formatTime(duration)}</span>
