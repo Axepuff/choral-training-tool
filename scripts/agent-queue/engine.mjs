@@ -28,6 +28,9 @@ export async function processTask(io, task, state) {
     const approved = validateReview(report, revision.head, revision.base);
     await io.assertStable(revision, true);
     await io.recordReview(state, report, checks);
+    if (report.verdict === 'manual_check_required') {
+      throw new Error(`Нужна ручная проверка. Раунд исправлений не потрачен; PR сохранён.\n${report.summary}\nЗафиксируйте результат или согласованную отсрочку в документации PR, затем повторите запуск.`);
+    }
     if (!approved) { await fix(report); continue; }
     await io.remoteChecks(state);
     await io.assertStable(revision, true);

@@ -574,3 +574,39 @@ test('PR, созданный перед аварийным завершение�
   assert.deepEqual(pushes, [['push', 'origin', 'HEAD:refs/heads/issue-2-contracts']]);
   await assert.rejects(runner.publish({ issue: issues()[0] }, { branch: 'main' }, []), /Прямой push/);
 });
+
+test('manual check pauses without fixes or merge, including repeated runs at the budget limit', async () => {
+  const report = { ...approval(), verdict: 'manual_check_required',
+    acceptance_criteria_met: false, summary: 'На телефоне: Play, ожидается звук; запишите результат.' };
+  const io = fakeIO({ reports: [report], maxFixRounds: 3 });
+  io.state.fixRounds = 3;
+  for (let i = 0; i < 2; i++) {
+    await assert.rejects(processTask(io, {}, io.state), /Нужна ручная проверка.*\nНа телефоне:/);
+    assert.equal(io.state.fixRounds, 3);
+    assert.equal(io.events.includes('implement'), false);
+    assert.equal(io.events.includes('merge'), false);
+    assert.equal(io.events.at(-1), 'record');
+  }
+  io.review = async () => approval();
+  await processTask(io, {}, io.state);
+  assert.equal(io.events.at(-1), 'merge');
+  assert.equal(io.state.fixRounds, 3);
+});
+
+test('fixable defects are repaired before a manual-only pause', async () => {
+  const io = fakeIO({ reports: [rejection(), { ...approval(),
+    verdict: 'manual_check_required', acceptance_criteria_met: false }] });
+  await assert.rejects(processTask(io, {}, io.state), /Нужна ручная проверка/);
+  assert.equal(io.state.fixRounds, 1);
+  assert.equal(io.events.filter(e => e === 'implement').length, 1);
+  assert.equal(io.events.includes('merge'), false);
+});
+
+test('manual verdict cannot hide code findings, pass acceptance, or bypass SHA validation', () => {
+  const report = { ...approval(), verdict: 'manual_check_required', acceptance_criteria_met: false };
+  assert.equal(validateReview(report, head, base), false);
+  for (const invalid of [{ ...report, findings: [finding] },
+    { ...report, acceptance_criteria_met: true }, { ...report, head_sha: base }]) {
+    assert.throws(() => validateReview(invalid, head, base), /ревью/);
+  }
+});

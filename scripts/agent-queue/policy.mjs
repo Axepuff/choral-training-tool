@@ -63,7 +63,7 @@ export const reviewSchema = {
   required: ['head_sha', 'base_sha', 'verdict', 'acceptance_criteria_met', 'summary', 'findings'],
   properties: {
     head_sha: { type: 'string' }, base_sha: { type: 'string' },
-    verdict: { type: 'string', enum: ['approve', 'changes_requested'] },
+    verdict: { type: 'string', enum: ['approve', 'changes_requested', 'manual_check_required'] },
     acceptance_criteria_met: { type: 'boolean' }, summary: { type: 'string' },
     findings: {
       type: 'array', items: {
@@ -82,7 +82,7 @@ export function validateReview(report, head, base) {
   const fail = () => { throw new Error('Некорректное или устаревшее ревью; merge запрещён.'); };
   if (!report || Object.keys(report).sort().join() !== reviewSchema.required.slice().sort().join()
     || report.head_sha !== head || report.base_sha !== base
-    || !['approve', 'changes_requested'].includes(report.verdict)
+    || !['approve', 'changes_requested', 'manual_check_required'].includes(report.verdict)
     || typeof report.acceptance_criteria_met !== 'boolean'
     || typeof report.summary !== 'string' || !report.summary.trim() || !Array.isArray(report.findings)) fail();
   for (const finding of report.findings) {
@@ -92,6 +92,8 @@ export function validateReview(report, head, base) {
       || typeof finding.description !== 'string' || !finding.description.trim()) fail();
   }
   if (report.verdict === 'approve' && (!report.acceptance_criteria_met || report.findings.length)) fail();
+  if (report.verdict === 'manual_check_required'
+    && (report.acceptance_criteria_met || report.findings.length)) fail();
   return report.verdict === 'approve';
 }
 
