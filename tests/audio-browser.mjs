@@ -21,7 +21,7 @@ const secondAAC = await readFile(join(dir, 'second.m4a'));
 // Chrome's full MP4 decode differs on timestamp-jitter fixtures; use an independent PCM oracle.
 const referencePCM = execFileSync('ffmpeg', ['-nostdin', '-v', 'error', '-i', join(dir, 'fixture.m4a'), '-f', 'f32le', '-acodec', 'pcm_f32le', 'pipe:1'], { maxBuffer: 2 * 1024 * 1024 });
 assert.equal(referencePCM.length, 8 * 48000 * 4);
-const song = { id: 'fixture', title: 'Audio fixture', bpm: 120, beatsPerBar: 3, beatUnit: 8, durationMs: 8000, barCount: 11, notes: 'Synthetic fixture', tracks: Array.from({ length: 32 }, (_, i) => ({ id: `stable-${i}`, name: `Voice ${i}`, gain: .5, durationMs: 8000, mediaUrl: `/api/v1/media/${i}`, peaksUrl: '/api/v1/peaks' })) };
+const song = { id: 'fixture', title: 'Я'.repeat(160), bpm: 120, beatsPerBar: 3, beatUnit: 8, durationMs: 8000, barCount: 11, notes: 'Ж'.repeat(1000), tracks: Array.from({ length: 32 }, (_, i) => ({ id: `stable-${i}`, name: `Voice ${i}`, gain: .5, durationMs: 8000, mediaUrl: `/api/v1/media/${i}`, peaksUrl: '/api/v1/peaks' })) };
 const longSong = { ...song, id:'long-fixture', durationMs:1200000, tracks: song.tracks.map((t,i) => ({...t, durationMs:1200000, mediaUrl:`/api/v1/long/${i}`, peaksUrl:'/api/v1/long-peaks'})) };
 const requests = [];
 let changedTrack = false, revokeMedia = false;
@@ -102,6 +102,8 @@ try {
   await send('Network.setCookie', {name:'audio-test',value:'synthetic',url:'http://127.0.0.1:5189/',path:'/'});
   await send('Page.navigate', { url: 'http://127.0.0.1:5189/?song=fixture' });
   await poll(() => evaluate(`document.body.textContent.includes('Аудио недоступно')`));
+  assert.equal(await evaluate('document.querySelector("h1").textContent'), song.title);
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('p')).some(p => p.textContent === ${JSON.stringify(song.notes)})`), true, 'full API notes are rendered');
   const chunkDecode = await evaluate(`(async () => {
     const {MP4Reader} = await import('/src/audio/mp4.ts');
     const context = new AudioContext({sampleRate:48000});

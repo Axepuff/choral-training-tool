@@ -1,4 +1,4 @@
-.shell { width: 100%; min-height: 100dvh; padding: 20px 16px; background: var(--color-surface); }
+.shell { width: 100%; min-height: 100dvh; padding: 20px 16px; background: var(--color-surface); overflow-wrap: anywhere; }
 .player { max-width: 820px; margin: 0 auto; }
 .scoreHeader { padding: 0 0 8px; }
 .eyebrow { display: none; }
