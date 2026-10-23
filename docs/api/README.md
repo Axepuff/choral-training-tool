@@ -59,7 +59,7 @@ ADR: [`../decisions/0001-mvp-contract.md`](../decisions/0001-mvp-contract.md).
 | `sessions` | `id`, `user_id` FK, `token_hash` UNIQUE, `csrf_hash`, `expires_at`, `revoked_at`, timestamps | хранится hash cookie/CSRF, блокировка/смена пароля отзывает все сессии |
 | `songs` | `id`, `owner_id` FK, `title`, `bpm`, `beats_per_bar`, `beat_unit`, `notes`, `publication`, `version`, timestamps, `deleted_at` | `draft`/`published`; `published` требует ≥1 track и каждый active asset ready |
 | `tracks` | `id`, `song_id` FK, `position` UNIQUE(song,position), `name`, `gain` default 1, `active_asset_id`, `pending_asset_id` | 1–32, произвольные UUID, порядок 0-based; активный asset не меняется до успеха замены |
-| `assets` | `id`, `track_id` FK, `source_path`, `playback_path`, `peaks_path`, `source_bytes`, `source_sha256`, `duration_ms`, `mime`, `sample_rate`, `channels`, `state`, timestamps | внутренние пути из ID; `pending`/`processing`/`ready`/`failed`/`retired`; ready только после проверки артефактов |
+| `assets` | `id`, `track_id` FK, `source_path`, `source_name` nullable, `playback_path`, `peaks_path`, `source_bytes`, `source_sha256`, `duration_ms`, `mime`, `sample_rate`, `channels`, `state`, timestamps | внутренние пути из ID; `pending`/`processing`/`ready`/`failed`/`retired`; ready только после проверки артефактов |
 | `jobs` | `id`, `asset_id` FK, `state`, `attempts`, `error_code`, `lease_until`, timestamps | `queued`/`processing`/`succeeded`/`failed`/`canceled`; просроченная lease возвращается в очередь |
 | `shares` | `id`, `kind`, `owner_id` FK, `song_id` nullable FK, `token_hash` UNIQUE, `disabled_at`, timestamps | `song`: song_id задан и owner совпадает; `list`: song_id NULL, динамический каталог owner; rotate заменяет hash в одной транзакции |
 | `idempotency_records` | scope(method, URL, actor, key) UNIQUE, request digest, status, headers, encrypted response, nonce, key ID, expires_at | TTL 24 ч; секретный ответ в БД только зашифрован |
@@ -319,3 +319,21 @@ Streaming multipart/FFprobe/Storage/durable jobs реализованы, fronten
 Файлы и метаданные не публикуются вместо processing success. После удаления
 original worker/cleaner должен очистить `source_path` для освобождения квоты.
 Подробные правила recovery/replay и тесты — [backend.md](../backend.md#загрузка-и-приватное-хранилище-issue-7).
+
+## Метаданные исходного имени — Issue #31
+
+Миграция `0005_source_name.sql` добавляет `assets.source_name` (NULL для старых
+записей). Multipart `file` сохраняет basename исходного filename, максимум 4096
+UTF-8 bytes, без NUL. Это только отображаемые метаданные: Storage по-прежнему
+использует случайные ID. Удаление оригинала очищает source_path, но сохраняет имя.
+Upload replay digest теперь учитывает имя и SHA-256 байтов: одно содержимое с другим
+именем требует нового ключа. Старые upload replay records с digest только содержимого
+по-прежнему возвращают прежний ответ до истечения TTL 24 часа, без выдуманного
+имени. Новый upload сохраняет имя; повтор старого запроса не восстанавливает его.
+
+В приватном Song Track поле `sourceName` возвращается только владельцу/админу.
+При наличии ready active asset имя всегда принадлежит ему, даже при failed pending
+замене; без active возвращается имя pending asset. Успех worker атомарно переключает
+asset вместе с именем. Если имя утрачено, поле отсутствует, UI показывает
+«Исходное имя недоступно». Название партии и статус независимы от имени.
+Read-only ответы другим преподавателям и public DTO не получают это поле.

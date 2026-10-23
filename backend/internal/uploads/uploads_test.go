@@ -805,8 +805,8 @@ func TestProcessedUploadPublicMedia(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	var source, playback string
-	if e = f.db.QueryRow(`SELECT source_path,playback_path FROM assets`).Scan(&source, &playback); e != nil {
+	var source, playback, sourceName string
+	if e = f.db.QueryRow(`SELECT source_path,playback_path,source_name FROM assets`).Scan(&source, &playback, &sourceName); e != nil {
 		t.Fatal(e)
 	}
 	// Cleanup can follow job commit, so wait for quota release separately.
@@ -818,6 +818,12 @@ func TestProcessedUploadPublicMedia(t *testing.T) {
 	}
 	if source != "" {
 		t.Fatal("source not cleaned")
+	}
+	if sourceName != "outside.fake" {
+		t.Fatal("upload lost original display name", sourceName)
+	}
+	if e = f.db.QueryRow(`SELECT source_name FROM assets`).Scan(&sourceName); e != nil || sourceName != "outside.fake" {
+		t.Fatal("cleanup lost source name", e)
 	}
 	media, e := f.store.Open(ctx, playback)
 	if e != nil {
@@ -866,4 +872,36 @@ func fixtureFFmpeg() string {
 		return binary
 	}
 	return "ffmpeg"
+}
+
+func TestUploadReplayIncludesSourceName(t *testing.T) {
+	f := setup(t)
+	data, key := audio(t, "wav"), users.ID()
+	check(t, f.send(f.request(data, key, `"1"`)), 202)
+	renamed := f.request(data, key, `"1"`)
+	raw, err := io.ReadAll(renamed.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = bytes.ReplaceAll(raw, []byte("../../outside.fake"), []byte("renamed.wav"))
+	renamed.Body = io.NopCloser(bytes.NewReader(raw))
+	renamed.ContentLength = int64(len(raw))
+	check(t, f.send(renamed), 409)
+	var name string
+	if err = f.db.QueryRow(`SELECT source_name FROM assets`).Scan(&name); err != nil || name != "outside.fake" {
+		t.Fatal("replay changed source name", name, err)
+	}
+	if f.count("assets") != 1 {
+		t.Fatal("replay created replacement")
+	}
+	// Existing 24-hour records must remain replayable across the metadata migration.
+	oldDigest := sha256.Sum256(data)
+	f.exec(`UPDATE idempotency_records SET request_digest=? WHERE key=?`, oldDigest[:], key)
+	f.exec(`UPDATE assets SET source_name=NULL`)
+	check(t, f.send(f.request(data, key, `"1"`)), 202)
+	var legacyName sql.NullString
+	if err = f.db.QueryRow(`SELECT source_name FROM assets`).Scan(&legacyName); err != nil || legacyName.Valid {
+		t.Fatal("legacy replay fabricated a name", err)
+	}
+
 }

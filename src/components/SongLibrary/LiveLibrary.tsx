@@ -65,6 +65,7 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
   useEffect(() => { if (!id) return; let active = true; void getSong(id).then(s => { if (active) { setSong(s); setLoaded(true); } }, e => { if (active) setError(message(e)); }); return () => { active = false; }; }, [id]);
   const currentId = song?.id;
   const pending = song?.tracks.map(t => t.pendingJobId).filter(Boolean).join(',') ?? '';
+  const [uploadStates, setUploadStates] = useState<Record<number, string>>({});
   const [jobs, setJobs] = useState<Record<string, string>>({});
   useEffect(() => {
     if (!currentId || !pending || busy) return;
@@ -84,8 +85,9 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
   }, [currentId, pending, busy]);
   async function save(value: SongFormValue) {
     if (busy) return;
-    setBusy(true); setError(''); setStatus('Сохраняем данные…');
+    setBusy(true); setError(''); setUploadStates({}); setStatus('Сохраняем данные…');
     let current = song;
+    let uploadingIndex: number | undefined;
     try {
       const recovering = creation.current !== null;
       const updating = current !== null;
@@ -109,14 +111,15 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
       if (!id) window.history.replaceState(null, '', `?page=edit-song&id=${current.id}`);
       for (const [index, track] of value.tracks.entries()) {
         if (!track.file || completed.current.has(track.file)) continue;
+        uploadingIndex = index;
         const target = current.tracks[index]!;
         const file = track.file;
         let uploadKey = attempts.current.get(file);
         if (!uploadKey) { uploadKey = crypto.randomUUID(); attempts.current.set(file, uploadKey); }
-        setStatus(`${track.name}: загрузка 0%`);
+        setUploadStates(s => ({ ...s, [index]: 'Загрузка 0%' }));
         let job;
         try {
-          job = await uploadFile(current.id, target.id, current.version, file, uploadKey, p => setStatus(`${track.name}: загрузка ${p}%`));
+          job = await uploadFile(current.id, target.id, current.version, file, uploadKey, p => setUploadStates(s => ({ ...s, [index]: `Загрузка ${p}%` })));
         } catch (e) {
           // A final probe rejection is replayed by the server for this key.
           // Keep the key when the network outcome is unknown to avoid duplicate jobs.
@@ -124,19 +127,22 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
           throw e;
         }
         while (job.state === 'queued' || job.state === 'processing') {
-          setStatus(`${track.name}: обработка…`);
+          setUploadStates(s => ({ ...s, [index]: 'Обработка…' }));
           await new Promise(resolve => window.setTimeout(resolve, 1000));
           job = await getJob(job.id);
         }
         if (job.state !== 'succeeded') { attempts.current.delete(file); throw new Error(`${track.name}: ${job.errorCode ?? job.state}. Выберите другой файл или повторите сохранение. ${target.mediaUrl ? 'Старая готовая дорожка сохранена.' : 'Дорожка ещё не готова.'}`); }
+        setUploadStates(s => ({ ...s, [index]: 'Готово' }));
         completed.current.add(file);
         current = await getSong(current.id); setSong(current);
+        uploadingIndex = undefined;
       }
       current = await getSong(current.id); setSong(current);
       setEpoch(e => e + 1);
       setStatus('Изменения сохранены на сервере.');
     } catch (e) {
       setError(message(e)); setStatus('');
+      if (uploadingIndex !== undefined) { const index = uploadingIndex; setUploadStates(s => ({ ...s, [index]: message(e) })); }
       // Refresh only concurrency metadata: leave the user's fields/files mounted.
       if (current) { try { setSong(await getSong(current.id)); } catch { /* Keep original failure visible. */ } }
     } finally { setBusy(false); }
@@ -146,23 +152,21 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
     <RehearsalPlayer key={song.id} song={song} />{(user.role === "admin" || song.ownerId === user.id) && <button onClick={() => setListen(false)}>К редактированию</button>}<button onClick={close}>Песни</button>
   </>;
   return <>
-    <CreateSong key={epoch} live busy={busy} status={status} error={error} {...(song ? { initialSong: songForm(song) } : {})} onSave={save} onCancel={close} />
-    {song && <div className={styles.editorActions}>
-      <ul aria-label="Состояния дорожек">{song.tracks.map(t => <li key={t.id}>{t.name}: {t.pendingJobId && jobs[t.pendingJobId] === 'failed' ? 'ошибка обработки — повторите или замените файл' : t.pendingJobId && ['queued', 'processing'].includes(jobs[t.pendingJobId] ?? '') ? 'обработка' : t.status === 'ready' ? 'готово' : t.status === 'failed' ? 'ошибка обработки — повторите или замените файл' : t.status === 'empty' ? 'файл не загружен' : 'обработка'}{t.mediaUrl && t.pendingJobId ? ' · старая готовая дорожка доступна' : ''}</li>)}</ul>
-      <button onClick={() => setListen(true)}>Слушать песню</button>
-      <p>Публикация: {song.publication === 'published' ? 'опубликована' : 'черновик'}. {song.ready ? 'Аудио готово.' : 'Есть неготовые дорожки.'}</p>
-      <button disabled={busy} onClick={async () => {
-        setBusy(true); setError(''); setStatus('');
+    <CreateSong key={epoch} live busy={busy} status={status} error={error} {...(song ? { initialSong: songForm(song) } : {})} onSave={save} onCancel={close}
+      trackStates={song?.tracks.map((t, index) => uploadStates[index] ?? (t.pendingJobId && jobs[t.pendingJobId] === 'failed' ? 'Ошибка обработки. Сохранённый файл не изменён.' : t.pendingJobId && ['queued', 'processing'].includes(jobs[t.pendingJobId] ?? '') ? 'Обработка…' : t.status === 'ready' ? 'Готово' : t.status === 'failed' ? 'Ошибка обработки — повторите или замените файл' : t.status === 'empty' ? 'Файл не загружен' : 'Обработка…'))}
+      publication={song?.publication} audioReady={song?.ready} canListen={song?.tracks.some(t => !!t.mediaUrl)}
+      onListen={song ? () => setListen(true) : undefined}
+      onPublish={song ? async () => {
+        setBusy(true); setError(''); setStatus('Обновляем публикацию…');
         try { const updated = await writeSong(songForm(song), song, key.current, song.publication === 'draft' ? 'published' : 'draft'); setSong(updated); setStatus('Публикация обновлена.'); }
         catch (e) {
-          setError(message(e));
+          setStatus(''); setError(message(e));
           if (e instanceof ApiError && ['version_conflict', 'precondition_failed'].includes(e.problem.code)) {
             // Do not remount the form: unsaved fields and files belong to the user.
             try { setSong(await getSong(song.id)); } catch { /* Keep the conflict visible. */ }
           }
         } finally { setBusy(false); }
-      }}>{song.publication === 'draft' ? 'Опубликовать сохранённую песню' : 'Снять публикацию'}</button>
-    </div>}
+      } : undefined} />
   </>;
 }
 

@@ -48,3 +48,11 @@
 .cancel { width: 100%; min-height: 44px; margin-top: 8px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; color: var(--color-text-muted); }
 
 .fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+
+.trackStatus { grid-column: 2 / -1; min-width: 0; overflow-wrap: anywhere; margin: 0; color: var(--color-text-muted); font-size: 12px; }
+.actions { display: grid; gap: 8px; }
+.actions .cancel { margin-top: 0; }
+
+.card [role="alert"], .card [role="status"] { overflow-wrap: anywhere; }
+
+.card button:disabled { opacity: 0.55; }

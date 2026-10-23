@@ -96,14 +96,15 @@ try {
  await save();await expectText('Изменения сохранены на сервере.');await expectText('Аудио готово.');
  const recovered=(await api('/songs/'+uncertain.body.items[0].id)).body;
  assert.equal(recovered.title,'Восстановленная песня');assert.equal(recovered.notes,'Изменено после потери ответа');
- assert.equal(recovered.tracks[0].name,'Новая партия');assert.equal(recovered.ready,true);
+ assert.equal(recovered.tracks[0].sourceName,'synthetic.wav');assert.equal(recovered.tracks[0].name,'Новая партия');assert.equal(recovered.ready,true);
  assert.equal(await bodyIncludes('Нет соединения с сервером'),false);
  await input('title','Реальная песня');await input('notes','Заметка 🌼',true);
  await save();await expectText('Изменения сохранены на сервере.');
  const listing=await api('/songs');assert.equal(listing.status,200);assert.equal(listing.body.items.length,1);
  const id=listing.body.items[0].id;assert.equal(id,uncertain.body.items[0].id,'Recovery must reuse the committed draft');
  await navigate(await evaluate('location.search'));await expectText('Редактировать песню');assert.equal(await evaluate('location.search'),'?page=edit-song&id='+id);
- assert.equal(await evaluate(`document.querySelector('[name=notes]').value`),'Заметка 🌼');
+ assert.equal(await evaluate(`document.querySelector('[name=notes]').value`),'Заметка 🌼');await expectText('synthetic.wav');
+ assert.equal(await evaluate(`!!document.querySelector('form button') && [...document.querySelectorAll('button')].filter(b=>b.textContent==='Слушать песню' || b.textContent==='Опубликовать сохранённую песню').every(b=>!!b.closest('form'))`),true);
  await selectFile(file);await expectText('synthetic.wav');await save();await expectText('Изменения сохранены на сервере.');await expectText('Аудио готово.');
  let song=(await api('/songs/'+id)).body;assert.equal(song.ready,true);let media=song.tracks[0].mediaUrl;
  assert.equal((await api('/songs/'+id)).body.notes,'Заметка 🌼');
@@ -125,7 +126,10 @@ try {
  assert.equal(uploadKeys.at(-1),networkKey,'Unknown network outcome must retain the idempotency key');
  media=(await api('/songs/'+id)).body.tracks[0].mediaUrl;
  // Replace with invalid bytes: old media survives, no success UI.
+ const replacement=join(dir,'Длинное-имя-'.repeat(9)+'.wav');await writeFile(replacement,wav);await selectFile(replacement);await save();await expectText('Изменения сохранены на сервере.');
+ assert.equal((await api('/songs/'+id)).body.tracks[0].sourceName,'Длинное-имя-'.repeat(9)+'.wav');
  const bad=join(dir,'invalid.wav');await writeFile(bad,'not audio');await selectFile(bad);await save();await expectText('Файл повреждён');
+ assert.equal((await api('/songs/'+id)).body.tracks[0].sourceName,'Длинное-имя-'.repeat(9)+'.wav');
  assert.equal(await bodyIncludes('Изменения сохранены на сервере.'),false);
  assert.equal((await api('/songs/'+id)).body.tracks[0].mediaUrl,media);
  await selectFile(file);await save();await expectText('Изменения сохранены на сервере.');
@@ -183,12 +187,13 @@ try {
  assert.equal(await evaluate(`!!document.querySelector('[aria-label="Редактировать: Мои изменения"]')`),false);
  song=(await api('/songs/'+id)).body;
  assert.equal((await api('/songs/'+id,'PUT',update,{'If-Match':`"${song.version}"`})).status,403);
- await navigate('?page=edit-song&id='+id+'&role=admin');await expectText('Доступно только чтение');assert.equal(await evaluate('!!document.querySelector("form")'),false);
+ await navigate('?page=edit-song&id='+id+'&role=admin');await expectText('Мои изменения');assert.equal(await evaluate('!!document.querySelector("form")'),false);
  await navigate('?page=library');await expectText('Преподаватель');
  await click('Выйти');await expectText('Вход');await submit('teacher@example.test','fictional password 123');await expectText('Преподаватель');
  // Unicode scalar validation permits 1000 astral characters and rejects 1001.
  await navigate('?page=edit-song&id='+id);await expectText('Редактировать песню');await input('notes','🌼'.repeat(1001),true);await save();await expectText('заметки: до 1000');await input('notes','🌼'.repeat(1000),true);await save();await expectText('Изменения сохранены на сервере.');
- for(const [width,height] of [[320,640],[360,800],[800,360],[1280,900]]){await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<900});assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,`Overflow ${width}`);assert.equal(await evaluate(`[...document.querySelectorAll('form input:not([hidden]), form select, form textarea')].every(e=>e.id && e.name && e.getBoundingClientRect().height>=44)`),true);}
+ await selectFile(replacement);await expectText('Длинное-имя-'.repeat(9)+'.wav');
+ for(const [width,height] of [[320,640],[360,800],[800,360],[1280,900]]){await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<900});assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,`Overflow ${width}`);assert.equal(await evaluate(`[...document.querySelectorAll('form button, form input:not([hidden]), form select, form textarea')].every(e=>(e.tagName==='BUTTON' || e.id && e.name) && e.getBoundingClientRect().height>=44)`),true);}
  await input('title','Несохранённое название');await click('Отмена');assert.equal(dialogs,1);assert.equal(await evaluate(`document.querySelector('[name=title]').value`),'Несохранённое название');
  acceptDialog=true;await click('Отмена');await expectText('Мои изменения');assert.equal((await api('/songs/'+id)).body.title,'Мои изменения');
  console.log('Real Go/SQLite/FFmpeg + Chrome: lost creation response/edit/replay without duplicate or File loss, draft, upload/ready, probe timeout/retry, network key retention, failed replacement, persistence, conflict/retry, offline, publication conflict/retry, search, share rotation/revocation, anonymous song/list, admin, Unicode and responsive checks passed.');
