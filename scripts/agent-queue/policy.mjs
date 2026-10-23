@@ -1,5 +1,12 @@
 // Loaded once by the controller, before checking out any candidate branch.
 export const repository = 'Axepuff/choral-training-tool';
+export const defaultMaxFixRounds = 10;
+export function validateFixRoundLimit(value) {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new Error('--max-fix-rounds должен быть положительным безопасным целым числом.');
+  }
+  return value;
+}
 export const queue = [
   [2, []], [3, [2]], [4, [3]], [5, [3, 4]], [6, [4, 5]],
   [7, [4, 5]], [8, [7]], [9, [2, 4]], [10, [2, 5, 6, 8, 9]],
@@ -56,7 +63,7 @@ export const reviewSchema = {
   required: ['head_sha', 'base_sha', 'verdict', 'acceptance_criteria_met', 'summary', 'findings'],
   properties: {
     head_sha: { type: 'string' }, base_sha: { type: 'string' },
-    verdict: { type: 'string', enum: ['approve', 'changes_requested'] },
+    verdict: { type: 'string', enum: ['approve', 'changes_requested', 'manual_check_required'] },
     acceptance_criteria_met: { type: 'boolean' }, summary: { type: 'string' },
     findings: {
       type: 'array', items: {
@@ -75,7 +82,7 @@ export function validateReview(report, head, base) {
   const fail = () => { throw new Error('Некорректное или устаревшее ревью; merge запрещён.'); };
   if (!report || Object.keys(report).sort().join() !== reviewSchema.required.slice().sort().join()
     || report.head_sha !== head || report.base_sha !== base
-    || !['approve', 'changes_requested'].includes(report.verdict)
+    || !['approve', 'changes_requested', 'manual_check_required'].includes(report.verdict)
     || typeof report.acceptance_criteria_met !== 'boolean'
     || typeof report.summary !== 'string' || !report.summary.trim() || !Array.isArray(report.findings)) fail();
   for (const finding of report.findings) {
@@ -85,6 +92,8 @@ export function validateReview(report, head, base) {
       || typeof finding.description !== 'string' || !finding.description.trim()) fail();
   }
   if (report.verdict === 'approve' && (!report.acceptance_criteria_met || report.findings.length)) fail();
+  if (report.verdict === 'manual_check_required'
+    && (report.acceptance_criteria_met || report.findings.length)) fail();
   return report.verdict === 'approve';
 }
 

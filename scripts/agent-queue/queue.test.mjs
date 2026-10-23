@@ -3,12 +3,13 @@ import { test } from 'node:test';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   repository, queue, selectTask, closesIssue, validateReview, assertChecks,
-  assertSubscriptionEnvironment, childEnvironment, protectedPath,
+  assertSubscriptionEnvironment, childEnvironment, protectedPath, defaultMaxFixRounds,
 } from './policy.mjs';
 import { processTask } from './engine.mjs';
-import { Runner } from './runner.mjs';
+import { Runner, parseOptions } from './runner.mjs';
 
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
 const approval = () => ({ head_sha: head, base_sha: base, verdict: 'approve', acceptance_criteria_met: true, summary: 'Все критерии проверены.', findings: [] });
@@ -21,7 +22,28 @@ test('очередь начинает с существующего PR #18 и и
   const task = selectTask(issues(), [pull()]);
   assert.equal(task.issue.number, 2);
   assert.equal(task.pr.number, 18);
-  for (const id of [1, 13, 16, 32]) assert.ok(!queue.some(t => t.issue === id));
+  for (const id of [1, 13, 16, 32, 35]) assert.ok(!queue.some(t => t.issue === id));
+});
+
+test('CLI: default ten rounds and an explicit total limit work for run/status/dry-run', () => {
+  assert.equal(defaultMaxFixRounds, 10);
+  for (const mode of ['--run', '--once', '--status', '--dry-run', '--unlock']) {
+    assert.deepEqual(parseOptions([mode]), { mode, maxFixRounds: 10 });
+    assert.deepEqual(parseOptions([mode, '--max-fix-rounds', '15']), { mode, maxFixRounds: 15 });
+    assert.deepEqual(parseOptions(['--max-fix-rounds=3', mode]), { mode, maxFixRounds: 3 });
+  }
+  assert.equal(parseOptions([]).mode, '--help');
+  assert.equal(parseOptions(['--help']).mode, '--help');
+});
+
+test('CLI rejects invalid limits and conflicting modes before any work', () => {
+  for (const limit of ['0', '-1', '1.5', 'NaN', 'Infinity', '1e2', '', '9007199254740992']) {
+    assert.throws(() => parseOptions(['--run', `--max-fix-rounds=${limit}`]));
+  }
+  for (const args of [['--run', '--once'], ['--run', '--unknown'], ['--run', 'extra'],
+    ['--run', '--max-fix-rounds'], ['--max-fix-rounds=10'],
+    ['--run', '--max-fix-rounds=10', '--max-fix-rounds=15']]) assert.throws(() => parseOptions(args));
+  for (const maxFixRounds of [0, -1, 1.5, NaN, Infinity, '10']) assert.throws(() => new Runner('/tmp', { maxFixRounds }));
 });
 
 function playerStage() {
@@ -117,10 +139,10 @@ test('очередь не может менять свой контроллер,
   for (const path of ['.github/workflows/ci.yml', 'backend/.env.example', 'backend/main.go', 'src/main.tsx']) assert.equal(protectedPath(path), false, path);
 });
 
-function fakeIO({ reports = [approval()], checkFailures = 0, stale = false, blocked = false } = {}) {
+function fakeIO({ reports = [approval()], checkFailures = 0, stale = false, blocked = false, maxFixRounds = defaultMaxFixRounds } = {}) {
   const events = [], saved = [], feedback = [];
   const state = { fixRounds: 0, implemented: true };
-  return { state, events, saved, feedback,
+  return { state, events, saved, feedback, maxFixRounds,
     prepare: async () => events.push('prepare'), guard: async () => events.push('guard'),
     implement: async (_, details) => { events.push('implement'); feedback.push(details); },
     commit: async () => events.push('commit'),
@@ -149,13 +171,15 @@ test('существующий PR проходит проверки и отде�
   assert.equal(io.events.at(-1), 'merge');
 });
 
-test('готовое ручное исправление проходит новое ревью и merge без сброса fixRounds=3', async () => {
-  const io = fakeIO();
-  io.state.fixRounds = 3;
-  await processTask(io, {}, io.state);
-  assert.equal(io.events.includes('implement'), false);
-  assert.equal(io.events.at(-1), 'merge');
-  assert.equal(io.state.fixRounds, 3);
+test('готовое ручное исправление проходит новое ревью и merge даже при исчерпанном лимите', async () => {
+  for (const used of [3, 12]) {
+    const io = fakeIO({ maxFixRounds: 3 });
+    io.state.fixRounds = used;
+    await processTask(io, {}, io.state);
+    assert.equal(io.events.includes('implement'), false);
+    assert.equal(io.events.at(-1), 'merge');
+    assert.equal(io.state.fixRounds, used);
+  }
 });
 
 test('новая Issue: реализация → PR → отклонённое ревью → исправление → новое ревью → merge', async () => {
@@ -178,16 +202,62 @@ test('ошибка проверки исправляется до ревью и 
   assert.ok(io.feedback[0].checks_failed.includes('test failed'));
 });
 
-test('после трёх исправлений очередь останавливается и сохраняет счётчик для resume', async () => {
+test('default budget stops after ten fixes and preserves the count on resume', async () => {
   const io = fakeIO({ reports: [rejection()] });
-  await assert.rejects(processTask(io, {}, io.state), /Три попытки/);
-  assert.equal(io.events.filter(e => e === 'implement').length, 3);
+  await assert.rejects(processTask(io, {}, io.state), /исчерпан \(10\/10\).*--max-fix-rounds/);
+  assert.equal(io.events.filter(e => e === 'implement').length, 10);
   assert.equal(io.events.includes('merge'), false);
-  assert.equal(io.saved.at(-1).fixRounds, 3);
+  assert.equal(io.saved.at(-1).fixRounds, 10);
   const resumed = fakeIO({ reports: [rejection()] });
-  resumed.state.fixRounds = 3;
-  await assert.rejects(processTask(resumed, {}, resumed.state), /Три попытки/);
+  resumed.state.fixRounds = 10;
+  await assert.rejects(processTask(resumed, {}, resumed.state), /исчерпан \(10\/10\)/);
   assert.equal(resumed.events.includes('implement'), false);
+});
+
+test('saved 3/3 gains seven fixes with the new default, without resetting state or skipping reviews', async () => {
+  const io = fakeIO({ reports: [...Array.from({ length: 7 }, rejection), approval()] });
+  io.state.fixRounds = 3;
+  await processTask(io, {}, io.state);
+  assert.equal(io.state.fixRounds, 10);
+  assert.equal(io.events.filter(e => e === 'implement').length, 7);
+  assert.equal(io.events.filter(e => e === 'check').length, 8);
+  assert.equal(io.events.filter(e => e === 'review').length, 8);
+  assert.equal(io.events.at(-1), 'merge');
+  assert.deepEqual(io.saved.filter((state, index, all) => index === 0 || state.fixRounds !== all[index - 1].fixRounds).map(s => s.fixRounds), [3, 4, 5, 6, 7, 8, 9, 10]);
+});
+
+test('raising the configured limit resumes an exhausted budget; lowering it never resets the count', async () => {
+  const first = fakeIO({ maxFixRounds: 4, reports: [rejection()] });
+  first.state.fixRounds = 3;
+  await assert.rejects(processTask(first, {}, first.state), /исчерпан \(4\/4\)/);
+  assert.equal(first.events.filter(e => e === 'implement').length, 1);
+  const resumed = fakeIO({ maxFixRounds: 6, reports: [rejection(), rejection(), approval()] });
+  Object.assign(resumed.state, first.saved.at(-1));
+  await processTask(resumed, {}, resumed.state);
+  assert.equal(resumed.state.fixRounds, 6);
+  assert.equal(resumed.events.filter(e => e === 'implement').length, 2);
+  assert.equal(resumed.events.at(-1), 'merge');
+  const lowered = fakeIO({ maxFixRounds: 3, reports: [rejection()] });
+  Object.assign(lowered.state, resumed.state);
+  await assert.rejects(processTask(lowered, {}, lowered.state), /исчерпан \(6\/3\)/);
+  assert.equal(lowered.state.fixRounds, 6);
+  assert.equal(lowered.events.includes('implement'), false);
+  assert.equal(lowered.events.includes('merge'), false);
+});
+
+test('interrupted fixes spend a round before execution and resume under the remaining budget', async () => {
+  const io = fakeIO({ maxFixRounds: 5, reports: [rejection()] });
+  io.state.fixRounds = 3;
+  io.implement = async () => { throw new Error('Usage limit reached'); };
+  await assert.rejects(processTask(io, {}, io.state), /Usage limit/);
+  assert.equal(io.saved.at(-1).fixRounds, 4);
+  assert.equal(io.events.includes('merge'), false);
+  const resumed = fakeIO({ maxFixRounds: 5, reports: [rejection(), approval()] });
+  Object.assign(resumed.state, io.saved.at(-1));
+  await processTask(resumed, {}, resumed.state);
+  assert.equal(resumed.state.fixRounds, 5);
+  assert.equal(resumed.events.filter(e => e === 'implement').length, 1);
+  assert.equal(resumed.events.at(-1), 'merge');
 });
 
 test('невалидное ревью, новый SHA, человеческое отклонение и исчерпанная квота не приводят к merge', async () => {
@@ -248,6 +318,37 @@ test('state сохраняется атомарно и читается для �
   const runner = await fixture(t);
   const state = { repository, issue: 2, fixRounds: 2, branch: 'issue-2-queue', pr: 18, implemented: true };
   await runner.save(state);
+  assert.deepEqual(await runner.readState(), state);
+});
+
+test('persisted counts above three remain valid even when the current budget is lower', async t => {
+  const runner = await fixture(t);
+  runner.maxFixRounds = 3;
+  const state = { repository, issue: 11, branch: 'issue-11-queue', pr: 30, fixRounds: 7, implemented: true, prepared: true };
+  await runner.save(state);
+  assert.deepEqual(await runner.readState(), state);
+  for (const invalid of [-1, 1.5, null, '7', Number.MAX_SAFE_INTEGER + 1]) {
+    await runner.save({ ...state, fixRounds: invalid });
+    await assert.rejects(runner.readState(), /повреждено/);
+  }
+});
+
+test('real CLI status reports configured/default remaining rounds without changing saved work', async t => {
+  const runner = await fixture(t);
+  const state = { repository, issue: 11, branch: 'issue-11-queue', pr: 30, fixRounds: 7, implemented: true, prepared: true };
+  await runner.save(state);
+  const script = fileURLToPath(new URL('./runner.mjs', import.meta.url));
+  for (const [args, limit, remaining] of [[[], 10, 3], [['--max-fix-rounds=15'], 15, 8], [['--max-fix-rounds', '3'], 3, 0]]) {
+    const result = JSON.parse((await runner.command(process.execPath, [script, '--status', ...args])).output);
+    assert.deepEqual(result.state, state);
+    assert.equal(result.maxFixRounds, limit);
+    assert.equal(result.remainingFixRounds, remaining);
+    assert.equal(result.lock, null);
+    assert.deepEqual(await runner.readState(), state);
+  }
+  const invalid = await runner.command(process.execPath, [script, '--run', '--max-fix-rounds=0'], { allowFailure: true });
+  assert.equal(invalid.code, 1);
+  assert.match(invalid.stderr, /--max-fix-rounds/);
   assert.deepEqual(await runner.readState(), state);
 });
 
@@ -472,4 +573,40 @@ test('PR, созданный перед аварийным завершение�
   assert.equal(state.pr, 18);
   assert.deepEqual(pushes, [['push', 'origin', 'HEAD:refs/heads/issue-2-contracts']]);
   await assert.rejects(runner.publish({ issue: issues()[0] }, { branch: 'main' }, []), /Прямой push/);
+});
+
+test('manual check pauses without fixes or merge, including repeated runs at the budget limit', async () => {
+  const report = { ...approval(), verdict: 'manual_check_required',
+    acceptance_criteria_met: false, summary: 'На телефоне: Play, ожидается звук; запишите результат.' };
+  const io = fakeIO({ reports: [report], maxFixRounds: 3 });
+  io.state.fixRounds = 3;
+  for (let i = 0; i < 2; i++) {
+    await assert.rejects(processTask(io, {}, io.state), /Нужна ручная проверка.*\nНа телефоне:/);
+    assert.equal(io.state.fixRounds, 3);
+    assert.equal(io.events.includes('implement'), false);
+    assert.equal(io.events.includes('merge'), false);
+    assert.equal(io.events.at(-1), 'record');
+  }
+  io.review = async () => approval();
+  await processTask(io, {}, io.state);
+  assert.equal(io.events.at(-1), 'merge');
+  assert.equal(io.state.fixRounds, 3);
+});
+
+test('fixable defects are repaired before a manual-only pause', async () => {
+  const io = fakeIO({ reports: [rejection(), { ...approval(),
+    verdict: 'manual_check_required', acceptance_criteria_met: false }] });
+  await assert.rejects(processTask(io, {}, io.state), /Нужна ручная проверка/);
+  assert.equal(io.state.fixRounds, 1);
+  assert.equal(io.events.filter(e => e === 'implement').length, 1);
+  assert.equal(io.events.includes('merge'), false);
+});
+
+test('manual verdict cannot hide code findings, pass acceptance, or bypass SHA validation', () => {
+  const report = { ...approval(), verdict: 'manual_check_required', acceptance_criteria_met: false };
+  assert.equal(validateReview(report, head, base), false);
+  for (const invalid of [{ ...report, findings: [finding] },
+    { ...report, acceptance_criteria_met: true }, { ...report, head_sha: base }]) {
+    assert.throws(() => validateReview(invalid, head, base), /ревью/);
+  }
 });

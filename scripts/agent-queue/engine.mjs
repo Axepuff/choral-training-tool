@@ -1,7 +1,8 @@
-import { validateReview } from './policy.mjs';
+import { defaultMaxFixRounds, validateFixRoundLimit, validateReview } from './policy.mjs';
 
 // Each review is a fresh Codex process. No approval survives a restart or a new SHA.
 export async function processTask(io, task, state) {
+  const maxFixRounds = validateFixRoundLimit(io.maxFixRounds ?? defaultMaxFixRounds);
   await io.prepare(task, state);
   if (!state.implemented) {
     await io.implement(task, null);
@@ -27,6 +28,9 @@ export async function processTask(io, task, state) {
     const approved = validateReview(report, revision.head, revision.base);
     await io.assertStable(revision, true);
     await io.recordReview(state, report, checks);
+    if (report.verdict === 'manual_check_required') {
+      throw new Error(`Нужна ручная проверка. Раунд исправлений не потрачен; PR сохранён.\n${report.summary}\nЗафиксируйте результат или согласованную отсрочку в документации PR, затем повторите запуск.`);
+    }
     if (!approved) { await fix(report); continue; }
     await io.remoteChecks(state);
     await io.assertStable(revision, true);
@@ -35,7 +39,9 @@ export async function processTask(io, task, state) {
   }
 
   async function fix(feedback) {
-    if (state.fixRounds >= 3) throw new Error('Три попытки исправлений исчерпаны. Очередь остановлена; PR сохранён.');
+    if (state.fixRounds >= maxFixRounds) {
+      throw new Error(`Лимит исправлений исчерпан (${state.fixRounds}/${maxFixRounds}). Очередь остановлена; PR сохранён. Для дополнительных попыток увеличьте --max-fix-rounds.`);
+    }
     // Charge the attempt before starting it, including interrupted/failed executions.
     state.fixRounds += 1;
     await io.save(state);
