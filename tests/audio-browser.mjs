@@ -29,7 +29,7 @@ const server = createServer((req, res) => {
   requests.push({ url: req.url, cookie: req.headers.cookie, range: req.headers.range });
   if (req.url === '/api/v1/reference-pcm') res.end(referencePCM);
   else if (req.url.startsWith('/api/v1/public/shares/')) {
-    const selected = req.url.includes('device-retry-fixture') ? { ...song, id: 'device-retry-fixture', tracks: song.tracks.slice(0, 1) } : req.url.includes('long-fixture') ? longSong : song;
+    const selected = req.url.includes('meter-32-fixture') ? { ...song, id:'meter-32-fixture', bpm:300, beatsPerBar:32, beatUnit:32 } : req.url.includes('device-retry-fixture') ? { ...song, id: 'device-retry-fixture', tracks: song.tracks.slice(0, 1) } : req.url.includes('long-fixture') ? longSong : song;
     res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ kind: 'song', songs: [selected], nextCursor: null }));
   }
   else if (req.url === '/api/v1/peaks') res.end(JSON.stringify({ startMs: 0, stepMs: 100, durationMs: 8000, points: Array.from({ length: 80 }, () => [-.25, .25]) }));
@@ -70,21 +70,16 @@ async function deferMedia() {
 }
 async function waitForPendingPlayback(position) {
   await poll(() => evaluate('window.deferredMediaRequests > 0'));
-  await poll(() => evaluate(`document.querySelector('[aria-label="Загрузка аудио"]')?.disabled === true`));
-  assert.equal(await evaluate(`document.querySelector('[aria-label="Загрузка аудио"]').getAttribute('aria-busy')`), 'true');
+  await poll(() => evaluate(`document.querySelector('[aria-label="Пауза"]')?.getAttribute('aria-busy') === 'true'`));
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Пауза"]').disabled`), false);
   assert.equal(await evaluate(`document.body.textContent.includes('Загрузка аудио…')`), true);
   const starts = await evaluate('window.transportSourceStarts');
   const playCalls = await evaluate('window.transportPlayCalls');
-  await clickPlayback('Загрузка аудио');
-  await evaluate(`document.querySelector('[aria-label="Загрузка аудио"]').click()`);
-  await sleep(100);
-  assert.equal(await evaluate('window.transportPlayCalls'), playCalls, 'disabled transport must not restart loading');
+  await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value) === ${position}`));
   assert.equal(await evaluate('window.transportSourceStarts'), starts, 'no sound before media arrives');
-  assert.equal(await evaluate(`Number(document.querySelector('input[type=range]').value)`), position);
-  assert.equal(await evaluate(`document.querySelector('[aria-label="Загрузка аудио"]').disabled`), true);
   await evaluate('window.releaseMediaRequests()');
   await evaluate('window.transportPlay');
-  await poll(() => evaluate(`document.querySelector('[aria-label="Пауза"]')?.disabled === false`));
+  await poll(() => evaluate(`document.querySelector('[aria-label="Пауза"]')?.getAttribute('aria-busy') === 'false'`));
   assert.equal(await evaluate('window.transportPlayCalls'), playCalls, 'one requested start after loading');
   assert.ok(await evaluate('window.transportSourceStarts') > starts);
   assert.equal(await evaluate(`document.querySelector('[aria-label="Пауза"]').getAttribute('aria-busy')`), 'false');
@@ -180,7 +175,7 @@ try {
   })()`);
   await waitForPendingPlayback(4);
   await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value) > 4.1`));
-  console.log('PASS transport loading: delayed first Play and seek resume disable the button, repeated clicks cannot restart loading, one requested playback starts afterwards and Pause becomes available.');
+  console.log('PASS transport loading: delayed first Play and seek resume expose Pause while busy; one requested playback starts after loading.');
   await evaluate(`document.querySelector('[aria-label="Пауза"]').click()`); await sleep(100);
   const stopped = await evaluate(`Number(document.querySelector('input[type=range]').value)`); await sleep(150);
   assert.equal(await evaluate(`Number(document.querySelector('input[type=range]').value)`), stopped);
@@ -226,6 +221,134 @@ try {
     return results;
   })()`);
   assert.deepEqual(rendered, [.375,.25,.125,.25].map(value => ({before:0,first:value,middle:value})), 'streamed voices, Solo, Mute and gain affect actual PCM');
+  // PCM assertions are independent of the cursor and highlight DOM.
+  const loopPCM = await evaluate(`(async () => {
+    const {AudioEngine} = await import('/src/audio/engine.ts');
+    const context = new OfflineAudioContext(1, 96000, 48000);
+    context.resume = async () => {};
+    const engine = new AudioEngine(context, 8);
+    let loads = 0;
+    engine.streams.set('one', {duration:8, async load(start,end) {
+      loads++;
+      const buffer = context.createBuffer(1, Math.round((end-start)*48000), 48000);
+      const pcm = buffer.getChannelData(0);
+      for (let i=0;i<pcm.length;i++) pcm[i] = start+i/48000 < 1.125 ? .25 : -.25;
+      return buffer;
+    }});
+    await engine.setLoop({start:.75,end:1.5});
+    await engine.play({one:{volume:100,solo:false,muted:false}});
+    // Drain the initial scheduling horizon before starting accelerated offline rendering.
+    await new Promise(resolve=>setTimeout(resolve,50));
+    const output = (await context.startRendering()).getChannelData(0);
+    engine.pause();
+    let max = 0;
+    for (let i=4800;i<output.length;i++) {
+      const expected = (i-4800)%36000 < 18000 ? .25 : -.25;
+      max = Math.max(max, Math.abs(output[i]-expected));
+    }
+    const clicks = [];
+    for (const enabled of [false,true]) {
+      const ctx = new OfflineAudioContext(1, 24000, 48000); ctx.resume = async () => {};
+      const player = new AudioEngine(ctx, 1);
+      player.buffers.set('silent', ctx.createBuffer(1,48000,48000));
+      player.setMetronome(enabled,120,3,8);
+      await player.play({silent:{volume:100,solo:false,muted:false}});
+      const data = (await ctx.startRendering()).getChannelData(0);
+      player.pause();
+      clicks.push({before:Math.max(...data.slice(0,1920)), peak:Math.max(...data.slice(1920,3360))});
+    }
+    return {max, loads, clicks};
+  })()`);
+  assert.equal(loopPCM.max, 0, 'actual PCM repeats both halves without silence, overlap or sound outside the range');
+  assert.equal(loopPCM.loads, 1, 'short loop reuses one decoded window');
+  assert.equal(loopPCM.clicks[0].peak, 0, 'disabled metronome is silent');
+  assert.equal(loopPCM.clicks[1].before, 0, 'metronome waits for the audio epoch');
+  assert.ok(loopPCM.clicks[1].peak > .1, 'enabled metronome produces real audio');
+
+  async function setLoopField(name, value) {
+    await evaluate(`(() => { const input=document.querySelector('[name="${name}"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'${value}'); input.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+  }
+  await setLoopField('loopStart', 2); await setLoopField('loopEnd', 3);
+  await clickPlayback('Повтор фрагмента');
+  await poll(() => evaluate(`document.querySelector('[aria-label="Повтор фрагмента"]').getAttribute('aria-pressed')==='true'`));
+  const highlight = await evaluate(`(() => {const el=document.querySelector('[class*="loopRegion"]'),parent=el.parentElement;return {left:parseFloat(getComputedStyle(el).left)/parent.clientWidth,width:el.clientWidth/parent.clientWidth};})()`);
+  assert.ok(Math.abs(highlight.left-.09375)<.002 && Math.abs(highlight.width-.1875)<.004, 'highlight uses 120 BPM 3/8 and actual 8-second duration');
+  for (const [width,height] of [[320,640],[360,740],[740,360],[1280,800]]) {
+    await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<800});
+    assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);
+    assert.equal(await evaluate(`Array.from(document.querySelectorAll('[name="loopStart"],[name="loopEnd"]')).every(e=>{const r=e.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.right<=innerWidth;})`),true);
+  }
+  await send('Emulation.setDeviceMetricsOverride',{width:360,height:740,deviceScaleFactor:1,mobile:true});
+  const touch = await evaluate(`(() => { const r=document.querySelector('[name="loopStart"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+  await send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[touch]});
+  await send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  assert.equal(await evaluate('document.activeElement.name'),'loopStart');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowUp',code:'ArrowUp',windowsVirtualKeyCode:38});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowUp',code:'ArrowUp',windowsVirtualKeyCode:38});
+  assert.equal(await evaluate(`document.querySelector('[name="loopStart"]').value`),'3');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Backspace',code:'Backspace',windowsVirtualKeyCode:8});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Backspace',code:'Backspace',windowsVirtualKeyCode:8});
+  await send('Input.insertText',{text:'12'});
+  assert.equal(await evaluate(`document.querySelector('[name="loopStart"]').value`),'12');
+  await poll(() => evaluate(`document.querySelector('[aria-label="Повтор фрагмента"]').disabled`));
+  assert.equal(await evaluate(`document.querySelector('[class*="loopRegion"]')===null`),true);
+  await setLoopField('loopStart', 2);
+  await clickPlayback('Метроном');
+  await clickPlayback('Воспроизвести');
+  await poll(() => evaluate(`document.querySelector('[aria-label="Пауза"]')!==null`));
+  const positions=[];
+  for(let i=0;i<12;i++) {await sleep(150);positions.push(await evaluate(`Number(document.querySelector('input[type=range]').value)`));}
+  assert.ok(positions.every(p=>p>=.75&&p<2.25));
+  assert.ok(positions.some((p,i)=>i>0&&p<positions[i-1]),'cursor crosses loop boundary');
+  // Gate the real decoder after entry: Pause must cancel the new range's pending start.
+  await evaluate(`(async () => {
+    const {MP4Reader} = await import('/src/audio/mp4.ts');
+    const decode = MP4Reader.prototype.decode;
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    window.deferredDecodes = 0;
+    window.finishedDecodes = 0;
+    window.releaseDecode = () => { MP4Reader.prototype.decode = decode; release(); };
+    MP4Reader.prototype.decode = async function(...args) {
+      window.deferredDecodes++;
+      await gate;
+      try { return await decode.apply(this, args); }
+      finally { window.finishedDecodes++; }
+    };
+  })()`);
+  await setLoopField('loopEnd', 4); await setLoopField('loopStart', 4);
+  await poll(() => evaluate(`window.deferredDecodes > 0 && document.querySelector('[aria-label="Пауза"]')?.getAttribute('aria-busy') === 'true'`));
+  const startsBeforeCancel = await evaluate('window.transportSourceStarts');
+  await clickPlayback('Пауза');
+  await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]')?.disabled === false`));
+  const cancelledPosition = await evaluate(`Number(document.querySelector('input[type=range]').value)`);
+  await evaluate('window.releaseDecode()');
+  await poll(() => evaluate('window.finishedDecodes === window.deferredDecodes'));
+  await evaluate('window.transportPlay');
+  await sleep(250);
+  assert.equal(await evaluate('window.transportSourceStarts'), startsBeforeCancel, 'late range decode must not start any audio after Pause');
+  assert.equal(await evaluate(`Number(document.querySelector('input[type=range]').value)`), cancelledPosition, 'cancelled cursor stays paused');
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Воспроизвести"]').getAttribute('aria-busy')`), 'false');
+  console.log('PASS pending live loop change: enabled Pause cancels delayed decode without late sound or cursor movement.');
+  await clickPlayback('Воспроизвести');
+  await poll(() => evaluate(`document.querySelector('[aria-label="Пауза"]')!==null && Number(document.querySelector('input[type=range]').value)>=2.25`));
+  await clickPlayback('Пауза');
+  await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]')!==null`));
+  await clickPlayback('Вернуться к началу');
+  await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value)===2.25`));
+  await clickPlayback('Воспроизвести');
+  await poll(() => evaluate(`document.querySelector('[aria-label="Пауза"]')!==null`));
+  await clickPlayback('Пауза'); await clickPlayback('Метроном'); await clickPlayback('Повтор фрагмента');
+  assert.equal(await evaluate(`document.querySelector('[role=alert]')===null`),true);
+  await send('Page.captureScreenshot',{format:'png'}).then(async result=>writeFile('/tmp/choral-issue12-360.png',Buffer.from(result.data,'base64')));
+  console.log('PASS loop/metronome: actual PCM wrap and audible click; touch-size inputs, keyboard, validation, exact highlight, live range change, restart/resume; 320/360/landscape/desktop.');
+  await evaluate(`history.pushState(null,'','?song=meter-32-fixture');window.dispatchEvent(new PopStateEvent('popstate'));`);
+  await poll(()=>evaluate(`document.querySelector('h1') && document.body.textContent.includes('300 BPM')`));
+  await clickPlayback('Метроном');
+  for (const [width,height] of [[320,640],[360,740],[740,360]]) {
+    await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:true});
+    assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true,'32 beat indicators wrap inside the page');
+  }
   await evaluate(`(() => {
     window.windowStarts = []; window.activePCM = 0; window.peakPCM = 0;
     const start = AudioBufferSourceNode.prototype.start;
@@ -399,4 +522,26 @@ try {
   assert.ok(diagnostic[0].decodedSamples < diagnostic[0].offset + diagnostic[0].requiredSamples);
   assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
   console.log('PASS dev-only decoder diagnostics: actual rate/length/offset reported after an intentionally shortened decode.');
+  if (process.env.CHORAL_STORYBOOK_URL) {
+    await send('Page.addScriptToEvaluateOnNewDocument', {source: `
+      window.storyResults = [];
+      const timer = setInterval(() => {
+        const channel = window.__STORYBOOK_ADDONS_CHANNEL__;
+        if (!channel) return;
+        clearInterval(timer);
+        for (const event of ['storyFinished','storyErrored','storyThrewException','playFunctionThrewException']) {
+          channel.on(event, result => window.storyResults.push({event,result}));
+        }
+      }, 1);
+    `});
+    for (const story of ['default','single-bar','full-song-loop','short-song','sixteen-bars']) {
+      await send('Page.navigate', {url: process.env.CHORAL_STORYBOOK_URL + '/iframe.html?id=layouts-rehearsal-player--' + story + '&viewMode=story'});
+      await poll(() => evaluate(`location.search.includes('id=layouts-rehearsal-player--${story}&') && window.storyResults?.length>0`));
+      const results = await evaluate('window.storyResults');
+      assert.ok(results.some(r=>r.event==='storyFinished' && r.result.storyId==='layouts-rehearsal-player--'+story), JSON.stringify(results));
+      assert.ok(results.every(r=>r.event==='storyFinished' && r.result.status==='success'), JSON.stringify(results));
+      console.log('PASS Storybook play:',story);
+    }
+  }
+
 } finally { ws?.close(); for (const child of children) child.kill('SIGTERM'); server.closeAllConnections(); server.close(); await sleep(300); await rm(dir, { recursive: true, force: true }); }

@@ -326,3 +326,113 @@ test('a natural silent tail after shorter tracks is not reported as failed strea
   assert.deepEqual(reported, []);
   assert.ok(Math.abs(engine.position - 4.9) < 1e-8);
 });
+
+const settle = () => new Promise(resolve => setImmediate(resolve));
+function loopFixture(t, duration = 8) {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const context = clock(), engine = new AudioEngine(context, duration), requests = [];
+  const mix = { a: { volume: 100, muted: false, solo: false } };
+  engine.streams.set('a', { duration, async load(start, end) {
+    requests.push([start, end]); return { duration: end - start, from: start };
+  } });
+  t.after(() => engine.dispose());
+  return { context, engine, requests, mix };
+}
+for (const [name, start, end, duration] of [['one bar 3/8 at 120 BPM', .75, 1.5, 8], ['full song including partial last bar', 0, 8, 8], ['fast one-beat 1/16 at 240 BPM', 0, .0625, 1], ['minimum bar 1/32 at 300 BPM', 0, .025, 1], ['fractional bars', 60 / 137 * 3, 60 / 137 * 6, 8]]) {
+  test(`loop crossing stays on audio clock: ${name}`, async t => {
+    const { context, engine, requests, mix } = loopFixture(t, duration);
+    await engine.setLoop({ start, end });
+    await engine.play(mix); await settle();
+    const epoch = context.sources[0].args[0];
+    assert.equal(context.sources[0].buffer.from, start);
+    for (let i = 0; i < 100; i++) {
+      context.currentTime = epoch + i * .05;
+      t.mock.timers.tick(50); await settle();
+      assert.equal(engine.playing, true);
+      const elapsed = i * .05;
+      const cycles = Math.floor(elapsed / (end - start) + 1e-10);
+      const expected = start + elapsed - cycles * (end - start);
+      assert.ok(Math.abs(engine.position - expected) < 1e-7);
+    }
+    assert.ok(requests.every(([a, b]) => a >= start - 1e-7 && b <= end + 1e-7 && b > a));
+    const sources = context.sources;
+    for (let i = 1; i < sources.length; i++) {
+      assert.ok(Math.abs(sources[i].args[0] - sources[i-1].args[0] - sources[i-1].buffer.duration) < 1e-7, 'no gap or overlap at wrap');
+    }
+    engine.pause(); const position = engine.position;
+    context.currentTime += 30;
+    assert.equal(engine.position, position);
+    await engine.play(mix); assert.equal(engine.position, position);
+    assert.ok(sources.slice(0, -1).some(source => source.stopped));
+  });
+}
+test('invalid loop bounds leave current transport untouched; seek/restart outside goes to first bar', async t => {
+  const { context, engine, mix } = loopFixture(t);
+  await engine.setLoop({ start: 2, end: 4 }); await engine.play(mix); await settle();
+  for (const range of [{ start: -1, end: 4 }, { start: 2, end: 2 }, { start: 4, end: 2 }, { start: 0, end: 9 }, { start: NaN, end: 4 }, { start: 0, end: Infinity }]) {
+    await assert.rejects(engine.setLoop(range), /границы/);
+    assert.equal(engine.playing, true);
+  }
+  for (const position of [0, 1, 4, 8]) { await engine.seek(position, mix); assert.equal(engine.position, 2); }
+  await engine.seek(3, mix); assert.equal(engine.position, 3);
+  await engine.setLoop(null); await engine.seek(6, mix); assert.equal(engine.position, 6);
+  await settle();
+  const starts = context.sources.length;
+  await engine.setLoop(null);
+  assert.equal(context.sources.length, starts, 'editing inactive loop bounds must not restart audio');
+});
+test('live range changes cancel old sources and pending decode; only latest range resumes', async t => {
+  const { context, engine, mix } = loopFixture(t, 20);
+  await engine.play(mix); await settle();
+  const old = [...context.sources];
+  let release;
+  engine.streams.set('a', { duration: 20, load(start, end) {
+    return start === 10 ? new Promise(resolve => { release = resolve; }) : Promise.resolve({ duration: end - start, from: start });
+  } });
+  const first = engine.setLoop({ start: 10, end: 12 }); await settle();
+  assert.ok(old.every(s => s.stopped));
+  const second = engine.setLoop({ start: 14, end: 16 });
+  release({ duration: 2, from: 10 }); await Promise.all([first, second]); await settle();
+  assert.equal(engine.playing, true); assert.equal(engine.position, 14);
+  assert.ok(context.sources.filter(s => !s.stopped).every(s => s.buffer.from >= 14 && s.buffer.from < 16));
+  const pending = engine.setLoop({ start: 10, end: 12 }); await settle();
+  engine.pause(); release({ duration: 2, from: 10 }); await pending;
+  assert.equal(engine.playing, false); assert.ok(context.sources.every(s => s.stopped));
+});
+test('metronome schedules song beats, accents and loop wraps on audio epoch; off/pause cancel clicks', async t => {
+  const { context, engine, mix } = loopFixture(t);
+  const clicks = [];
+  context.createGain = () => ({ connect() {}, disconnect() {}, gain: { setTargetAtTime() {}, setValueAtTime() {}, exponentialRampToValueAtTime() {} } });
+  context.createOscillator = () => {
+    const click = { frequency: {}, connect() {}, disconnect() {}, start(when) { this.when = when; }, stop(when) { if (when === undefined) this.canceled = true; } };
+    clicks.push(click); return click;
+  };
+  engine.setMetronome(true, 120, 3, 8);
+  assert.equal(clicks.length, 0, 'toggle does not autoplay');
+  await engine.setLoop({ start: .75, end: 1.5 }); await engine.play(mix); await settle();
+  const epoch = context.sources[0].args[0];
+  for (let i = 0; i < 36; i++) {
+    context.currentTime = i * .025;
+    t.mock.timers.tick(25); await settle();
+  }
+  assert.deepEqual(clicks.map(c => c.frequency.value), [1200, 800, 800, 1200]);
+  clicks.forEach((click, i) => assert.ok(Math.abs(click.when - epoch - i * .25) < 1e-8));
+  engine.setMetronome(false, 120, 3, 8);
+  assert.ok(clicks.every(c => c.canceled));
+  const count = clicks.length; t.mock.timers.tick(100); await settle(); assert.equal(clicks.length, count);
+  engine.setMetronome(true, 120, 3, 8);
+  engine.pause(); assert.ok(clicks.every(c => c.canceled));
+});
+
+test('buffer-backed loop preserves silence after a shorter track instead of repeating its tail early', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const context = clock(), engine = new AudioEngine(context, 4);
+  t.after(() => engine.dispose());
+  engine.buffers.set('short', { duration: 1 }); engine.buffers.set('long', { duration: 4 });
+  await engine.setLoop({ start: 0, end: 2 });
+  await engine.play({ short: { volume: 100, muted: false, solo: false }, long: { volume: 100, muted: false, solo: false } });
+  await settle();
+  const short = context.sources.filter(s => s.buffer.duration === 1);
+  assert.ok(short.length >= 3);
+  short.forEach((source, i) => assert.deepEqual(source.args, [.1 + i * 2, 0, 1]));
+});
