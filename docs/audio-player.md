@@ -136,10 +136,10 @@ same-origin; redirect запрещён, URLs ограничены `/api/v1/`. О
 ```sh
 node --test tests/audio.test.mjs
 npm run test:audio
-node tests/audio-browser.mjs
+npm run test:audio:browser
 ```
 
-Первый набор (12 поведенческих тестов) использует управляемый clock: 32 стабильных
+Первый набор использует управляемый clock: 32 стабильных
 ID, 20 циклов pause/resume/seek, короткий файл, gain/solo/mute, неизменность и
 повторяемость all-solo reset, dispose и гонки resume/decode/unmount. Отдельный тест
 проходит все 300 четырёхсекундных окон 20-минутной песни для 32 дорожек: старт
@@ -154,23 +154,35 @@ Solo-дорожки при загрузке следующего окна с в�
 8/11,025/16/22,05/32/44,1/48/88,2/96 kHz, преобразованных командой FFmpeg с теми
 же аудиопараметрами и timestamp filter, что в worker. Проверяются повреждённые
 таблицы, счётчики и накопленный дрейф; тесты включены в frontend PR checks.
+Native fallback и packet decoder проверяют первые/последние PCM samples по
+независимым ожидаемым значениям для начала, дробного seek, стыка и хвоста.
+Streaming-проверка различает PCM партий и проверяет его привязку к каналам
+в начальном и последующих окнах.
 
-Браузерный тест запускает Vite и headless Google Chrome через CDP; нужны
+Браузерный тест также включён в frontend PR checks и запускает Vite и headless
+Google Chrome через CDP; нужны
 `/usr/bin/google-chrome` и `ffmpeg`. Для другого Chromium-based binary задайте
 `CHORAL_CHROME_BIN=/usr/bin/chromium`. Синтетические файлы создаются вне Git,
 конвертируются в настоящие AAC-LC mono 48 kHz 96 kbit/s и отдаются контрактным
 fixture API с Range/ETag. Короткий WAV и длинный sine имеют исходную частоту
 44,1 kHz и проходят серверный `asetpts`, чтобы воспроизводить реальное
-округление `stts`, пропущенное первоначальными fixtures. Проверяются:
+округление `stts`, пропущенное первоначальными fixtures. Chrome запускается с
+`--mute-audio`: физический вывод беззвучен, декодирование, clock и OfflineAudioContext
+по-прежнему проверяются. Проверяются:
 
 - 32 канала с отдельным 404, настоящие peaks, public requests без cookies
   при существующей синтетической cookie; смена ETag одной дорожки и отзыв всех
   media после успешного воспроизведения; снятие Solo у дорожки с ошибкой ETag;
 - trusted mouse gesture при включённой autoplay policy, cursor/pause/seek/resume,
   смена песни и закрытие старого AudioContext;
-- сравнение оконного и полного decode на 8-секундном fixture (максимальная разница
-  амплитуд <0,001), включая дробный seek и границы AAC frames; OfflineAudioContext проверяет точный общий
-  старт и сложение сигналов;
+- сравнение обоих оконных decode paths с независимым полным PCM от FFmpeg на
+  8-секундном fixture (максимальная разница амплитуд <0,001), включая дробный seek
+  и границы AAC frames; проверяются длина/частота и конечность max/RMS.
+  Полный браузерный MP4 decode не используется как эталон: на Chrome 147 / FFmpeg
+  6.1.1 на fixture с timestamp jitter он вернул 383990 samples вместо 384000
+  и отличающийся PCM.
+  OfflineAudioContext проверяет streaming-путь на двух разных сигналах: общий
+  старт, сложение, Solo, Mute и громкость;
 - 32 настоящих **20-минутных** файла, Range-only загрузка, seek/resume на 600.123,
   1196, 3.5 и 1198 секундах; сброс всех Solo через реальный React StrictMode;
 - синхронные старты последующих окон без накопления сдвига, ограниченный объём

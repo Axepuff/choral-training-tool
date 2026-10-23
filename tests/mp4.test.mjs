@@ -51,6 +51,8 @@ const timingOffset = bytes => {
   assert.notEqual(at, null);
   return at;
 };
+// Known PCM ranges in the fixture's 1024-sample AAC packets, including priming.
+const windows = [[0, 4, 192000, 1024], [3.123, 5.456, 111984, 2448], [4, 8, 192000, 2560], [7.95, 8.137, 8976, 2720]];
 
 for (const rate of [8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000]) {
   test(`opens server AAC converted from a real ${rate} Hz stereo WAV`, async () => {
@@ -116,9 +118,11 @@ test('native fallback describes the packet window without stale full-song metada
       return { length, sampleRate, copyToChannel(data) { pcm.set(data); }, getChannelData() { return pcm; } };
     },
   };
-  for (const [start, end] of [[0, 4], [3.123, 5.456], [4, 8], [7.95, 8.137]]) {
+  for (const [start, end, length, firstSample] of windows) {
     const output = await reader.decode(context, start, end);
-    assert.equal(output.length, Math.round((end - start) * 48000));
+    assert.equal(output.length, length);
+    assert.equal(output.getChannelData(0)[0], firstSample);
+    assert.equal(output.getChannelData(0).at(-1), firstSample + length - 1);
     assert.equal(metadata.trim, 0, 'the container describes the full packet window');
     assert.equal(metadata.b.readUInt32BE(metadata.elst + 8), metadata.encoded, 'edit duration covers all encoded samples');
     const mvhd = payloadOffset(metadata.b, ['moov', 'mvhd']);
@@ -183,13 +187,11 @@ async function withPackets(mode, run) {
 test('packet decoder bypasses short-MP4 decode and crops priming once at start, seeks and tail', async () => {
   await withPackets('ok', async ({ instances, counts }) => {
     const reader = await open(await fixture(44100)), context = packetContext();
-    for (const [start, end] of [[0, 4], [3.123, 5.456], [4, 8], [7.95, 8.137]]) {
+    for (const [start, end, length, firstSample] of windows) {
       const pcm = await reader.decode(context, start, end);
-      const sampleStart = Math.round(start * 48000) + 1024;
-      const expectedOffset = sampleStart - Math.max(0, Math.floor(sampleStart / 1024) - 2) * 1024;
-      assert.equal(pcm.length, Math.round((end - start) * 48000));
-      assert.equal(pcm.getChannelData(0)[0], expectedOffset);
-      assert.equal(pcm.getChannelData(0).at(-1), expectedOffset + pcm.length - 1);
+      assert.equal(pcm.length, length);
+      assert.equal(pcm.getChannelData(0)[0], firstSample);
+      assert.equal(pcm.getChannelData(0).at(-1), firstSample + length - 1);
     }
     assert.equal(instances.length, 4);
     assert.ok(instances.every(d => d.closes === 1 && d.state === 'closed'));

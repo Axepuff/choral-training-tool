@@ -20,6 +20,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends ffmpeg
       - run: npm run test:audio
+      - name: Browser audio regressions
+        timeout-minutes: 5
+        run: |
+          google-chrome --version
+          npm run test:audio:browser
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test:agent-queue

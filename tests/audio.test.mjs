@@ -172,8 +172,8 @@ test('streaming gain/solo/mute apply to current and future windows; a failed fil
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const context = clock(), engine = new AudioEngine(context, 20);
   t.after(() => engine.dispose());
-  engine.streams.set('a', { duration: 20, async load() { return { duration: 4 }; } });
-  engine.streams.set('b', { duration: 20, async load() { return { duration: 4 }; } });
+  engine.streams.set('a', { duration: 20, async load() { return { duration: 4, voice: 'a' }; } });
+  engine.streams.set('b', { duration: 20, async load() { return { duration: 4, voice: 'b' }; } });
   engine.streams.set('bad', { duration: 20, async load() { throw new Error('404'); } });
   let failed; engine.onTrackError = id => { failed = id; };
   const mix = { a: { volume: 40, muted: false, solo: false }, b: { volume: 80, muted: false, solo: false }, bad: { volume: 100, muted: false, solo: false } };
@@ -185,6 +185,8 @@ test('streaming gain/solo/mute apply to current and future windows; a failed fil
   assert.ok(context.gains.every((gain, i) => gain.value === (i % 2 ? 0 : .4)), 'future windows preserve latest solo');
   engine.setMix(updateMix(mix, 'b', { muted: true }));
   assert.ok(context.gains.every((gain, i) => gain.value === (i % 2 ? 0 : .4)));
+  assert.ok(context.sources.length > 2, 'exercise initial and future windows');
+  assert.ok(context.sources.every((source, i) => source.buffer.voice === (i % 2 ? 'b' : 'a')), 'each channel keeps its own PCM across windows');
 });
 
 test('overlapping seeks resume only the latest position; explicit pause cancels pending resume', async t => {

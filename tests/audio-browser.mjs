@@ -12,16 +12,23 @@ async function poll(fn) { for (let i = 0; i < 200; i++) { try { if (await fn()) 
 function start(cmd, args, env = {}) { const p = spawn(cmd, args, { env: { ...process.env, ...env }, stdio: 'ignore' }); children.push(p); }
 await writeFile(join(dir, 'fixture.wav'), makeWav(44100));
 encodePlayback(join(dir, 'fixture.wav'), join(dir, 'fixture.m4a'));
+await writeFile(join(dir, 'second.wav'), makeWav(44100, 8, 2));
+encodePlayback(join(dir, 'second.wav'), join(dir, 'second.m4a'));
 execFileSync('ffmpeg', ['-nostdin', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100:duration=1200', ...playbackArgs, '-y', join(dir, 'long.m4a')]);
 const longAAC = await readFile(join(dir, 'long.m4a'));
 const aac = await readFile(join(dir, 'fixture.m4a'));
+const secondAAC = await readFile(join(dir, 'second.m4a'));
+// Chrome's full MP4 decode differs on timestamp-jitter fixtures; use an independent PCM oracle.
+const referencePCM = execFileSync('ffmpeg', ['-nostdin', '-v', 'error', '-i', join(dir, 'fixture.m4a'), '-f', 'f32le', '-acodec', 'pcm_f32le', 'pipe:1'], { maxBuffer: 2 * 1024 * 1024 });
+assert.equal(referencePCM.length, 8 * 48000 * 4);
 const song = { id: 'fixture', title: 'Audio fixture', bpm: 120, beatsPerBar: 3, beatUnit: 8, durationMs: 8000, barCount: 11, notes: 'Synthetic fixture', tracks: Array.from({ length: 32 }, (_, i) => ({ id: `stable-${i}`, name: `Voice ${i}`, gain: .5, durationMs: 8000, mediaUrl: `/api/v1/media/${i}`, peaksUrl: '/api/v1/peaks' })) };
 const longSong = { ...song, id:'long-fixture', durationMs:1200000, tracks: song.tracks.map((t,i) => ({...t, durationMs:1200000, mediaUrl:`/api/v1/long/${i}`, peaksUrl:'/api/v1/long-peaks'})) };
 const requests = [];
 let changedTrack = false, revokeMedia = false;
 const server = createServer((req, res) => {
   requests.push({ url: req.url, cookie: req.headers.cookie, range: req.headers.range });
-  if (req.url.startsWith('/api/v1/public/shares/')) {
+  if (req.url === '/api/v1/reference-pcm') res.end(referencePCM);
+  else if (req.url.startsWith('/api/v1/public/shares/')) {
     const selected = req.url.includes('device-retry-fixture') ? { ...song, id: 'device-retry-fixture', tracks: song.tracks.slice(0, 1) } : req.url.includes('long-fixture') ? longSong : song;
     res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ kind: 'song', songs: [selected], nextCursor: null }));
   }
@@ -30,7 +37,7 @@ const server = createServer((req, res) => {
   else if ((req.url.startsWith('/api/v1/media/') && req.url !== '/api/v1/media/31') || req.url.startsWith('/api/v1/long/')) {
     if (revokeMedia) { res.statusCode=404; res.end(); return; }
     res.setHeader('Content-Type', 'audio/mp4'); res.setHeader('ETag', changedTrack && req.url==='/api/v1/long/0' ? '"changed"' : '"fixture"');
-    const payload = req.url.startsWith('/api/v1/long/') ? longAAC : aac;
+    const payload = req.url.startsWith('/api/v1/long/') ? longAAC : Number(req.url.split('/').at(-1)) % 2 ? secondAAC : aac;
     const range = /bytes=(\d+)-(\d+)/.exec(req.headers.range ?? '');
     if (range) { const start = Number(range[1]), end = Math.min(payload.length - 1, Number(range[2])); res.statusCode = 206; res.setHeader('Content-Range', `bytes ${start}-${end}/${payload.length}`); res.end(payload.subarray(start, end + 1)); }
     else res.end(payload); }
@@ -86,7 +93,7 @@ async function waitForPendingPlayback(position) {
 try {
   start(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '5189', '--strictPort'], { CHORAL_API_PROXY: 'http://127.0.0.1:5188', VITE_APP_DEMO: 'false' });
   await poll(async () => (await fetch('http://127.0.0.1:5189')).ok);
-  start(process.env.CHORAL_CHROME_BIN ?? '/usr/bin/google-chrome', ['--headless', '--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--remote-debugging-port=0', `--user-data-dir=${dir}`, 'about:blank']);
+  start(process.env.CHORAL_CHROME_BIN ?? '/usr/bin/google-chrome', ['--headless', '--mute-audio', '--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--remote-debugging-port=0', `--user-data-dir=${dir}`, 'about:blank']);
   let port; await poll(async () => { port = (await readFile(join(dir, 'DevToolsActivePort'), 'utf8')).split('\n')[0]; return port; });
   const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); ws = new WebSocket(targets.find(t => t.type === 'page').webSocketDebuggerUrl);
   await new Promise(r => { ws.onopen = r; });
@@ -99,7 +106,8 @@ try {
     const {MP4Reader} = await import('/src/audio/mp4.ts');
     const context = new AudioContext({sampleRate:48000});
     const read = async (a,b) => new Uint8Array(await (await fetch('/api/v1/media/0', {credentials:'omit',headers:{Range:'bytes='+a+'-'+b}})).arrayBuffer());
-    const reference = await context.decodeAudioData(await (await fetch('/api/v1/media/0', {credentials:'omit'})).arrayBuffer());
+    const reference = new Float32Array(await (await fetch('/api/v1/reference-pcm', {credentials:'omit'})).arrayBuffer());
+    if (context.sampleRate !== 48000 || reference.length !== 8 * 48000) throw new Error('Invalid reference PCM');
     const nativeDecoder = globalThis.AudioDecoder, nativeDecode = context.decodeAudioData.bind(context);
     const support = await nativeDecoder.isConfigSupported({codec:'mp4a.40.2',sampleRate:48000,numberOfChannels:1,description:new Uint8Array([0x11,0x88])});
     if (!support.supported) throw new Error('This browser must support AAC WebCodecs for the packet regression');
@@ -112,8 +120,9 @@ try {
     for (const [start,end] of [[0,2],[0,4],[2,4],[3.123,5.456],[4,8],[6,8],[7.95,8]]) {
       const part = await reader.decode(context, start, end);
       let max = 0, rms = 0;
-      const original = reference.getChannelData(0), actual = part.getChannelData(0);
-      for (let i=0;i<actual.length;i++) { const difference = actual[i]-original[Math.round(start*48000)+i]; max=Math.max(max,Math.abs(difference)); rms += difference*difference; }
+      const actual = part.getChannelData(0), offset = Math.round(start * 48000);
+      if (part.sampleRate !== 48000 || part.numberOfChannels !== 1 || actual.length !== Math.round((end - start) * 48000) || offset + actual.length > reference.length) throw new Error('Invalid window PCM');
+      for (let i=0;i<actual.length;i++) { const difference = actual[i]-reference[offset+i]; max=Math.max(max,Math.abs(difference)); rms += difference*difference; }
       errors.push({decoder,start,length:part.length,max,rms:Math.sqrt(rms/part.length)});
     }
     }
@@ -121,7 +130,7 @@ try {
     await context.close(); return errors;
   })()`);
   console.log('Window decode comparison', chunkDecode);
-  assert.ok(chunkDecode.every(p => p.max < .001), 'window decode must match full decode');
+  assert.ok(chunkDecode.every(p => Number.isFinite(p.max) && Number.isFinite(p.rms) && p.max < .001), 'window decode must match independent full PCM');
   await evaluate(`(() => {
     window.nativeAudioDecode = AudioContext.prototype.decodeAudioData;
     AudioContext.prototype.decodeAudioData = async () => { throw new Error('short-MP4 decode intentionally disabled'); };
@@ -196,18 +205,25 @@ try {
   assert.ok(requests.filter(r => r.url.includes('/media/') || r.url.includes('/peaks')).every(r => !r.cookie));
   const rendered = await evaluate(`(async () => {
     const {AudioEngine} = await import('/src/audio/engine.ts');
-    const context = new OfflineAudioContext(1, 48000, 48000);
-    // Offline contexts have no resume-before-render API; only that gesture adapter is replaced.
-    context.resume = async () => {};
-    const engine = new AudioEngine(context, 1);
-    const buffer = context.createBuffer(1, 48000, 48000);
-    buffer.getChannelData(0).fill(.25);
-    engine.buffers.set('one', buffer); engine.buffers.set('two', buffer);
-    await engine.play({one:{volume:100,solo:false,muted:false},two:{volume:100,solo:false,muted:false}});
-    const output = await context.startRendering(); const data = output.getChannelData(0);
-    return {before:data[1919],first:data[1920],middle:data[10000]};
+    const results = [], defaults = {volume:100,solo:false,muted:false};
+    for (const [one,two] of [[{},{}],[{solo:true},{}],[{muted:true},{}],[{volume:50},{}]]) {
+      const context = new OfflineAudioContext(1, 48000, 48000);
+      // Offline contexts have no resume-before-render API; only that gesture adapter is replaced.
+      context.resume = async () => {};
+      const engine = new AudioEngine(context, 1);
+      for (const [id,value] of [['one',.25],['two',.125]]) {
+        const buffer = context.createBuffer(1, 48000, 48000);
+        buffer.getChannelData(0).fill(value);
+        engine.streams.set(id, {duration:1, async load() { return buffer; }});
+      }
+      await engine.play({one:{...defaults,...one},two:{...defaults,...two}});
+      const output = await context.startRendering(); const data = output.getChannelData(0);
+      engine.pause();
+      results.push({before:data[4799],first:data[4800],middle:data[10000]});
+    }
+    return results;
   })()`);
-  assert.equal(rendered.before, 0); assert.equal(rendered.first, .5); assert.equal(rendered.middle, .5);
+  assert.deepEqual(rendered, [.375,.25,.125,.25].map(value => ({before:0,first:value,middle:value})), 'streamed voices, Solo, Mute and gain affect actual PCM');
   await evaluate(`(() => {
     window.windowStarts = []; window.activePCM = 0; window.peakPCM = 0;
     const start = AudioBufferSourceNode.prototype.start;
