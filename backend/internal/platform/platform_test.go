@@ -62,7 +62,7 @@ func TestDatabaseLifecycle(t *testing.T) {
 		t.Fatalf("persistence/rollback: %s %v", role, err)
 	}
 	var count int
-	if err = db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != 4 {
+	if err = db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != 5 {
 		t.Fatalf("migration repeated: %d %v", count, err)
 	}
 	// Force a new connection to verify connection-level pragmas survive reconnect.

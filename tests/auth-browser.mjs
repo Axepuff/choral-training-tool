@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const dir = await mkdtemp(join(tmpdir(), 'choral-browser-'));
 const processes = [];
+const storiesOnly = process.env.CHORAL_STORIES_ONLY === 'true';
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function start(cmd, args, env = {}) {
   const p = spawn(cmd, args, { cwd: root, env: { ...process.env, ...env }, stdio: ['ignore', 'ignore', 'ignore'] });
@@ -109,6 +110,7 @@ try {
   };
   await send('Page.enable'); await send('Runtime.enable'); await send('Network.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
+  if (!storiesOnly) {
   await navigate('?page=create-song&role=admin');
   await expectText('Вход');
   await checkFormOnFocus('[name=email]');
@@ -232,6 +234,7 @@ try {
   assert.equal(await bodyIncludes('Администратор'), false);
   await navigate('?page=library'); await expectText('Администратор');
   await click('Выйти'); await expectText('Вход');
+  }
   // Wait for Storybook's own storyFinished event, including each play function.
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `
     let channel;
@@ -246,7 +249,7 @@ try {
   ` });
   const index = await (await fetch('http://127.0.0.1:5179/storybook-static/index.json')).json();
   const stories = Object.values(index.entries).filter((s) => s.type === 'story' && /pages-(sign-in|song-library|create-song)--/.test(s.id));
-  assert.equal(stories.length, 26);
+  assert.equal(stories.length, 30);
   for (const story of stories) {
     await send('Page.navigate', { url: `http://127.0.0.1:5179/storybook-static/iframe.html?id=${story.id}&viewMode=story` });
     await poll(() => evaluate(`window.__storyResult?.storyId === ${JSON.stringify(story.id)}`), `Story did not finish: ${story.id}`, 30_000);
@@ -257,7 +260,7 @@ try {
   await submit('fictional@example.test', 'fictional password 123');
   await expectText('Это макет: данные не отправлены');
   console.log(`Storybook browser: ${stories.length} affected stories including play functions passed.`);
-  console.log('Real Go API + browser: login, reload, role, redirect, logout/revocation, network failures, blocked user, password gate, guest routes, storage and responsive smoke passed.');
+  if (!storiesOnly) console.log('Real Go API + browser: login, reload, role, redirect, logout/revocation, network failures, blocked user, password gate, guest routes, storage and responsive smoke passed.');
 } finally {
   if (ws) ws.close();
   for (const p of processes.reverse()) { p.kill('SIGTERM'); await Promise.race([new Promise((resolve) => p.once('exit', resolve)), delay(2000)]); if (p.exitCode === null) p.kill('SIGKILL'); }

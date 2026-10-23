@@ -551,3 +551,49 @@ func TestCreateRollbackAndReplayExpiry(t *testing.T) {
 		t.Fatal("corrupt replay duplicated song")
 	}
 }
+
+// Names belong to assets, not track titles; failed replacements cannot relabel
+// working audio. NULL legacy metadata is never reconstructed from storage paths.
+func TestSourceNamesPersistenceAndAccess(t *testing.T) {
+	f := setup(t)
+	v := f.create("Named audio", f.a)
+	path := "/api/v1/songs/" + v.ID
+	for _, tr := range v.Tracks {
+		f.asset(tr.ID, "ready", true)
+	}
+	f.exec(`UPDATE assets SET source_name='Исходник сопрано.wav',source_path='' WHERE track_id=?`, v.Tracks[0].ID)
+	read := func(a actor) Song {
+		t.Helper()
+		w := f.req("GET", path, "", a, nil)
+		expect(t, w, 200)
+		return song(t, w)
+	}
+	assertName := func(v Song) {
+		t.Helper()
+		if v.Tracks[0].SourceName == nil || *v.Tracks[0].SourceName != "Исходник сопрано.wav" || v.Tracks[1].SourceName != nil {
+			t.Fatal("lost name or fabricated legacy name", v.Tracks)
+		}
+	}
+	assertName(read(f.a))
+	assertName(read(f.admin))
+	replacement := f.asset(v.Tracks[0].ID, "processing", false)
+	f.exec(`UPDATE assets SET source_name='Неудачная замена.wav' WHERE id=?`, replacement)
+	assertName(read(f.a))
+	f.exec(`UPDATE assets SET state='failed' WHERE id=?`, replacement)
+	assertName(read(f.a))
+	f.db.Close()
+	f.open()
+	assertName(read(f.a))
+	f.exec(`UPDATE songs SET publication='published' WHERE id=?`, v.ID)
+	outsider := read(f.b)
+	if outsider.Tracks[0].SourceName != nil {
+		t.Fatal("read-only teacher received source metadata")
+	}
+	expect(t, f.req("GET", path, "", actor{}, nil), 401)
+	f.exec(`UPDATE assets SET state='ready' WHERE id=?`, replacement)
+	f.exec(`UPDATE tracks SET active_asset_id=?,pending_asset_id=NULL WHERE id=?`, replacement, v.Tracks[0].ID)
+	updated := read(f.a)
+	if updated.Tracks[0].SourceName == nil || *updated.Tracks[0].SourceName != "Неудачная замена.wav" {
+		t.Fatal("successful replacement did not update name")
+	}
+}

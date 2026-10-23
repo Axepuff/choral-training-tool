@@ -76,7 +76,7 @@ func load(ctx context.Context, q queryer, id string) (Song, error) {
 	if err != nil {
 		return v, err
 	}
-	rows, err := q.QueryContext(ctx, `SELECT t.id,t.position,t.name,t.gain,a.state,a.duration_ms,p.state,
+	rows, err := q.QueryContext(ctx, `SELECT t.id,t.position,t.name,t.gain,a.state,a.duration_ms,p.state,CASE WHEN a.state='ready' THEN a.source_name ELSE p.source_name END,
  (SELECT j.id FROM jobs j WHERE j.asset_id=p.id ORDER BY j.created_at DESC,j.id LIMIT 1)
  FROM tracks t LEFT JOIN assets a ON a.id=t.active_asset_id AND a.track_id=t.id LEFT JOIN assets p ON p.id=t.pending_asset_id AND p.track_id=t.id WHERE t.song_id=? AND t.deleted_at IS NULL ORDER BY t.position`, id)
 	if err != nil {
@@ -89,7 +89,7 @@ func load(ctx context.Context, q queryer, id string) (Song, error) {
 		var t Track
 		var active, pending, job sql.NullString
 		var duration sql.NullInt64
-		if err = rows.Scan(&t.ID, &t.Position, &t.Name, &t.Gain, &active, &duration, &pending, &job); err != nil {
+		if err = rows.Scan(&t.ID, &t.Position, &t.Name, &t.Gain, &active, &duration, &pending, &t.SourceName, &job); err != nil {
 			return v, err
 		}
 		t.Status = "empty"
@@ -155,6 +155,7 @@ func (s *Service) present(ctx context.Context, i *platform.Identity, v Song) Son
 	if !s.Access.CanEditSong(ctx, *i, resource(v)) {
 		for n := range v.Tracks {
 			v.Tracks[n].PendingJob = nil
+			v.Tracks[n].SourceName = nil
 		}
 	}
 	return v

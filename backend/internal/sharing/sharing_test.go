@@ -146,6 +146,7 @@ func (f *fixture) song(owner actor, ready bool) (string, string, string) {
 	f.exec(`INSERT INTO tracks(id,song_id,position,name) VALUES(?,?,0,'Сопрано')`, tr, id)
 	if ready {
 		f.exec(`INSERT INTO assets(id,track_id,source_path,source_bytes,source_sha256,state,playback_path,peaks_path,duration_ms,mime,sample_rate,channels,created_at,updated_at) VALUES(?,?,'private/original',12,?,'ready',?,?,6000,'audio/mp4',48000,1,?,?)`, asset, tr, []byte("fictional hash"), asset+"/media", asset+"/peaks", now, now)
+		f.exec(`UPDATE assets SET source_name='private-source.wav' WHERE id=?`, asset)
 		f.exec(`UPDATE tracks SET active_asset_id=? WHERE id=?`, asset, tr)
 		f.exec(`UPDATE songs SET publication='published' WHERE id=?`, id)
 		f.storage.files[asset+"/media"] = []byte("0123456789")
@@ -186,7 +187,7 @@ func TestScopesRevocationRotationAndMedia(t *testing.T) {
 	for _, v := range []secret{song, list, other} {
 		w := f.req("GET", publicPath(v), "", actor{}, nil)
 		expect(t, w, 200)
-		for _, private := range []string{"ownerId", "pendingJobId", "source_path", "password", "private/original", "updatedAt", "publication", "version"} {
+		for _, private := range []string{"ownerId", "pendingJobId", "sourceName", "private-source.wav", "source_path", "password", "private/original", "updatedAt", "publication", "version"} {
 			if strings.Contains(w.Body.String(), private) {
 				t.Fatalf("leak %s", private)
 			}
@@ -406,6 +407,7 @@ func TestManagementReplayAndFailures(t *testing.T) {
 	f.exec(`UPDATE tracks SET active_asset_id=? WHERE id=?`, foreignAsset, tr)
 	expect(t, f.req("GET", publicPath(v), "", f.admin, nil), 404)
 	expect(t, f.req("GET", mediaPath(list, id, tr), "", f.admin, nil), 404)
+	f.exec(`UPDATE assets SET source_name='private-source.wav' WHERE id=?`, asset)
 	f.exec(`UPDATE tracks SET active_asset_id=? WHERE id=?`, asset, tr)
 	// Session revocation gates management even with a valid CSRF value.
 	f.exec(`UPDATE sessions SET revoked_at=? WHERE user_id=?`, now, f.a.id)

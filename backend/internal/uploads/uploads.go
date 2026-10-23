@@ -14,8 +14,10 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Axepuff/choral-training-tool/backend/internal/auth"
 	"github.com/Axepuff/choral-training-tool/backend/internal/platform"
@@ -251,6 +253,11 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) {
 		fail(w, 422, "validation_error")
 		return
 	}
+	sourceName := part.FileName()
+	if !utf8.ValidString(sourceName) || len(sourceName) > 4096 || strings.ContainsRune(sourceName, 0) {
+		fail(w, 422, "validation_error")
+		return
+	}
 	hash := sha256.New()
 	e = s.store.Stage(ctx, stage, io.TeeReader(part, hash), s.maxFile)
 	if e != nil {
@@ -273,6 +280,7 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "unavailable")
 		return
 	}
+	requestDigest := sha256.Sum256(append(append([]byte(sourceName), 0), hash.Sum(nil)...))
 	// Replay is checked after hashing, before If-Match and pending-state checks.
 	tx, e = s.db.BeginTx(ctx, nil)
 	if e != nil {
@@ -299,7 +307,8 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	if e == nil && expiry > time.Now().UTC().Format(time.RFC3339Nano) {
 		f.Close()
-		if string(digest) != string(hash.Sum(nil)) {
+		// Pre-0005 records hashed only bytes; replay them without inventing names.
+		if string(digest) != string(requestDigest[:]) && string(digest) != string(hash.Sum(nil)) {
 			fail(w, 409, "idempotency_conflict")
 			return
 		}
@@ -384,7 +393,7 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) {
 		state, jobState = "failed", "failed"
 		status = 422
 	}
-	_, e = tx.ExecContext(ctx, `INSERT INTO assets(id,track_id,source_path,source_bytes,source_sha256,duration_ms,sample_rate,channels,source_codec,source_container,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, asset, track, original, st.Size(), hash.Sum(nil), meta.Duration, meta.Rate, meta.Channels, meta.Codec, meta.Container, state, stamp, stamp)
+	_, e = tx.ExecContext(ctx, `INSERT INTO assets(id,track_id,source_path,source_bytes,source_sha256,duration_ms,sample_rate,channels,source_codec,source_container,state,created_at,updated_at,source_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, asset, track, original, st.Size(), hash.Sum(nil), meta.Duration, meta.Rate, meta.Channels, meta.Codec, meta.Container, state, stamp, stamp, sourceName)
 	if e == nil {
 		_, e = tx.ExecContext(ctx, `INSERT INTO jobs(id,asset_id,state,error_code,created_at,updated_at) VALUES(?,?,?,?,?,?)`, job, asset, jobState, nullCode(code), stamp, stamp)
 	}
@@ -406,7 +415,7 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	if e == nil {
 		h, _ := json.Marshal(map[string]string{"ETag": etag, "Location": location})
-		_, e = tx.ExecContext(ctx, `INSERT OR REPLACE INTO idempotency_records(method,url,actor,key,request_digest,status,headers,response_ciphertext,nonce,key_id,expires_at) VALUES('POST',?,?,?,?,?,?,?,?, 'upload-v1',?)`, r.URL.Path, i.UserID, key, hash.Sum(nil), status, string(h), s.key.Seal(nil, nonce, body, aad), nonce, now.Add(24*time.Hour).Format(time.RFC3339Nano))
+		_, e = tx.ExecContext(ctx, `INSERT OR REPLACE INTO idempotency_records(method,url,actor,key,request_digest,status,headers,response_ciphertext,nonce,key_id,expires_at) VALUES('POST',?,?,?,?,?,?,?,?, 'upload-v1',?)`, r.URL.Path, i.UserID, key, requestDigest[:], status, string(h), s.key.Seal(nil, nonce, body, aad), nonce, now.Add(24*time.Hour).Format(time.RFC3339Nano))
 	}
 	if e == nil {
 		_, e = tx.ExecContext(ctx, `DELETE FROM idempotency_records WHERE key_id='upload-v1' AND expires_at<=?`, stamp)

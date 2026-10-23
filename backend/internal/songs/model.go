@@ -21,6 +21,7 @@ var uuid = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a
 var invalid = errors.New("validation_error")
 
 type Track struct {
+	SourceName *string `json:"sourceName,omitempty"`
 	ID         string  `json:"id"`
 	Position   int     `json:"position"`
 	Name       string  `json:"name"`

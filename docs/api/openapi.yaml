@@ -688,6 +688,7 @@ components:
         durationMs: {type: [integer, 'null'], minimum: 1, maximum: 1200000}
         mediaUrl: {type: [string, 'null'], description: Только активный ready asset}
         peaksUrl: {type: [string, 'null'], description: Только активный ready asset}
+        sourceName: {type: string, maxLength: 4096, description: "Исходное имя активного ready asset (иначе pending). Только редактору; отсутствует у старых assets без имени. Максимум 4096 UTF-8 bytes при загрузке; не путь хранения."}
         pendingJobId: {oneOf: [{$ref: '#/components/schemas/Id'}, {type: 'null'}], description: Есть только у редактора}
     Song:
       type: object

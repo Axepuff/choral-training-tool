@@ -22,10 +22,16 @@ export interface CreateSongProps {
   status?: string;
   error?: string;
   onCancel?: () => void;
+  trackStates?: string[] | undefined;
+  publication?: 'draft' | 'published' | undefined;
+  audioReady?: boolean | undefined;
+  canListen?: boolean | undefined;
+  onListen?: (() => void) | undefined;
+  onPublish?: (() => void) | undefined;
 }
 
-function TrackRow({ track, index, onChange }: {
-  track: TrackDraft; index: number; onChange: (track: TrackDraft) => void;
+function TrackRow({ track, index, onChange, state }: {
+  state?: string | undefined; track: TrackDraft; index: number; onChange: (track: TrackDraft) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const id = useId();
@@ -56,11 +62,13 @@ function TrackRow({ track, index, onChange }: {
       {selectedName && (track.file || !track.id) && <button type="button" aria-label={`Убрать файл трека ${index + 1}`}
         onClick={() => { const { file: _file, ...rest } = track; void _file; onChange(track.id ? rest : { name: track.name }); }}>Убрать</button>}
     </div>
+    {track.file && track.existingFileName && <p className={styles.trackStatus}>Сохранённый файл: {track.existingFileName}</p>}
+    {state && <p className={styles.trackStatus} role="status">{state}</p>}
   </div>;
 }
 
 /** Общая форма приложения и stories; сетевой сценарий передаётся через onSave. */
-export function CreateSong({ initialFilled = false, initialSong, onSave, onCancel, live = false, busy = false, status, error }: CreateSongProps) {
+export function CreateSong({ initialFilled = false, initialSong, onSave, onCancel, live = false, busy = false, status, error, trackStates, publication, audioReady, canListen, onListen, onPublish }: CreateSongProps) {
   const id = useId();
   const [title, setTitle] = useState(initialSong?.title ?? (initialFilled ? 'Тихий вечер' : ''));
   const [bpm, setBpm] = useState(String(initialSong?.bpm ?? 84));
@@ -78,11 +86,16 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [live, dirty, busy]);
-  const visibleTracks = tracks.slice(0, count);
+  const visibleTracks = tracks.slice(0, count).map((track, index) => {
+    // Rows can only be appended/trimmed, never reordered. The server assigns IDs
+    // in that order while the form is disabled; preserve local fields and Files.
+    const saved = track.id ? initialSong?.tracks.find(t => t.id === track.id) : initialSong?.tracks[index];
+    return saved ? { ...track, ...(saved.id ? { id: saved.id } : {}), ...(saved.existingFileName ? { existingFileName: saved.existingFileName } : {}) } : track;
+  });
   const selected = visibleTracks.filter((track) => track.file || track.existingFileName).length;
 
   return <main className={styles.shell}>
-    <form className={styles.card} onChange={() => { setMessage(''); setDirty(true); }} onSubmit={(event) => {
+    <form aria-busy={busy} className={styles.card} onChange={() => { setMessage(''); setDirty(true); }} onSubmit={(event) => {
       event.preventDefault();
       if (!title.trim() || visibleTracks.some((track) => !track.name.trim())) {
         setMessage('Укажите название песни и названия всех треков.'); return;
@@ -124,7 +137,7 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
         </div>
         <p className={styles.help}>Один файл на партию. Можно добавить минус.{live && ' Черновик можно сохранить без файлов.'}</p>
         <div className={styles.trackList}>
-          {visibleTracks.map((track, index) => <TrackRow key={index} index={index} track={track} onChange={(updated) => {
+          {visibleTracks.map((track, index) => <TrackRow key={index} state={trackStates?.[index]} index={index} track={track} onChange={(updated) => {
             setTracks((current) => current.map((item, position) => position === index ? updated : item)); setMessage('');
           }} />)}
         </div>
@@ -142,8 +155,13 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
       {message && <p className={styles.message} role="status">{message}</p>}
       {status && <p role="status">{status}</p>}
       {error && <p role="alert">{error}</p>}
+      <div className={styles.actions}>
       <button className={styles.submit} type="submit">{initialSong ? 'Сохранить изменения' : 'Создать песню'}</button>
       {onCancel && <button className={styles.cancel} type="button" onClick={() => { if (!live || !dirty || window.confirm('Отменить несохранённые изменения? Сохранённый черновик останется на сервере.')) { leaving.current = true; onCancel(); } }}>Отмена</button>}
+      {onListen && <button className={styles.cancel} type="button" disabled={!canListen} onClick={onListen}>Слушать песню</button>}
+      {publication && <p className={styles.help}>Публикация: {publication === 'published' ? 'опубликована' : 'черновик'}. {audioReady ? 'Аудио готово.' : 'Есть неготовые дорожки.'}</p>}
+      {onPublish && <button className={styles.cancel} type="button" onClick={onPublish}>{publication === 'draft' ? 'Опубликовать сохранённую песню' : 'Снять публикацию'}</button>}
+      </div>
       </fieldset>
       {!live && <p className={styles.demo}>Демо: файлы остаются на устройстве и не загружаются на сервер.</p>}
     </form>

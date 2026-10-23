@@ -197,9 +197,11 @@ func TestFailuresKeepOriginalAndOldAsset(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			f := setup(t)
 			old := f.add("wav")
+			f.exec(`UPDATE assets SET source_name='working.wav' WHERE id=?`, old.asset)
 			f.r.process(context.Background(), f.claim())
 			oldKey := f.str(`SELECT playback_path FROM assets WHERE id=?`, old.asset)
 			j := f.add("flac")
+			f.exec(`UPDATE assets SET source_name='replacement.flac' WHERE id=?`, j.asset)
 			f.exec(`UPDATE tracks SET pending_asset_id=NULL WHERE id=?`, j.track)
 			f.exec(`UPDATE assets SET track_id=? WHERE id=?`, old.track, j.asset)
 			f.exec(`UPDATE tracks SET pending_asset_id=? WHERE id=?`, j.asset, old.track)
@@ -232,6 +234,9 @@ func TestFailuresKeepOriginalAndOldAsset(t *testing.T) {
 			if !f.exists(j.source) || !f.exists(oldKey) {
 				t.Fatal("lost source/old playback")
 			}
+			if mode != "deleted" && f.str(`SELECT a.source_name FROM tracks t JOIN assets a ON a.id=t.active_asset_id WHERE t.id=?`, old.track) != "working.wav" {
+				t.Fatal("failed replacement changed working filename")
+			}
 			if mode != "deleted" && f.str(`SELECT active_asset_id FROM tracks WHERE id=?`, old.track) != old.asset {
 				t.Fatal("replaced on failure")
 			}
@@ -246,6 +251,9 @@ func TestFailuresKeepOriginalAndOldAsset(t *testing.T) {
 				f.r.process(context.Background(), f.claim())
 				if f.str(`SELECT active_asset_id FROM tracks WHERE id=?`, old.track) != j.asset {
 					t.Fatal("retry failed")
+				}
+				if f.str(`SELECT a.source_name FROM tracks t JOIN assets a ON a.id=t.active_asset_id WHERE t.id=?`, old.track) != "replacement.flac" {
+					t.Fatal("successful retry lost filename")
 				}
 				if f.exists(j.source) {
 					t.Fatal("original remains")
@@ -758,9 +766,11 @@ func TestDecodeIOFailureRetries(t *testing.T) {
 		t.Run(phase, func(t *testing.T) {
 			f := setup(t)
 			old := f.add("wav")
+			f.exec(`UPDATE assets SET source_name='working.wav' WHERE id=?`, old.asset)
 			f.r.process(context.Background(), f.claim())
 			oldKey := f.str(`SELECT playback_path FROM assets WHERE id=?`, old.asset)
 			j := f.add("flac")
+			f.exec(`UPDATE assets SET source_name='replacement.flac' WHERE id=?`, j.asset)
 			f.exec(`UPDATE tracks SET pending_asset_id=NULL WHERE id=?`, j.track)
 			f.exec(`UPDATE assets SET track_id=? WHERE id=?`, old.track, j.asset)
 			f.exec(`UPDATE tracks SET pending_asset_id=? WHERE id=?`, j.asset, old.track)
@@ -818,9 +828,11 @@ func TestResultProbeFailureRetries(t *testing.T) {
 		t.Run(phase, func(t *testing.T) {
 			f := setup(t)
 			old := f.add("wav")
+			f.exec(`UPDATE assets SET source_name='working.wav' WHERE id=?`, old.asset)
 			f.r.process(context.Background(), f.claim())
 			oldKey := f.str(`SELECT playback_path FROM assets WHERE id=?`, old.asset)
 			j := f.add("flac")
+			f.exec(`UPDATE assets SET source_name='replacement.flac' WHERE id=?`, j.asset)
 			f.exec(`UPDATE tracks SET pending_asset_id=NULL WHERE id=?`, j.track)
 			f.exec(`UPDATE assets SET track_id=? WHERE id=?`, old.track, j.asset)
 			f.exec(`UPDATE tracks SET pending_asset_id=? WHERE id=?`, j.asset, old.track)
