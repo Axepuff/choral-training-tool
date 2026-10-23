@@ -17,6 +17,8 @@
     "test:agent-queue": "node --test scripts/agent-queue/queue.test.mjs",
     "test:agent-cli": "node --test scripts/agent-queue/codex-config.check.mjs",
     "test:auth": "node --test tests/auth.test.mjs",
+    "test:audio": "node --test tests/audio.test.mjs tests/mp4.test.mjs",
+    "test:audio:browser": "node tests/audio-browser.mjs",
     "test:auth:browser": "cd backend && CHORAL_BROWSER_TEST=true go test -count=1 ./internal/auth -run TestFrontendBrowser -v"
   },
   "dependencies": {

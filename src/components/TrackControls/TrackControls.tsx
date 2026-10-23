@@ -15,6 +15,7 @@ export interface TrackControlsProps {
   solo: boolean;
   /** Блокирует управление и показывает состояние загрузки. */
   loading?: boolean;
+  disabled?: boolean;
   /** Цвет фейдера партии. */
   tone?: TrackTone;
   /** Вертикальный фейдер для компактного микшера или горизонтальный ползунок. */
@@ -26,7 +27,7 @@ export interface TrackControlsProps {
 
 /** Управление одной партией. Состояние принадлежит приложению или story. */
 export function TrackControls({
-  name, volume, muted, solo, loading = false, tone = 'soprano', orientation = 'horizontal',
+  name, volume, muted, solo, loading = false, disabled = false, tone = 'soprano', orientation = 'horizontal',
   onVolumeChange, onMuteChange, onSoloChange,
 }: TrackControlsProps) {
   const volumeId = useId();
@@ -44,18 +45,18 @@ export function TrackControls({
           type="button" className={`${styles.toggle} ${styles.solo}`}
           aria-label={`Solo: ${name}`} aria-pressed={solo}
           title={`Solo — слушать только выбранные партии (${name})`}
-          disabled={loading} onClick={() => { if (!solo && muted) onMuteChange(false); onSoloChange(!solo); }}
+          disabled={loading || disabled} onClick={() => { if (!solo && muted) onMuteChange(false); onSoloChange(!solo); }}
         >S</button>
         <button
           type="button" className={`${styles.toggle} ${styles.mute}`}
           aria-label={`Mute: ${name}`} aria-pressed={muted}
           title={`Mute — выключить партию (${name})`}
-          disabled={loading} onClick={() => { if (!muted && solo) onSoloChange(false); onMuteChange(!muted); }}
+          disabled={loading || disabled} onClick={() => { if (!muted && solo) onSoloChange(false); onMuteChange(!muted); }}
         >M</button>
         <label className="visually-hidden" htmlFor={volumeId}>Громкость: {name}</label>
         <input
           id={volumeId} className={styles.volume} type="range" min="0" max="100" step="1"
-          value={safeVolume} aria-valuetext={`${safeVolume}%`} aria-orientation={orientation} disabled={loading}
+          value={safeVolume} aria-valuetext={`${safeVolume}%`} aria-orientation={orientation} disabled={loading || disabled}
           style={rangeStyle} onChange={(event) => onVolumeChange(Number(event.currentTarget.value))}
         />
         <output className={styles.value} htmlFor={volumeId}>{safeVolume}<span className="visually-hidden">%</span></output>

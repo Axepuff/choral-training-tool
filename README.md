@@ -232,3 +232,7 @@ Frontend auth runtime, локальный dev proxy, явный режим де�
 Интеграция списка, формы, загрузки и публичных ссылок с реальным Go API:
 [сценарии и проверки Issue #10](docs/frontend-songs.md). Runtime не использует
 fixtures; Pages/Storybook остаются явным demo. Реальный audio engine — Issue #11.
+
+Реальный Web Audio плеер с оконной Range-загрузкой 1–32 дорожек до 20 минут,
+команды поведенческих проверок, границы памяти и
+проверенные браузеры: [docs/audio-player.md](docs/audio-player.md).

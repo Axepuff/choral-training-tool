@@ -8,6 +8,7 @@ import { createShare, listShares, revokeShare, rotateShare } from '../../api/sha
 import type { Share } from '../../api/shares';
 import { CreateSong } from '../CreateSong/CreateSong';
 import type { SongFormValue } from '../CreateSong/CreateSong';
+import { RehearsalPlayer } from '../RehearsalPlayer/RehearsalPlayer';
 import { SongLibrary } from './SongLibrary';
 import styles from './SongLibrary.module.css';
 const message = (e: unknown) => e instanceof ApiError && ['version_conflict', 'precondition_failed'].includes(e.problem.code)
@@ -49,6 +50,7 @@ function SharePanel({ owner, songId, close }: { owner: string; songId?: string; 
 }
 
 function SongEditor({ id, close, user }: { id: string | null; close: () => void; user: User }) {
+  const [listen, setListen] = useState(() => new URLSearchParams(window.location.search).get("play") === "1");
   const [song, setSong] = useState<Song | null>(null);
   const [loaded, setLoaded] = useState(!id);
   const [error, setError] = useState('');
@@ -140,15 +142,14 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
     } finally { setBusy(false); }
   }
   if (!loaded) return <main className={styles.page}>{error ? <p role="alert">{error}</p> : <p role="status">Загрузка песни…</p>}<button onClick={close}>Песни</button></main>;
-  if (song && user.role !== 'admin' && song.ownerId !== user.id) return <main className={styles.page}><div className={styles.content}>
-    <h1>{song.title}</h1><p>{song.bpm} BPM · {song.beatsPerBar}/{song.beatUnit}</p>
-    <ul>{song.tracks.map(t => <li key={t.id}>{t.name}</li>)}</ul><p>{song.notes}</p>
-    <p>Доступно только чтение. Воспроизведение — отдельная задача #11.</p><button onClick={close}>Песни</button>
-  </div></main>;
+  if (song && (listen || (user.role !== 'admin' && song.ownerId !== user.id))) return <>
+    <RehearsalPlayer key={song.id} song={song} />{(user.role === "admin" || song.ownerId === user.id) && <button onClick={() => setListen(false)}>К редактированию</button>}<button onClick={close}>Песни</button>
+  </>;
   return <>
     <CreateSong key={epoch} live busy={busy} status={status} error={error} {...(song ? { initialSong: songForm(song) } : {})} onSave={save} onCancel={close} />
     {song && <div className={styles.editorActions}>
       <ul aria-label="Состояния дорожек">{song.tracks.map(t => <li key={t.id}>{t.name}: {t.pendingJobId && jobs[t.pendingJobId] === 'failed' ? 'ошибка обработки — повторите или замените файл' : t.pendingJobId && ['queued', 'processing'].includes(jobs[t.pendingJobId] ?? '') ? 'обработка' : t.status === 'ready' ? 'готово' : t.status === 'failed' ? 'ошибка обработки — повторите или замените файл' : t.status === 'empty' ? 'файл не загружен' : 'обработка'}{t.mediaUrl && t.pendingJobId ? ' · старая готовая дорожка доступна' : ''}</li>)}</ul>
+      <button onClick={() => setListen(true)}>Слушать песню</button>
       <p>Публикация: {song.publication === 'published' ? 'опубликована' : 'черновик'}. {song.ready ? 'Аудио готово.' : 'Есть неготовые дорожки.'}</p>
       <button disabled={busy} onClick={async () => {
         setBusy(true); setError(''); setStatus('');
@@ -183,7 +184,7 @@ export function LiveLibrary({ user, create, editId }: { user: User; create: bool
   if (create || editId) return <SongEditor user={user} id={editId} close={() => { window.location.href = '?page=library'; }} />;
   return <>
     <SongLibrary role={user.role} songs={songs.map(s => ({ id: s.id, title: s.title, bpm: s.bpm, meter: `${s.beatsPerBar}/${s.beatUnit}`, tracks: s.tracks.length, bars: 4, owner: s.ownerId, updatedAt: s.updatedAt, shared: s.publication === 'published' && s.ready }))}
-      loading={loading} error={error} songHref={id => `?page=edit-song&id=${id}`} live={{
+      loading={loading} error={error} songHref={id => `?page=edit-song&id=${id}&play=1`} live={{
         canEdit: s => user.role === 'admin' || s.owner === user.id,
         onEdit: id => { window.location.href = `?page=edit-song&id=${id}`; },
         onShare: id => { const song = songs.find(s => s.id === id); setSharing(song ? { owner: song.ownerId, songId: song.id } : { owner: user.id }); },

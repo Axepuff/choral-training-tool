@@ -127,3 +127,13 @@ fixtures; runtime fallback на моки отсутствует. Songs/forms —
 публикация и публичные ссылки подключены к существующему API. Реальные Chrome +
 Go/SQLite/FFmpeg проверки и ограничения описаны в [frontend-songs.md](frontend-songs.md).
 Плеер/звук остаётся #11. Commit/PR/merge выполняет контроллер очереди.
+
+## Локальный результат Issue #11
+
+Подключены реальные session/public media и peaks, синхронный Web Audio transport,
+микшер 1–32 произвольных ID и общий курсор. Поведенческие проверки и ограничения —
+[audio-player.md](audio-player.md). Оконная Range-загрузка поддерживает 32 дорожки
+по 20 минут без хранения полного PCM; исправлен неизменяемый all-solo reset.
+Полная приёмка заблокирована проверкой физических iOS/Android; Linux Chrome
+и детерминированные проверки не заменяют mobile smoke.
+Loop range/метроном остаются #12. Commit/PR/merge выполняет контроллер очереди.

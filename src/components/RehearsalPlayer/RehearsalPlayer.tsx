@@ -1,13 +1,18 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { TrackControls } from '../TrackControls/TrackControls';
 import type { TrackTone } from '../TrackControls/TrackControls';
 import { barDuration, formatTime, mockScore, mockTracks } from './mockScore';
-import type { MockTrack } from './mockScore';
+import { updateMix } from '../../audio/engine';
+import type { AudioSong, Mix } from '../../audio/engine';
+import { useAudio } from '../../audio/useAudio';
+import type { Wave } from '../../audio/useAudio';
 import { PlayerIcon } from './PlayerIcon';
 import styles from './RehearsalPlayer.module.css';
 
 export interface RehearsalPlayerProps {
+  song?: AudioSong;
+  publicAccess?: boolean;
   /** Название выбранной песни в демонстрационной библиотеке. */
   pieceTitle?: string;
   /** Длина демонстрационного фрагмента. */
@@ -21,22 +26,54 @@ export interface RehearsalPlayerProps {
 }
 
 /** Мобильный макет репетиции. Приложение и Storybook используют этот же компонент. */
-export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initialLoop = false, bars = 4, pieceTitle = mockScore.title }: RehearsalPlayerProps) {
+export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initialLoop = false, bars = 4, pieceTitle = mockScore.title, song, publicAccess = false }: RehearsalPlayerProps) {
   const positionId = useId();
   const timelineRef = useRef<HTMLDivElement>(null);
-  const duration = bars * barDuration;
-  const [tracks, setTracks] = useState(mockTracks);
+  const bpm = song?.bpm ?? mockScore.bpm;
+  const beatsPerBar = song?.beatsPerBar ?? mockScore.beatsPerBar;
+  const beatUnit = song?.beatUnit ?? 4;
+  const realBarDuration = 60 * beatsPerBar * 4 / (bpm * beatUnit);
+  const duration = song ? (song.durationMs ?? 0) / 1000 : bars * barDuration;
+  const count = song ? Math.max(1, Math.ceil(duration / realBarDuration)) : bars;
+  const audio = useAudio(song, publicAccess);
+  const [storedTracks, setTracks] = useState(() => song ? song.tracks.map((t, i) => ({ id: t.id, name: t.name, volume: t.gain * 100, muted: false, solo: false, waveform: [] as number[], tone: (['soprano', 'alto', 'tenor', 'bass', 'backing'] as TrackTone[])[i % 5]! })) : mockTracks.map(t => ({ ...t, tone: t.id })));
+  const tracks = useMemo(() => storedTracks.map(track => {
+    const status = audio.states[track.id];
+    return song && status && status !== 'Загрузка…' && !status.startsWith('Готово')
+      ? { ...track, solo: false } : track;
+  }), [storedTracks, audio.states, song]);
   const [time, setTime] = useState(() => Math.min(duration, Math.max(0, initialTime)));
   const [playing, setPlaying] = useState(initialPlaying);
+  const [pendingPlayback, setPendingPlayback] = useState(false);
   const [loop, setLoop] = useState(initialLoop);
   const [metronome, setMetronome] = useState(false);
   const isPlaying = playing && time < duration;
-  const loopStart = barDuration;
-  const loopEnd = barDuration * 3;
+  const playbackLoading = audio.loading || (pendingPlayback && !audio.retryRequired);
+  const playbackLabel = playbackLoading ? 'Загрузка аудио' : audio.retryRequired ? 'Повторить подключение аудио' : isPlaying ? 'Пауза' : 'Воспроизвести';
+  const mix = Object.fromEntries(tracks.map(t => [t.id, t]));
+  const loopStart = realBarDuration;
+  const loopEnd = Math.min(duration, realBarDuration * 3);
   const hasSolo = tracks.some((track) => track.solo);
   const currentBeat = Math.floor(time * mockScore.bpm / 60) % mockScore.beatsPerBar;
 
   useEffect(() => {
+    if (song) {
+      let frame: number, lastUpdate = -Infinity;
+      const tick = (now: number) => {
+        const engine = audio.engine.current;
+        // Read the audio clock at 20 Hz without reconciling a long score on
+        // every display frame; audio scheduling keeps its own clock.
+        if (engine && now - lastUpdate >= 50) {
+          lastUpdate = now;
+          if (engine.playing && engine.position >= duration) engine.pause();
+          setTime(engine.position); setPlaying(engine.playing);
+          setPendingPlayback(engine.playbackRequested && !engine.playing);
+        }
+        frame = requestAnimationFrame(tick);
+      };
+      frame = requestAnimationFrame(tick);
+      return () => cancelAnimationFrame(frame);
+    }
     if (!isPlaying) return;
     let previous = performance.now();
     const timer = window.setInterval(() => {
@@ -50,38 +87,83 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
       });
     }, 50);
     return () => window.clearInterval(timer);
-  }, [isPlaying, loop, loopEnd, loopStart, duration]);
+  }, [isPlaying, loop, loopEnd, loopStart, duration, song, audio.engine]);
 
   useEffect(() => {
     const viewport = timelineRef.current;
     if (!viewport) return;
-    const cursor = time / duration * viewport.scrollWidth;
+    const cursor = time / (duration || 1) * viewport.scrollWidth;
     if (cursor < viewport.scrollLeft || cursor > viewport.scrollLeft + viewport.clientWidth - 12) {
       viewport.scrollLeft = Math.max(0, cursor - viewport.clientWidth / 4);
     }
   }, [time, duration]);
 
-  function updateTrack(id: TrackTone, patch: Partial<Pick<MockTrack, 'volume' | 'muted' | 'solo'>>) {
-    setTracks((current) => {
-      const updated = current.map((track) => track.id === id ? { ...track, ...patch } : track);
-      return updated.every((track) => track.solo)
-        ? updated.map((track) => ({ ...track, solo: false }))
-        : updated;
-    });
+  useEffect(() => {
+    audio.engine.current?.setMix(Object.fromEntries(tracks.map(t => [t.id, t])));
+  }, [tracks, audio.engine]);
+
+  function updateTrack(id: string, patch: Partial<Mix>) {
+    const updated = updateMix(mix, id, patch);
+    setTracks(tracks.map(t => ({ ...t, ...updated[t.id]! })));
+  }
+  function seek(value: number) {
+    if (song) {
+      if (audio.engine.current?.playbackRequested) setPendingPlayback(true);
+      void audio.run(e => e.seek(value, mix));
+    }
+    else setTime(value);
+  }
+  function togglePlayback() {
+    if (song) {
+      if (audio.retryRequired) {
+        setPendingPlayback(false);
+        audio.retryInitialization();
+        return;
+      }
+      const engine = audio.engine.current;
+      if (!engine || (engine.playbackRequested && !engine.playing)) return;
+      if (engine.playing) engine.pause();
+      else {
+        setPendingPlayback(true);
+        void audio.run(e => e.play(mix));
+      }
+    } else {
+      if (!isPlaying && time >= duration) setTime(0);
+      setPlaying(!isPlaying);
+    }
   }
 
-  function togglePlayback() {
-    if (!isPlaying && time >= duration) setTime(0);
-    setPlaying(!isPlaying);
-  }
+  // Neither the cursor nor Solo/Mute changes geometry. Cache each immutable
+  // peaks response so loading another track does not rebuild all earlier paths.
+  const waveCache = useMemo(() => ({ duration, paths: new WeakMap<Wave, string>() }), [duration]);
+  const wavePaths = useMemo(() => Object.fromEntries((song
+    ? song.tracks.map(track => ({ id: track.id, waveform: [] as number[] })) : mockTracks).map(track => {
+    const wave = audio.waves[track.id];
+    if (wave) {
+      const cached = waveCache.paths.get(wave);
+      if (cached !== undefined) return [track.id, cached];
+      const upper = wave.points.map((p, i) => `${i * wave.stepMs / duration},${50 - p[1] * 46}`).join(' ');
+      const lower = wave.points.map((p, i) => `${Math.min(wave.durationMs, (i + 1) * wave.stepMs) / duration},${50 - p[0] * 46}`).reverse().join(' ');
+      const points = `${upper} ${lower}`;
+      waveCache.paths.set(wave, points);
+      return [track.id, points];
+    }
+    if (song) return [track.id, ''];
+    const waveform = Array.from({ length: 24 * bars }, (_, i) => track.waveform[i % track.waveform.length] ?? 0);
+    const upper = waveform.map((height, i) => `${i / (waveform.length - 1) * 1000},${50 - height * 0.46}`).join(' ');
+    const lower = waveform.map((height, i) => `${i / (waveform.length - 1) * 1000},${50 + height * 0.46}`).reverse().join(' ');
+    return [track.id, `${upper} ${lower}`];
+  })), [audio.waves, duration, bars, song, waveCache]);
+  const barNumbers = useMemo(() => Array.from({ length: count }, (_, index) =>
+    <span key={index} style={song ? { flex: `0 0 ${realBarDuration / (duration || 1) * 100}%` } : undefined}>{index + 1}</span>
+  ), [count, realBarDuration, duration, song]);
 
   const gridStyle = {
-    '--bars': bars,
-    '--timeline-width': `${bars * 76}px`,
+    '--bars': song && duration ? duration / realBarDuration : count,
+    '--timeline-width': `${Math.min(count * 76, 100000)}px`,
     '--loop-left': `${100 / bars}%`,
     '--loop-width': `${200 / bars}%`,
-    '--beats': bars * mockScore.beatsPerBar,
-    '--position': `${time / duration * 100}%`,
+    '--beats': song ? duration / realBarDuration * beatsPerBar : count * beatsPerBar,
   } as CSSProperties;
 
   return (
@@ -89,36 +171,36 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
       <section className={styles.player} aria-label="Плеер репетиции">
         <header className={styles.scoreHeader}>
           <p className={styles.eyebrow}>Моя репетиция</p>
-          <h1 className={styles.title}>{pieceTitle}</h1>
+          <h1 className={styles.title}>{song?.title ?? pieceTitle}</h1>
           <div className={styles.metadata}>
-            <span className={styles.pill}>{mockScore.bpm} BPM</span>
-            <span className={styles.pill}>{mockScore.beatsPerBar}/4</span>
-            <span className={styles.subtitle}>{`Учебный фрагмент · ${bars} ${bars === 4 ? 'такта' : 'тактов'}`}</span>
+            <span className={styles.pill}>{bpm} BPM</span>
+            <span className={styles.pill}>{beatsPerBar}/{beatUnit}</span>
+            <span className={styles.subtitle}>{`${song ? "Песня" : "Учебный фрагмент"} · ${count} ${bars === 4 ? 'такта' : 'тактов'}`}</span>
           </div>
         </header>
 
         <div className={styles.transport} aria-label="Управление воспроизведением">
           <div className={styles.playback}>
-            <button className={styles.iconButton} type="button" aria-label="Вернуться к началу" title="Вернуться к началу" onClick={() => setTime(0)}>
+            <button className={styles.iconButton} type="button" aria-label="Вернуться к началу" title="Вернуться к началу" onClick={() => seek(0)}>
               <PlayerIcon name="restart" />
             </button>
-            <button className={styles.playButton} type="button" aria-label={isPlaying ? 'Пауза' : 'Воспроизвести'} title={isPlaying ? 'Пауза' : 'Воспроизвести'} onClick={togglePlayback}>
-              <PlayerIcon name={isPlaying ? 'pause' : 'play'} />
+            <button className={styles.playButton} disabled={playbackLoading} type="button" aria-label={playbackLabel} aria-busy={playbackLoading} title={playbackLabel} onClick={togglePlayback}>
+              <PlayerIcon name={isPlaying && !playbackLoading ? 'pause' : 'play'} />
             </button>
             <span className={styles.time} aria-label={`${formatTime(time)} из ${formatTime(duration)}`}>
               {formatTime(time)} <span>/ {formatTime(duration)}</span>
             </span>
           </div>
           <div className={styles.options}>
-            <button className={styles.optionButton} type="button" aria-label="Повтор фрагмента" aria-pressed={loop} title="Повторить такты 2–3" onClick={() => setLoop(!loop)}>
+            <button className={styles.optionButton} type="button" aria-label="Повтор фрагмента" aria-pressed={loop} disabled={!!song} title={song ? "Выбор диапазона повтора пока недоступен" : "Повторить такты 2–3"} onClick={() => setLoop(!loop)}>
               <PlayerIcon name="loop" /><span>Повтор</span>
             </button>
-            <button className={styles.optionButton} type="button" aria-label="Метроном" aria-pressed={metronome} title="Визуальный метроном" onClick={() => setMetronome(!metronome)}>
+            <button className={styles.optionButton} type="button" aria-label="Метроном" aria-pressed={metronome} disabled={!!song} title={song ? "Метроном пока недоступен" : "Визуальный метроном"} onClick={() => setMetronome(!metronome)}>
               <PlayerIcon name="metronome" /><span>Метроном</span>
             </button>
           </div>
           <div className={styles.transportStatus}>
-            <span>{loop ? 'Повтор: такты 2–3' : `Все партии · ${bars} ${bars === 4 ? 'такта' : 'тактов'}`}</span>
+            <span role="status">{playbackLoading ? 'Загрузка аудио…' : loop ? 'Повтор: такты 2–3' : `Все партии · ${count} ${bars === 4 ? 'такта' : 'тактов'}`}</span>
             {metronome && <span className={styles.beats} aria-label="Визуальный метроном">
               {Array.from({ length: mockScore.beatsPerBar }, (_, index) => <i key={index} data-active={isPlaying && index === currentBeat} />)}
             </span>}
@@ -128,49 +210,55 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
         <section className={styles.timeline} style={gridStyle} aria-label="Общий таймлайн партий">
           <div className={styles.timelineViewport} ref={timelineRef} tabIndex={0} role="region" aria-label="Прокрутка тактов">
           <div className={styles.timelineContent}>
-          <div className={styles.barNumbers} aria-hidden="true">
-            {Array.from({ length: bars }, (_, index) => <span key={index}>{index + 1}</span>)}
+          <div className={styles.barNumbers} style={song ? { display: "flex", overflow: "hidden" } : undefined} aria-hidden="true">
+            {barNumbers}
           </div>
           <div className={styles.waveStack}>
             <svg className={styles.waves} viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true">
               {tracks.map((track) => {
                 const quiet = track.muted || track.volume === 0 || (hasSolo && !track.solo);
-                const waveform = Array.from({ length: 24 * bars }, (_, index) => (track.waveform[index % track.waveform.length] ?? 0));
-                const upper = waveform.map((height, index) => `${index / (waveform.length - 1) * 1000},${50 - height * 0.46}`).join(' ');
-                const lower = waveform.map((height, index) => `${index / (waveform.length - 1) * 1000},${50 + height * 0.46}`).reverse().join(' ');
-                return <polygon key={track.id} points={`${upper} ${lower}`} data-quiet={quiet} data-track={track.id}
-                  style={{ '--wave-color': `var(--color-${track.id})` } as CSSProperties}
+                return <polygon key={track.id} points={wavePaths[track.id]} data-quiet={quiet} data-track={track.name.toLowerCase() === "минус" ? "backing" : track.id}
+                  style={{ '--wave-color': `var(--color-${track.tone})` } as CSSProperties}
                   vectorEffect="non-scaling-stroke" />;
               })}
             </svg>
             {loop && <div className={styles.loopRegion} aria-hidden="true" />}
-            <div className={styles.cursor} aria-hidden="true"><span /></div>
+            <div className={styles.cursor} style={{ '--position': `${time / (duration || 1) * 100}%` } as CSSProperties} aria-hidden="true"><span /></div>
           </div>
           </div>
           </div>
           <label className="visually-hidden" htmlFor={positionId}>Позиция воспроизведения</label>
           <input className={styles.seek} id={positionId} type="range" min="0" max={duration} step="0.01" value={time}
             aria-valuetext={`${formatTime(time)} из ${formatTime(duration)}`}
-            onChange={(event) => setTime(Number(event.currentTarget.value))} />
+            onChange={(event) => seek(Number(event.currentTarget.value))} />
         </section>
 
+        {audio.error && <p role="alert">{audio.error}</p>}
+        {import.meta.env.DEV && Object.keys(audio.diagnostics).length > 0 && <details className={styles.diagnostics}>
+          <summary>Диагностика воспроизведения</summary>
+          <pre>{JSON.stringify(Object.values(audio.diagnostics), null, 2)}</pre>
+        </details>}
         <section className={styles.mixerSection} aria-label="Микшер партий">
           <div className={styles.mixer}>
             {tracks.map((track) => (
               <div className={styles.channel} key={track.id} role="group" aria-label={`Партия: ${track.name}`}>
                 <TrackControls
-                  name={track.name} volume={track.volume} muted={track.muted} solo={track.solo} tone={track.id}
+                  loading={!!song && audio.states[track.id] === "Загрузка…"}
+                  disabled={!!song && !audio.states[track.id]?.startsWith("Готово")}
+                  name={track.name} volume={track.volume} muted={track.muted} solo={track.solo} tone={track.tone}
                   orientation="vertical"
                   onVolumeChange={(volume) => updateTrack(track.id, { volume })}
                   onMuteChange={(muted) => updateTrack(track.id, { muted })}
                   onSoloChange={(solo) => updateTrack(track.id, { solo })}
                 />
+                {song && <small role="status">{audio.states[track.id] ?? "Ожидание…"}</small>}
               </div>
             ))}
           </div>
         </section>
 
       </section>
+      {song?.notes && <p>{song.notes}</p>}
       <p className={styles.hint}><strong>S</strong> — слушать выбранные партии <span>·</span> <strong>M</strong> — выключить партию</p>
     </main>
   );

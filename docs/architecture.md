@@ -171,3 +171,10 @@ Worker проверяет также muxers/фильтры для peaks; пос�
 общие компоненты формы/списка с сервером. Metadata PUT и upload/jobs — отдельные
 транзакции с явными частичными ошибками; серверная версия и active asset не
 подменяются локальными данными. Поведение и проверки: [frontend-songs.md](frontend-songs.md).
+
+## Audio player (Issue #11)
+
+Runtime использует Web Audio общий clock, реальные media/peaks и сохранённые
+метаданные, без дополнительных зависимостей. Ошибки отдельных дорожек видимы;
+моки остаются в demo/stories. Оконное декодирование AAC через Range, общий clock, bounded PCM, проверки
+и ограничения мобильной верификации: [audio-player.md](audio-player.md).
