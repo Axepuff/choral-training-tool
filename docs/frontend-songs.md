@@ -74,18 +74,19 @@ npm run test:auth
 VITE_APP_DEMO=true npm run build
 node scripts/assemble-pages.mjs
 npm run build
-# В backend/, Go версии из go.mod; Chrome, FFprobe/FFmpeg в PATH:
-CHORAL_BROWSER_TEST=true go test -count=1 ./internal/songs -run TestSongsFrontendBrowser -v
-CHORAL_BROWSER_TEST=true go test -count=1 ./internal/auth -run TestFrontendBrowser -v
+# Из корня, Go версии из go.mod; Chrome, FFprobe/FFmpeg в PATH:
+npm run test:stories
+npm run test:e2e
 ```
 
 Songs browser test использует отдельные временные SQLite/Storage, вымышленные
 аккаунты, созданный в /tmp настоящий WAV и реальный worker. Он проверяет
 create → upload → ready → edit → reload → guest song/list, ошибки замены,
 conflict/retry, offline/focus, owner/admin/чужой teacher, отзыв/ротацию, Unicode,
-отмену и ширины 320/360/800 landscape/1280. Auth browser regression запускает
-также play-функции 26 затронутых stories; сборка Storybook сама их не запускает.
-Всего теперь 38 stories: новые loading/error списка и processing/error формы.
+отмену и ширины 320/360/800 landscape/1280. В Issue #15 play-функции всех актуальных stories запускает отдельный общий runner
+`npm run test:stories`; число берётся из собранного индекса, а не закрепляется.
+Текущие команды и результаты — [e2e.md](e2e.md). Описание ограничений ниже относится
+к историческому срезу Issue #10.
 
 Реальный audio engine остаётся #11. Страница чтения показывает метаданные и
 явно сообщает, что воспроизведение ещё не подключено. Backend endpoints,
@@ -157,7 +158,7 @@ vet ./..., build ./..., полный TestSongsFrontendBrowser (включая 32
 Полный TestFrontendBrowser остановился раньше stories: старый селектор заметок
 `main p:nth-of-type(2)` отсутствует в текущем публичном плеере (#11). Это ограничение
 общего auth harness; stories можно воспроизвести отдельно:
-`CHORAL_STORIES_ONLY=true node tests/auth-browser.mjs` (после сборки Storybook и Pages demo).
+`npm run test:stories` (после сборки Storybook). Issue #15 выделяет общий runner для всех актуальных stories; Pages demo проверяется внутри `npm run test:e2e`.
 Первый запуск songs harness не поднял Vite во время npm ci; после завершения установки
 полный прогон прошёл. Новых физических мобильных прогонов не заявлено.
 

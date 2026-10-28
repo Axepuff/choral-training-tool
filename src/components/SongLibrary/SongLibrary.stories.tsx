@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, userEvent, within } from 'storybook/test';
+import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test';
 import { mockSongs } from './mockSongs';
 import { SongLibrary } from './SongLibrary';
 
@@ -13,7 +13,13 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = { name: 'Песни' };
 export const Mobile: Story = { name: 'Мобильный · 360 px', globals: { viewport: { value: 'mobile360', isRotated: false } } };
 export const Admin: Story = { name: 'Администратор', args: { role: 'admin' } };
-export const Empty: Story = { name: 'Пока нет песен', args: { songs: [] } };
+export const Empty: Story = { name: 'Пока нет песен', args: { songs: [] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('heading', { name: 'Пока нет песен' })).toBeVisible();
+    await expect(canvas.queryByRole('list', { name: 'Песни' })).not.toBeInTheDocument();
+  },
+};
 export const NoResults: Story = { name: 'Ничего не найдено', args: { initialQuery: 'Неизвестная песня' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -26,10 +32,12 @@ export const Search: Story = { name: 'Поиск и сортировка',
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const search = canvas.getByRole('searchbox', { name: 'Найти песню' });
-    await userEvent.type(search, 'ТИХИЙ');
-    await expect(canvas.getAllByRole('listitem')).toHaveLength(1);
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'ТИХИЙ');
+    fireEvent.input(search, { bubbles: true });
+    await waitFor(() => expect(canvas.getAllByRole('listitem')).toHaveLength(1));
     await expect(canvas.getByRole('link', { name: 'Открыть: Тихий вечер' })).toBeVisible();
-    await userEvent.clear(search);
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, '');
+    fireEvent.input(search, { bubbles: true });
     await userEvent.selectOptions(canvas.getByRole('combobox', { name: 'Порядок песен' }), 'title');
     await expect(within(canvas.getAllByRole('listitem')[0]!).getByRole('link', { name: 'Открыть: Дорога домой' })).toBeVisible();
   },
@@ -63,7 +71,8 @@ export const SaveChanges: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole('button', { name: 'Редактировать: Тихий вечер' }));
     const title = canvas.getByRole('textbox', { name: 'Название песни' });
-    await userEvent.clear(title); await userEvent.type(title, 'Вечерняя песня');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(title, 'Вечерняя песня');
+    fireEvent.input(title, { bubbles: true });
     await userEvent.click(canvas.getByRole('button', { name: 'Сохранить изменения' }));
     await expect(canvas.getByRole('link', { name: 'Открыть: Вечерняя песня' })).toBeVisible();
     await expect(canvas.getByRole('status')).toHaveTextContent('Изменения сохранены в макете');

@@ -2,6 +2,9 @@ package songs_test
 
 import (
 	"context"
+	"io"
+	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -41,6 +44,12 @@ func TestSongsFrontendBrowser(t *testing.T) {
 	t.Setenv("CHORAL_TEST_PROBE_MARKER", marker)
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin := "http://" + listener.Addr().String()
+	t.Cleanup(func() { _ = listener.Close() })
 	dir := t.TempDir()
 	db, err := platform.OpenDatabase(ctx, dir)
 	if err != nil {
@@ -64,7 +73,7 @@ func TestSongsFrontendBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	identity, err := auth.New(db, "http://127.0.0.1:5179", true)
+	identity, err := auth.New(db, origin, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,10 +107,24 @@ func TestSongsFrontendBrowser(t *testing.T) {
 	metadata.Register(mux)
 	upload.Register(mux)
 	share.Register(mux)
-	server := httptest.NewServer(mux)
+	staticDir := filepath.Join("..", "..", "..", "dist", "e2e-runtime")
+	if err := platform.ValidateFrontend(staticDir); err != nil {
+		t.Fatal(err)
+	}
+	service := platform.NewService(platform.Config{StaticDir: staticDir}, db,
+		slog.New(slog.NewTextHandler(io.Discard, nil)), func(root *http.ServeMux) {
+			root.Handle("/api/v1/", mux)
+			root.Handle("/__test/", mux)
+		})
+	server := httptest.NewUnstartedServer(service.Server.Handler)
+	if err := server.Listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	server.Listener = listener
+	server.Start()
 	defer server.Close()
 	cmd := exec.CommandContext(ctx, "node", "../../../tests/songs-browser.mjs")
-	cmd.Env = append(os.Environ(), "CHORAL_TEST_API="+server.URL)
+	cmd.Env = append(os.Environ(), "CHORAL_TEST_API="+server.URL, "CHORAL_TEST_WEB="+origin)
 	if output, e := cmd.CombinedOutput(); e != nil {
 		t.Fatalf("browser integration: %v\n%s", e, output)
 	} else {

@@ -19,6 +19,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends ffmpeg
+      - run: npm run test:auth
       - run: npm run test:audio
       - name: Browser audio regressions
         timeout-minutes: 5
@@ -31,6 +32,9 @@ jobs:
       - run: npm run build
       - run: npm run build-storybook
       - run: node scripts/assemble-pages.mjs
+      - name: Execute every Storybook story and play
+        timeout-minutes: 8
+        run: npm run test:stories
   backend:
     runs-on: ubuntu-latest
     defaults:
@@ -41,7 +45,8 @@ jobs:
       - name: Install FFmpeg and FFprobe
         run: |
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends ffmpeg
+          sudo apt-get install --yes --no-install-recommends ffmpeg sqlite3
+          sqlite3 --version
           ffmpeg -version
           ffprobe -version
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
@@ -51,6 +56,34 @@ jobs:
       - run: go version && go env GOVERSION GOOS GOARCH
       - run: go mod download
       - run: go mod verify
-      - run: go test ./...
+      - run: go test -count=1 ./...
       - run: go vet ./...
       - run: go build -o /tmp/choral-server ./cmd/server
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - run: npm ci --no-audit --no-fund
+      - name: Install real audio tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ffmpeg
+          google-chrome --version
+          ffmpeg -version
+          ffprobe -version
+      - name: Build explicit Pages demo for auth smoke
+        run: VITE_APP_DEMO=true npm run build
+      - run: npm run build-storybook
+      - run: node scripts/assemble-pages.mjs
+      - name: Real HTTP SQLite FFmpeg and browser flows
+        run: npm run test:e2e

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { serveDirectory } from './e2e/serve.mjs';
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -8,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const dir = await mkdtemp(join(tmpdir(), 'choral-browser-'));
 const processes = [];
-const storiesOnly = process.env.CHORAL_STORIES_ONLY === 'true';
+const origin = process.env.CHORAL_TEST_WEB ?? 'http://127.0.0.1:5179';
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function start(cmd, args, env = {}) {
   const p = spawn(cmd, args, { cwd: root, env: { ...process.env, ...env }, stdio: ['ignore', 'ignore', 'ignore'] });
@@ -20,8 +21,10 @@ async function poll(check, message, timeout = 20_000) {
   throw new Error(message);
 }
 let ws;
+let staticServer;
 let next = 0;
 const pending = new Map();
+const loadedDocuments = new Set();
 function send(method, params = {}) {
   const id = ++next;
   return new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
@@ -32,9 +35,10 @@ async function evaluate(expression) {
   return result.result.value;
 }
 async function navigate(query) {
-  await evaluate('window.__leavingDocument = true');
-  await send('Page.navigate', { url: `http://127.0.0.1:5179/${query}` });
-  await poll(() => evaluate('!window.__leavingDocument && document.readyState === "complete" && !!document.getElementById("root")?.textContent'), 'Page did not load');
+  const navigation = await send('Page.navigate', { url: `${origin}/${query}` });
+  assert.ok(!navigation.errorText, 'Browser navigation failed');
+  await poll(() => loadedDocuments.has(navigation.loaderId), 'Document did not load');
+  await poll(() => evaluate('document.readyState === "complete" && !!document.getElementById("root")?.textContent'), 'App did not render');
 }
 const bodyIncludes = (text) => evaluate(`document.body.textContent.includes(${JSON.stringify(text)})`);
 async function expectText(text) { await poll(() => bodyIncludes(text), `Missing expected UI: ${text}`); }
@@ -94,9 +98,8 @@ async function click(text) {
 }
 
 try {
-  start(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '5179', '--strictPort'], { CHORAL_API_PROXY: process.env.CHORAL_TEST_API, VITE_APP_DEMO: 'false' });
-  await poll(async () => (await fetch('http://127.0.0.1:5179')).ok, 'Vite did not start');
-  start(process.env.CHROME_BIN ?? '/usr/bin/google-chrome', ['--headless', '--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--remote-debugging-port=0', `--user-data-dir=${dir}`, 'about:blank']);
+  await poll(async () => (await fetch(origin)).ok, 'Go frontend did not start');
+  start(process.env.CHROME_BIN ?? '/usr/bin/google-chrome', ['--headless','--disable-features=BackForwardCache', '--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--remote-debugging-port=0', `--user-data-dir=${dir}`, 'about:blank']);
   let port;
   await poll(async () => { port = (await readFile(join(dir, 'DevToolsActivePort'), 'utf8')).split('\n')[0]; return !!port; }, 'Chrome did not start');
   const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
@@ -104,13 +107,13 @@ try {
   await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
   ws.onmessage = (message) => {
     const data = JSON.parse(message.data);
+    if (data.method === 'Page.lifecycleEvent' && data.params.name === 'load') loadedDocuments.add(data.params.loaderId);
     if (data.method === 'Page.javascriptDialogOpening') void send('Page.handleJavaScriptDialog', { accept: true });
     const entry = pending.get(data.id);
     if (entry) { pending.delete(data.id); if (data.error) entry.reject(new Error(data.error.message)); else entry.resolve(data.result); }
   };
-  await send('Page.enable'); await send('Runtime.enable'); await send('Network.enable');
+  await send('Page.enable');await send('Page.setLifecycleEventsEnabled',{enabled:true}); await send('Runtime.enable'); await send('Network.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
-  if (!storiesOnly) {
   await navigate('?page=create-song&role=admin');
   await expectText('Вход');
   await checkFormOnFocus('[name=email]');
@@ -174,7 +177,7 @@ try {
   await expectText('Не удалось открыть ссылку'); assert.equal(await bodyIncludes('Создать песню'), false);
   // Simulate a stalled transport, keeping PublicRoute's own cancellation signal.
   const stalled = await send('Page.addScriptToEvaluateOnNewDocument', { source: `
-    const timeout = AbortSignal.timeout;
+    const timeout = AbortSignal.timeout.bind(AbortSignal);
     AbortSignal.timeout = () => timeout(100);
     const original = window.fetch;
     window.fetch = (url, options) => String(url).includes('/public/shares/')
@@ -210,8 +213,11 @@ try {
       await expectText('Ж'.repeat(1000));
       await checkResponsiveText('main h1', 'Я'.repeat(160));
     }
-    await checkResponsiveText('main li', 'Щ'.repeat(80));
-    await checkResponsiveText('main p:nth-of-type(2)', 'Ж'.repeat(1000));
+    // Runtime mixer is a horizontal scroll region; long channel names live there.
+    assert.equal(await evaluate(`document.querySelector('[data-tone] > div > span').textContent`), 'Щ'.repeat(80));
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
+    assert.equal(await evaluate(`getComputedStyle(document.querySelector('section[aria-label="Микшер партий"]')).overflowX`), 'auto');
+    await checkResponsiveText('main > p', 'Ж'.repeat(1000));
   }
   // Bootstrap is a real gated session, not an editor until password replacement.
   await navigate('?page=sign-in&returnTo=https://external.test'); await expectText('Вход');
@@ -234,35 +240,16 @@ try {
   assert.equal(await bodyIncludes('Администратор'), false);
   await navigate('?page=library'); await expectText('Администратор');
   await click('Выйти'); await expectText('Вход');
-  }
-  // Wait for Storybook's own storyFinished event, including each play function.
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: `
-    let channel;
-    Object.defineProperty(window, '__STORYBOOK_ADDONS_CHANNEL__', {
-      configurable: true,
-      get: () => channel,
-      set: (next) => {
-        channel = next;
-        next.on('storyFinished', (result) => { window.__storyResult = result; });
-      },
-    });
-  ` });
-  const index = await (await fetch('http://127.0.0.1:5179/storybook-static/index.json')).json();
-  const stories = Object.values(index.entries).filter((s) => s.type === 'story' && /pages-(sign-in|song-library|create-song)--/.test(s.id));
-  assert.equal(stories.length, 30);
-  for (const story of stories) {
-    await send('Page.navigate', { url: `http://127.0.0.1:5179/storybook-static/iframe.html?id=${story.id}&viewMode=story` });
-    await poll(() => evaluate(`window.__storyResult?.storyId === ${JSON.stringify(story.id)}`), `Story did not finish: ${story.id}`, 30_000);
-    assert.equal(await evaluate('window.__storyResult.status'), 'success', story.id);
-  }
-  await send('Page.navigate', { url: 'http://127.0.0.1:5179/storybook-static/app/?page=sign-in' });
+  staticServer = await serveDirectory(join(root, 'storybook-static'));
+  await send('Page.navigate', { url: staticServer.origin + '/app/?page=sign-in' });
   await poll(() => evaluate('document.title === "Демонстрация · Хор" && !!document.querySelector("form")'), 'Pages demo did not load');
   await submit('fictional@example.test', 'fictional password 123');
   await expectText('Это макет: данные не отправлены');
-  console.log(`Storybook browser: ${stories.length} affected stories including play functions passed.`);
-  if (!storiesOnly) console.log('Real Go API + browser: login, reload, role, redirect, logout/revocation, network failures, blocked user, password gate, guest routes, storage and responsive smoke passed.');
+  console.log('Pages demo: explicit mock sign-in remains labelled and does not authenticate.');
+  console.log('Real Go API + browser: login, reload, role, redirect, logout/revocation, network failures, blocked user, password gate, guest routes, storage and responsive smoke passed.');
 } finally {
   if (ws) ws.close();
+  await staticServer?.close();
   for (const p of processes.reverse()) { p.kill('SIGTERM'); await Promise.race([new Promise((resolve) => p.once('exit', resolve)), delay(2000)]); if (p.exitCode === null) p.kill('SIGKILL'); }
   await rm(dir, { recursive: true, force: true, maxRetries: 5 });
 }
