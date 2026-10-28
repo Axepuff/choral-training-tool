@@ -182,3 +182,30 @@ E2E job больше не строит неиспользуемый Storybook; �
   `/tmp/issue14-sqlite/usr/bin` в PATH: `TestBackupCleanRestore` прошёл без skip.
 - `git diff --check` прошёл. Remote CI и физические iOS/Android остаются
   проверками владельца/контроллера; локальный результат их не подменяет.
+
+## Подтверждение remote CI для проверяемого HEAD
+
+28 октября 2026 публичный GitHub Actions API подтвердил полный успешный
+[PR checks #64](https://github.com/Axepuff/choral-training-tool/actions/runs/40719067990)
+для `b82c7b00bad8576c90ea40516954bf343b4253b1` (PR #40, attempt 1).
+Run завершён в `2026-10-28T15:47:10Z`, status `completed`, conclusion `success`.
+Это результат GitHub-hosted runner, а не локальное воспроизведение.
+
+| Job | Подтверждённый результат |
+| --- | --- |
+| [frontend](https://github.com/Axepuff/choral-training-tool/actions/runs/40719067990/job/122924676295) | success, включая audio browser и Execute every Storybook story and play |
+| [backend](https://github.com/Axepuff/choral-training-tool/actions/runs/40719067990/job/122924676413) | success, включая полный Go suite, mod verify, vet и build |
+| [e2e](https://github.com/Axepuff/choral-training-tool/actions/runs/40719067990/job/122924676288) | success, включая Real HTTP SQLite FFmpeg and browser flows |
+
+Проверены `head_sha`, итог run, все три jobs и статусы их шагов через
+неавторизованные GET `/repos/Axepuff/choral-training-tool/actions/runs/40719067990`
+и `/jobs`. Запуск уже существовал; агент не создавал и не перезапускал workflow,
+не использовал gh, credentials, commit или push.
+
+Оставшаяся граница доказательства: endpoint скачивания job logs без авторизации
+возвращает HTTP 403. Поэтому фактические remote counts stories/play и browser
+tests в этой сессии не прочитаны; локальные **45/45 stories** и **2/2 browser
+tests** выше не выдаются за remote counts. Для полного закрытия замечания ревью
+контроллеру нужно сверить эти счётчики в логах связанных jobs и записать их сюда.
+Повторный запуск физических iPhone-проверок #11/#12 не требуется по результату
+ревью владельца; Android отложен в #34, production HTTPS/hosting остаётся #16.
