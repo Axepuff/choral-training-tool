@@ -45,7 +45,7 @@ jobs:
       - name: Install FFmpeg and FFprobe
         run: |
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends ffmpeg sqlite3
+          sudo apt-get install --yes --no-install-recommends ffmpeg sqlite3 nginx
           sqlite3 --version
           ffmpeg -version
           ffprobe -version
@@ -58,6 +58,8 @@ jobs:
       - run: go mod verify
       - run: go test -count=1 ./...
       - run: go vet ./...
+      - name: Proxy logs never contain public tokens
+        run: python3 ../scripts/check-proxy-logs.py
       - run: go build -o /tmp/choral-server ./cmd/server
 
   e2e:

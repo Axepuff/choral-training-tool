@@ -453,7 +453,7 @@ func TestListSnapshotSearchSortAndPermissions(t *testing.T) {
 	}
 	f.s.now = func() time.Time { return time.Now().Add(16 * time.Minute) }
 	expect(t, f.req("GET", "/api/v1/songs?sort=title_asc&cursor="+url.QueryEscape(token), "", f.a, nil), 410)
-	for _, q := range []string{"limit=0", "limit=101", "limit=bad", "sort=bad", "cursor=broken"} {
+	for _, q := range []string{"limit=0", "limit=101", "limit=bad", "sort=bad", "cursor=broken", "q=%FF", "q=%C0%AF", "q=%ED%A0%80"} {
 		w := f.req("GET", "/api/v1/songs?"+q, "", f.a, nil)
 		if w.Code != 400 && w.Code != 422 {
 			t.Fatal("invalid list query accepted")
