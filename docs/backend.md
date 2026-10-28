@@ -662,3 +662,13 @@ active asset и допускает успешный retry. Поведенчес�
 result probe после настоящей конвертации и проверяет сохранение original/старого
 active asset, затем успешную вторую попытку с настоящим FFprobe, переключение
 asset и удаление original после commit. Старый playback сохраняется на grace-период.
+
+## Контейнерная упаковка и frontend (Issue #14)
+
+CHORAL_STATIC_DIR необязателен: при заданном каталоге Go обслуживает production
+frontend вместе с /api; до listen проверяет наличие index.html. Для deep URLs
+собирайте с CHORAL_BUILD_BASE=/ и VITE_APP_DEMO=false. Без STATIC_DIR сохраняется
+API-only режим. Неизвестный /api и отсутствующий asset возвращают 404, dotfiles
+не выдаются. Docker/Compose, права volume, backup/restore, proxy и результаты
+проверок: [operations.md](operations.md). Историческая инструкция выше про будущую
+контейнеризацию заменена этой реализацией; Docker smoke в sandbox недоступен.

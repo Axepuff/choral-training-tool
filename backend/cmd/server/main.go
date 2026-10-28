@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -20,6 +21,18 @@ import (
 
 func main() { os.Exit(run()) }
 func run() int {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		client := &http.Client{Timeout: 2 * time.Second}
+		resp, err := client.Get("http://127.0.0.1:8080/readyz")
+		if err != nil {
+			return 1
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			return 1
+		}
+		return 0
+	}
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	c, err := platform.LoadConfig()
 	if err != nil {
@@ -36,6 +49,12 @@ func run() int {
 		return 1
 	}
 	defer db.Close()
+	if c.StaticDir != "" {
+		if err := platform.ValidateFrontend(c.StaticDir); err != nil {
+			log.Error("frontend_startup_failed")
+			return 1
+		}
+	}
 	origin := os.Getenv("CHORAL_ORIGIN")
 	if origin == "" {
 		origin = "https://localhost"

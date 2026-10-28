@@ -17,11 +17,13 @@ import (
 
 type Config struct {
 	Addr, DataDir   string
+	StaticDir       string
 	ShutdownTimeout time.Duration
 }
 
 func LoadConfig() (Config, error) {
 	c := Config{Addr: "127.0.0.1:8080", DataDir: "./data", ShutdownTimeout: 15 * time.Second}
+	c.StaticDir = os.Getenv("CHORAL_STATIC_DIR")
 	if v, ok := os.LookupEnv("CHORAL_ADDR"); ok {
 		c.Addr = v
 	}
@@ -68,9 +70,16 @@ func NewService(c Config, db *sql.DB, logger *slog.Logger, register ...func(*htt
 		}
 		writeJSON(w, 200, map[string]string{"status": "ready"})
 	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	notFound := func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]any{"error": map[string]string{"code": "not_found", "message": "Route not implemented", "requestId": w.Header().Get("X-Request-Id")}})
-	})
+	}
+	mux.HandleFunc("/api", notFound)
+	mux.HandleFunc("/api/", notFound)
+	if c.StaticDir != "" {
+		mux.Handle("/", frontend(c.StaticDir))
+	} else {
+		mux.HandleFunc("/", notFound)
+	}
 	s.Server = &http.Server{Addr: c.Addr, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := make([]byte, 16)
 		if _, err := rand.Read(id); err != nil {

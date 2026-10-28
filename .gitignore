@@ -7,3 +7,9 @@ storybook-static/
 .env.*
 !.env.example
 *.tsbuildinfo
+/data/
+/backups/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.tar

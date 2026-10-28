@@ -187,3 +187,11 @@ AudioEngine хранит непрерывную внутреннюю шкалу 
 а таймер только наполняет короткий горизонт. Выбор диапазона локален для слушателя,
 серверные данные песни и права не изменяет. Формулы, UX-контракт и проверки:
 [audio-player.md](audio-player.md#выбор-тактов-и-метроном--issue-12).
+
+## Контейнерное размещение (Issue #14)
+
+Один image содержит Go server/accounts, production dist и FFmpeg/FFprobe/prlimit.
+Go обслуживает /api и frontend на одном origin; отдельный private /data volume
+содержит SQLite, ключи и файлы. Backup копирует весь volume при остановленных
+writers; restore допускается только в пустой volume. HTTPS proxy находится перед
+loopback listener хоста. Конфигурация, проверки и ограничения: [operations.md](operations.md).

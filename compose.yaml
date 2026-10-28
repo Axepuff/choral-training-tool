@@ -1,0 +1,24 @@
+name: choral
+services:
+  app:
+    image: choral:${CHORAL_IMAGE_TAG:-local}
+    build: .
+    environment:
+      CHORAL_ORIGIN: ${CHORAL_ORIGIN:-https://localhost}
+      CHORAL_LOCAL_HTTP: 'false'
+    ports:
+      - '127.0.0.1:${CHORAL_HTTP_PORT:-8080}:8080'
+    volumes:
+      - data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 3g
+    cpus: 2
+    stop_grace_period: 30s
+    restart: unless-stopped
+volumes:
+  data:
