@@ -32,11 +32,13 @@ var ErrCSRF = errors.New("csrf_failed")
 var ErrPasswordChange = errors.New("password_change_required")
 
 type Service struct {
-	DB     *sql.DB
-	Origin string
-	Local  bool
-	now    func() time.Time
-	dummy  string
+	DB        *sql.DB
+	Origin    string
+	Local     bool
+	now       func() time.Time
+	dummy     string
+	loginSlot chan struct{}
+	verify    func(string, string) bool
 }
 
 // New requires a fixed external origin; proxy headers and request Host are untrusted.
@@ -58,7 +60,7 @@ func New(db *sql.DB, origin string, local bool) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{DB: db, Origin: origin, Local: local, now: time.Now, dummy: dummy}, nil
+	return &Service{DB: db, Origin: origin, Local: local, now: time.Now, dummy: dummy, loginSlot: make(chan struct{}, 1), verify: users.Verify}, nil
 }
 func (s *Service) cookieName() string {
 	if s.Local {
@@ -265,6 +267,15 @@ func (s *Service) login(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
+	// No waiting queue: reject excess work before touching SQLite or Argon2id.
+	select {
+	case s.loginSlot <- struct{}{}:
+		defer func() { <-s.loginSlot }()
+	default:
+		w.Header().Set("Retry-After", "1")
+		fail(w, 429, "rate_limited", "Слишком много попыток входа")
+		return
+	}
 	email, e := users.NormalizeEmail(in.Email)
 	if e != nil {
 		email = strings.ToLower(strings.TrimSpace(in.Email))
@@ -303,10 +314,32 @@ func (s *Service) login(w http.ResponseWriter, r *http.Request) {
 		failures = 0
 		start = n
 	}
+	// A single persistent budget bounds work even when both IP and email change.
+	globalScope := digest("login-global-v1")
+	var attempts int
+	var window int64
+	err = tx.QueryRowContext(ctx, `SELECT failures,window_start FROM login_attempts WHERE scope=?`, globalScope).Scan(&attempts, &window)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		s.sessionError(w, err)
+		return
+	}
+	if n-window >= 60 {
+		attempts, window = 0, n
+	}
+	if attempts >= 20 {
+		w.Header().Set("Retry-After", strconv.FormatInt(window+60-n, 10))
+		fail(w, 429, "rate_limited", "Слишком много попыток входа")
+		return
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO login_attempts(scope,failures,window_start) VALUES(?,?,?) ON CONFLICT(scope) DO UPDATE SET failures=excluded.failures,window_start=excluded.window_start`, globalScope, attempts+1, window)
+	if err != nil {
+		s.sessionError(w, err)
+		return
+	}
 	a := &state{}
-	var hash string
+	var hash, revision string
 	var blocked bool
-	err = tx.QueryRowContext(ctx, `SELECT id,email_normalized,role,must_change_password,password_hash,blocked_at IS NOT NULL FROM users WHERE email_normalized=?`, email).Scan(&a.User.ID, &a.User.Email, &a.User.Role, &a.User.MustChangePassword, &hash, &blocked)
+	err = tx.QueryRowContext(ctx, `SELECT id,email_normalized,role,must_change_password,password_hash,blocked_at IS NOT NULL,updated_at FROM users WHERE email_normalized=?`, email).Scan(&a.User.ID, &a.User.Email, &a.User.Role, &a.User.MustChangePassword, &hash, &blocked, &revision)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		s.sessionError(w, err)
 		return
@@ -314,7 +347,27 @@ func (s *Service) login(w http.ResponseWriter, r *http.Request) {
 	if hash == "" {
 		hash = s.dummy
 	}
-	valid := users.Verify(hash, in.Password)
+	if err = tx.Commit(); err != nil {
+		s.sessionError(w, err)
+		return
+	}
+	valid := s.verify(hash, in.Password)
+	tx, err = s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		s.sessionError(w, err)
+		return
+	}
+	defer tx.Rollback()
+	// Credentials and account state must still match at session issuance.
+	var current bool
+	err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=? AND email_normalized=? AND password_hash=? AND role=? AND must_change_password=? AND blocked_at IS NULL AND updated_at=?)`, a.User.ID, a.User.Email, hash, a.User.Role, a.User.MustChangePassword, revision).Scan(&current)
+	if err != nil {
+		s.sessionError(w, err)
+		return
+	}
+	valid = valid && current
+	now = s.now().UTC()
+	n = now.Unix()
 	if !valid || blocked || a.User.ID == "" || e != nil {
 		failures++
 		if failures >= 5 {

@@ -130,6 +130,9 @@ TLS терминирует отдельный reverse proxy на хосте, bac
 настройки certificate/key владельцем (их пути/значения в Git не помещать):
 
 ```nginx
+# Внутри http {}, включая default server и HTTP redirect на этом listener.
+access_log off;
+error_log /dev/null;
 server {
     listen 443 ssl;
     server_name choir.example.test;
@@ -150,8 +153,19 @@ server {
 ```
 
 Публичный origin должен **точно** совпадать с CHORAL_ORIGIN. Не добавлять CORS или
-переписывание /api. Не логировать query публичных ссылок, cookies/Authorization
-или тела; access log proxy отключить либо настроить без query/секретных полей.
+переписывание /api. Bearer-токен находится и в пути
+`/api/v1/public/shares/<token>/…`, и в query гостевой ссылки. Поэтому пример
+отключает access log и отправляет error log в `/dev/null` на уровне `http`:
+ошибки upstream, разбора запроса и TLS тоже могут содержать URI. Удаления query
+из формата недостаточно. Не переопределяйте эти настройки в server/location,
+не включайте debug_connection, debug/error logs, WAF/CDN/tracing с сырыми URI,
+cookies/Authorization или телами. Проверьте также внешний балансировщик и
+HTTP redirect/default server. Цена простого безопасного примера — отсутствие
+диагностики запросов nginx; используйте метрики статусов и безопасный журнал Go.
+Для включения логов сначала нужна проверенная редакция всех секретных полей,
+включая путь, query и Referer; стандартный combined небезопасен.
+Семантика: [access_log](https://nginx.org/en/docs/http/ngx_http_log_module.html#access_log),
+[error_log](https://nginx.org/en/docs/ngx_core_module.html#error_log).
 HTTP на 80 перенаправлять на HTTPS. При внешнем proxy в контейнере нужен отдельный
 закрытый network; не публиковать Go на 0.0.0.0 хоста.
 
@@ -255,3 +269,13 @@ ffmpeg/ffprobe и провалил fault injection. Повтор с
 артефактов, восстановления worker, отмены и ошибок. Exec включён только для
 этого теста, Compose приложения не менялся. Это проверка packaged FFmpeg,
 а не новый браузерный или физический мобильный прогон.
+
+### Регрессии безопасности proxy — Issue #41
+
+`python3 scripts/check-proxy-logs.py` требует nginx в PATH, берёт пример выше
+и меняет только TLS listener на локальный HTTP и адрес upstream. На синтетических
+токенах проверяет отсутствие пути/query в access/error/stderr после 200, 404,
+ошибки upstream 502, превышения body limit 413 и некорректного URI 400.
+Проверка подключена в backend CI. На исходном примере из main тот же сценарий
+обнаруживает токен в access.log. TLS, внешний CDN/WAF и production-конфигурацию
+эта локальная проверка не подтверждает; их журналы нужно проверить при #16.

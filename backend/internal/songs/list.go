@@ -51,6 +51,10 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if !utf8.ValidString(q.Get("q")) {
+		fail(w, 422, "validation_error")
+		return
+	}
 	search := strings.ToLower(norm.NFC.String(strings.TrimSpace(q.Get("q"))))
 	order := q.Get("sort")
 	if order == "" {
@@ -62,7 +66,7 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) {
 		fail(w, 422, "validation_error")
 		return
 	}
-	if utf8.RuneCountInString(search) > 160 || !utf8.ValidString(q.Get("q")) {
+	if utf8.RuneCountInString(search) > 160 {
 		fail(w, 422, "validation_error")
 		return
 	}
