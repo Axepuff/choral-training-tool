@@ -19,7 +19,10 @@
     "test:auth": "node --test tests/auth.test.mjs",
     "test:audio": "node --test tests/audio.test.mjs tests/mp4.test.mjs",
     "test:audio:browser": "node tests/audio-browser.mjs",
-    "test:auth:browser": "cd backend && CHORAL_BROWSER_TEST=true go test -count=1 ./internal/auth -run TestFrontendBrowser -v"
+    "build:e2e": "VITE_APP_DEMO=false vite build --outDir dist/e2e-runtime && VITE_APP_DEMO=true vite build --outDir dist/e2e-demo/app",
+    "test:auth:browser": "npm run build:e2e && cd backend && CHORAL_BROWSER_TEST=true go test -count=1 ./internal/auth -run TestFrontendBrowser -v",
+    "test:stories": "node tests/e2e/storybook.mjs",
+    "test:e2e": "npm run build:e2e && cd backend && CHORAL_BROWSER_TEST=true go test -p=1 -count=1 -timeout=6m ./internal/auth ./internal/songs -run FrontendBrowser -v"
   },
   "dependencies": {
     "react": "19.3.0",

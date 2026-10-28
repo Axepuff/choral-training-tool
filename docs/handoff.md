@@ -219,3 +219,9 @@ backup/clean restore с SQLite integrity/checksum и поведенческие 
 Инструкции, результаты sandbox и успешной контейнерной проверки на WSL-хосте:
 [operations.md](operations.md). Production rollout остаётся #16; commit/PR/merge
 выполняет контроллер. Дизайн и Pages/Storybook demo сохранены.
+
+## Локальное дополнение Issue #15
+
+CI подключает реальный application browser flow и все актуальные Storybook play.
+Карта поведенческих тестов, локальное воспроизведение, ручная browser-матрица
+и ограничения: [e2e.md](e2e.md). Commit/PR/merge выполняет контроллер.

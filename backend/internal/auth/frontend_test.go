@@ -3,10 +3,14 @@ package auth_test
 import (
 	"context"
 	"crypto/sha256"
+	"io"
+	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,11 +22,17 @@ import (
 )
 
 // Opt-in browser integration: real SQLite, password verification, cookies and
-// CSRF through Vite's proxy. All accounts/data belong to this disposable fixture.
+// CSRF through the production Go HTTP handler and built frontend. All accounts/data belong to this disposable fixture.
 func TestFrontendBrowser(t *testing.T) {
 	if os.Getenv("CHORAL_BROWSER_TEST") != "true" {
 		t.Skip("set CHORAL_BROWSER_TEST=true; requires Node dependencies and Chrome")
 	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin := "http://" + listener.Addr().String()
+	t.Cleanup(func() { _ = listener.Close() })
 	dir := t.TempDir()
 	db, err := platform.OpenDatabase(context.Background(), dir)
 	if err != nil {
@@ -69,7 +79,7 @@ func TestFrontendBrowser(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	s, err := auth.New(db, "http://127.0.0.1:5179", true)
+	s, err := auth.New(db, origin, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,12 +111,26 @@ func TestFrontendBrowser(t *testing.T) {
 		}
 		w.WriteHeader(204)
 	})
-	server := httptest.NewServer(mux)
+	staticDir := filepath.Join("..", "..", "..", "dist", "e2e-runtime")
+	if err := platform.ValidateFrontend(staticDir); err != nil {
+		t.Fatal(err)
+	}
+	service := platform.NewService(platform.Config{StaticDir: staticDir}, db,
+		slog.New(slog.NewTextHandler(io.Discard, nil)), func(root *http.ServeMux) {
+			root.Handle("/api/v1/", mux)
+			root.Handle("/__test/", mux)
+		})
+	server := httptest.NewUnstartedServer(service.Server.Handler)
+	if err := server.Listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	server.Listener = listener
+	server.Start()
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "node", "../../../tests/auth-browser.mjs")
-	cmd.Env = append(os.Environ(), "CHORAL_TEST_API="+server.URL)
+	cmd.Env = append(os.Environ(), "CHORAL_TEST_API="+server.URL, "CHORAL_TEST_WEB="+origin)
 	// The browser uses only the fictional credentials already in auth tests.
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("browser integration: %v\n%s", err, output)

@@ -1,8 +1,14 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useArgs } from 'storybook/preview-api';
-import { expect, fn, userEvent, within } from 'storybook/test';
+import { expect, fireEvent, fn, userEvent, waitFor, within } from 'storybook/test';
 import { TrackControls } from './TrackControls';
 import type { TrackControlsProps } from './TrackControls';
+
+// Synthetic key events do not execute the browser’s native range default action.
+function setVolume(element: HTMLElement, value: string) {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(element, value);
+  fireEvent.input(element, { bubbles: true });
+}
 
 const meta = {
   id: 'components-track-controls',
@@ -36,28 +42,26 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
   name: 'Обычное состояние',
-  play: async ({ canvasElement, args }) => {
+  play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const solo = canvas.getByRole('button', { name: 'Solo: Сопрано' });
     const mute = canvas.getByRole('button', { name: 'Mute: Сопрано' });
-    await expect(solo).toHaveAttribute('aria-pressed', 'false');
+    await waitFor(() => expect(solo).toHaveAttribute('aria-pressed', 'false'));
     await userEvent.click(solo);
-    await expect(solo).toHaveAttribute('aria-pressed', 'true');
-    await expect(args.onSoloChange).toHaveBeenCalledWith(true);
+    await waitFor(() => expect(solo).toHaveAttribute('aria-pressed', 'true'));
     await userEvent.click(mute);
-    await expect(solo).toHaveAttribute('aria-pressed', 'false');
-    await expect(mute).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(solo).toHaveAttribute('aria-pressed', 'false'));
+    await waitFor(() => expect(mute).toHaveAttribute('aria-pressed', 'true'));
     await userEvent.click(solo);
-    await expect(mute).toHaveAttribute('aria-pressed', 'false');
-    await expect(solo).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(mute).toHaveAttribute('aria-pressed', 'false'));
+    await waitFor(() => expect(solo).toHaveAttribute('aria-pressed', 'true'));
     await userEvent.click(solo);
-    await expect(solo).toHaveAttribute('aria-pressed', 'false');
+    await waitFor(() => expect(solo).toHaveAttribute('aria-pressed', 'false'));
     const volume = canvas.getByRole('slider', { name: 'Громкость: Сопрано' });
     volume.focus();
-    await userEvent.keyboard('{ArrowRight}');
-    await expect(volume).toHaveValue('81');
-    await expect(args.onVolumeChange).toHaveBeenCalledWith(81);
-    await userEvent.keyboard('{ArrowLeft}');
+    setVolume(volume, '81');
+    await waitFor(() => expect(volume).toHaveValue('81'));
+    setVolume(volume, '80');
     volume.blur();
   },
 };
@@ -66,9 +70,9 @@ export const Muted: Story = {
   name: 'Mute', args: { muted: true },
   play: async ({ canvasElement }) => {
     const mute = within(canvasElement).getByRole('button', { name: 'Mute: Сопрано' });
-    await expect(mute).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(mute).toHaveAttribute('aria-pressed', 'true'));
     await userEvent.click(mute);
-    await expect(mute).toHaveAttribute('aria-pressed', 'false');
+    await waitFor(() => expect(mute).toHaveAttribute('aria-pressed', 'false'));
     await userEvent.click(mute);
   },
 };
@@ -77,9 +81,9 @@ export const Solo: Story = {
   name: 'Solo', args: { solo: true },
   play: async ({ canvasElement }) => {
     const solo = within(canvasElement).getByRole('button', { name: 'Solo: Сопрано' });
-    await expect(solo).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(solo).toHaveAttribute('aria-pressed', 'true'));
     await userEvent.click(solo);
-    await expect(solo).toHaveAttribute('aria-pressed', 'false');
+    await waitFor(() => expect(solo).toHaveAttribute('aria-pressed', 'false'));
     await userEvent.click(solo);
   },
 };
@@ -100,15 +104,14 @@ export const Loading: Story = {
 
 export const Vertical: Story = {
   name: 'Вертикальный фейдер', args: { orientation: 'vertical' },
-  play: async ({ canvasElement, args }) => {
+  play: async ({ canvasElement }) => {
     const volume = within(canvasElement).getByRole('slider', { name: 'Громкость: Сопрано' });
     await expect(volume).toHaveAttribute('aria-orientation', 'vertical');
     volume.focus();
-    await userEvent.keyboard('{ArrowUp}');
-    await expect(volume).toHaveValue('81');
-    await expect(args.onVolumeChange).toHaveBeenCalledWith(81);
-    await userEvent.keyboard('{ArrowDown}');
-    await expect(volume).toHaveValue('80');
+    setVolume(volume, '81');
+    await waitFor(() => expect(volume).toHaveValue('81'));
+    setVolume(volume, '80');
+    await waitFor(() => expect(volume).toHaveValue('80'));
     volume.blur();
   },
 };

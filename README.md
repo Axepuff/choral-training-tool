@@ -247,3 +247,5 @@ FFmpeg/FFprobe, непривилегированный процесс и про�
 .env.example. Проверка в изолированном Docker project:
 `sh scripts/check-container.sh`. Это подготовка #14, не production rollout #16;
 Pages/Storybook остаются отдельным статическим demo preview.
+
+Сквозные проверки полного приложения и Storybook play: [runbook](docs/e2e.md).

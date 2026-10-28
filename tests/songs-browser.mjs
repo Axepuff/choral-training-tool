@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const dir = await mkdtemp(join(tmpdir(), 'choral-browser-'));
 const processes = [];
+const origin = process.env.CHORAL_TEST_WEB ?? 'http://127.0.0.1:5179';
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function start(cmd, args, env = {}) {
   const p = spawn(cmd, args, { cwd: root, env: { ...process.env, ...env }, stdio: ['ignore', 'ignore', 'ignore'] });
@@ -25,6 +26,7 @@ let dialogs = 0;
 let failOneJob = false;
 let failedJobs = 0;
 const pending = new Map();
+const loadedDocuments = new Set();
 const uploadKeys = [];
 function send(method, params = {}) {
   const id = ++next;
@@ -36,9 +38,10 @@ async function evaluate(expression) {
   return result.result.value;
 }
 async function navigate(query) {
-  await evaluate('window.__leavingDocument = true');
-  await send('Page.navigate', { url: `http://127.0.0.1:5179/${query}` });
-  await poll(() => evaluate('!window.__leavingDocument && document.readyState === "complete" && !!document.getElementById("root")?.textContent'), 'Page did not load');
+  const navigation = await send('Page.navigate', { url: `${origin}/${query}` });
+  assert.ok(!navigation.errorText, 'Browser navigation failed');
+  await poll(() => loadedDocuments.has(navigation.loaderId), 'Document did not load');
+  await poll(() => evaluate('document.readyState === "complete" && !!document.getElementById("root")?.textContent'), 'App did not render');
 }
 const bodyIncludes = (text) => evaluate(`document.body.textContent.includes(${JSON.stringify(text)})`);
 async function expectText(text) { await poll(() => bodyIncludes(text), `Missing expected UI: ${text}`); }
@@ -62,26 +65,37 @@ async function input(name, value, textarea = false) {
 async function api(path, method = 'GET', body, headers = {}) {
  return evaluate(`(async () => { const me = await (await fetch('/api/v1/auth/me')).json(); const response = await fetch('/api/v1' + ${JSON.stringify(path)}, {method:${JSON.stringify(method)}, headers:{'Content-Type':'application/json','X-CSRF-Token':me.csrfToken,...${JSON.stringify(headers)}}, ${body === undefined ? '' : `body:JSON.stringify(${JSON.stringify(body)}),`} }); return {status:response.status, body:response.status===204?null:await response.json()}; })()`);
 }
-async function save() { await evaluate(`document.querySelector('form').requestSubmit()`); }
+async function save() { await poll(() => evaluate(`document.querySelector('fieldset')?.disabled === false`), 'Editor busy before save'); await evaluate(`(async () => { document.querySelector('form').requestSubmit(); await new Promise(requestAnimationFrame); })()`); }
 async function selectFile(path, index = 0) {
- const {root} = await send('DOM.getDocument');
- const {nodeId} = await send('DOM.querySelector', {nodeId:root.nodeId,selector:`input[name="tracks[${index}].file"]`});
- await send('DOM.setFileInputFiles',{nodeId,files:[path]});
+ await poll(() => evaluate(`document.querySelector('fieldset')?.disabled === false`), 'Editor busy before file selection');
+ // A real browser File with deterministic fixture bytes. CDP's filesystem
+ // chooser can omit change for long Unicode paths in this Linux environment.
+ const bytes = (await readFile(path)).toString('base64');
+ const name = path.split('/').at(-1);
+ await evaluate(`(async () => {
+   const input = document.querySelector('[name="tracks[${index}].file"]');
+   const transfer = new DataTransfer();
+   transfer.items.add(new File([Uint8Array.from(atob(${JSON.stringify(bytes)}), char => char.charCodeAt(0))], ${JSON.stringify(name)}, {type:'audio/wav'}));
+   input.files = transfer.files;
+   input.dispatchEvent(new Event('change', {bubbles:true}));
+   await new Promise(requestAnimationFrame);
+ })()`);
+ await expectText(name);
 }
+
 try {
- start(process.execPath, ['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','5179','--strictPort'], {CHORAL_API_PROXY:process.env.CHORAL_TEST_API,VITE_APP_DEMO:'false'});
- await poll(async () => (await fetch('http://127.0.0.1:5179')).ok,'Vite did not start');
- start(process.env.CHROME_BIN ?? '/usr/bin/google-chrome',['--headless','--no-sandbox','--disable-dev-shm-usage','--no-first-run','--remote-debugging-port=0',`--user-data-dir=${dir}`,'about:blank']);
+ await poll(async () => (await fetch(origin)).ok,'Go frontend did not start');
+ start(process.env.CHROME_BIN ?? '/usr/bin/google-chrome',['--headless','--disable-features=BackForwardCache','--no-sandbox','--disable-dev-shm-usage','--no-first-run','--remote-debugging-port=0',`--user-data-dir=${dir}`,'about:blank']);
  let port; await poll(async () => { port=(await readFile(join(dir,'DevToolsActivePort'),'utf8')).split('\n')[0];return !!port; },'Chrome did not start');
  const targets=await (await fetch(`http://127.0.0.1:${port}/json`)).json();
  ws=new WebSocket(targets.find(t=>t.type==='page').webSocketDebuggerUrl);
  await new Promise((resolve,reject)=>{ws.onopen=resolve;ws.onerror=reject;});
- ws.onmessage=message=>{const data=JSON.parse(message.data);if(data.method==='Network.requestWillBeSent' && data.params.request.url.endsWith('/uploads')){uploadKeys.push(data.params.request.headers['Idempotency-Key']);}if(data.method==='Fetch.requestPaused'){
+ ws.onmessage=message=>{const data=JSON.parse(message.data);if(data.method==='Page.lifecycleEvent' && data.params.name==='load') loadedDocuments.add(data.params.loaderId);if(data.method==='Network.requestWillBeSent' && data.params.request.url.endsWith('/uploads')){uploadKeys.push(data.params.request.headers['Idempotency-Key']);}if(data.method==='Fetch.requestPaused'){
    if(failOneJob && data.params.request.url.includes('/jobs/')){failOneJob=false;failedJobs++;void send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});}
    else if(data.params.request.url.includes('/jobs/')) void send('Fetch.continueRequest',{requestId:data.params.requestId});
    else void send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});
-  }if(data.method==='Page.javascriptDialogOpening'){dialogs++;void send('Page.handleJavaScriptDialog',{accept:acceptDialog});}const entry=pending.get(data.id);if(entry){pending.delete(data.id);if(data.error)entry.reject(new Error(data.error.message));else entry.resolve(data.result);}};
- await send('Page.enable');await send('Runtime.enable');await send('Network.enable');
+  }if(data.method==='Page.javascriptDialogOpening'){dialogs++;void send('Page.handleJavaScriptDialog',{accept:data.params.type==='beforeunload' || acceptDialog});}const entry=pending.get(data.id);if(entry){pending.delete(data.id);if(data.error)entry.reject(new Error(data.error.message));else entry.resolve(data.result);}};
+ await send('Page.enable');await send('Page.setLifecycleEventsEnabled',{enabled:true});await send('Runtime.enable');await send('Network.enable');
  await navigate('?page=create-song');await expectText('Вход');
  await submit('teacher@example.test','fictional password 123');await expectText('Новая песня');
  await input('title','Реальная песня');await input('notes','Заметка 🌼',true);
@@ -137,8 +151,12 @@ try {
  await poll(()=>evaluate(`!document.querySelector('fieldset').disabled && [...document.querySelectorAll('form [role=status]')].some(e=>e.textContent==='Готово')`),'Background job did not replace the stale row error');
  assert.equal(failedJobs,1);await send('Fetch.disable');
  media=(await api('/songs/'+id)).body.tracks[0].mediaUrl;
+ // Reload after background recovery to use the committed editor/file inputs.
+ await navigate('?page=edit-song&id='+id);await expectText('Редактировать песню');await expectText('synthetic.wav');
  // Replace with invalid bytes: old media survives, no success UI.
  const replacement=join(dir,'Длинное-имя-'.repeat(9)+'.wav');await writeFile(replacement,wav);await selectFile(replacement);await save();await expectText('Изменения сохранены на сервере.');
+ await poll(async () => (await api('/songs/'+id)).body.tracks[0].sourceName === 'Длинное-имя-'.repeat(9)+'.wav', 'Replacement did not finish');
+ media=(await api('/songs/'+id)).body.tracks[0].mediaUrl;
  assert.equal((await api('/songs/'+id)).body.tracks[0].sourceName,'Длинное-имя-'.repeat(9)+'.wav');
  const bad=join(dir,'invalid.wav');await writeFile(bad,'not audio');await selectFile(bad);await save();await expectText('Файл повреждён');
  assert.equal((await api('/songs/'+id)).body.tracks[0].sourceName,'Длинное-имя-'.repeat(9)+'.wav');
@@ -177,9 +195,9 @@ try {
  await input('songSearch' ,'несуществующая');await expectText('Песня не найдена');
  await input('songSearch','Мои изменения');await expectText('Мои изменения');
  await evaluate(`document.querySelector('[aria-label="Скопировать ссылку: Мои изменения"]').click()`);await expectText('Публичные ссылки');
- await click('Создать новую ссылку');await poll(()=>evaluate(`!!document.querySelector('section[aria-label="Публичные ссылки"] a')`),'No public URL: ' + await evaluate('document.body.textContent'));
- const publicUrl=await evaluate(`document.querySelector('section[aria-label="Публичные ссылки"] a').href`);assert.match(publicUrl,/\?song=/);
- await send('Browser.grantPermissions',{origin:'http://127.0.0.1:5179',permissions:['clipboardReadWrite','clipboardSanitizedWrite']});await send('Page.bringToFront');await click('Копировать');assert.equal(await evaluate('navigator.clipboard.readText()'),publicUrl);
+ await click('Создать новую ссылку');await poll(()=>evaluate(`!!document.querySelector('section[aria-label="Публичные ссылки"] a')`),'No public URL');
+ const publicUrl=await evaluate(`document.querySelector('section[aria-label="Публичные ссылки"] a').href`);assert.ok(/\?song=/.test(publicUrl), 'Public song URL missing');
+ await send('Browser.grantPermissions',{origin,permissions:['clipboardReadWrite','clipboardSanitizedWrite']});await send('Page.bringToFront');await click('Копировать');assert.ok(await evaluate('navigator.clipboard.readText()') === publicUrl, 'Clipboard must contain the generated URL');
  await click('Заменить ссылку');await poll(()=>evaluate(`!!document.querySelector('section[aria-label="Публичные ссылки"] a') && document.querySelector('section[aria-label="Публичные ссылки"] a').href !== ${JSON.stringify(publicUrl)}`),'Rotation failed');
  const rotated=await evaluate(`document.querySelector('section[aria-label="Публичные ссылки"] a').href`);
  assert.equal((await evaluate(`(async()=> (await fetch('/api/v1/public/shares/'+new URL(${JSON.stringify(publicUrl)}).searchParams.get('song'))).status)()`)),404);
@@ -191,6 +209,29 @@ try {
  const guestList=await evaluate(`document.querySelector('section[aria-label="Публичные ссылки"] a').search`);
  await click('Закрыть');await click('Выйти');await expectText('Вход');
  await navigate(guest);await expectText('Офлайн заметка');assert.equal(await bodyIncludes('Вход'),false);
+ // The public grant cannot authorize writes or extend to another song/track ID.
+ const token = new URLSearchParams(guest).get('song');
+ const publicRoot = '/api/v1/public/shares/' + token;
+ for (const [path, expected] of [[publicRoot, 405], ['/api/v1/songs/' + id + '?token=' + token, 401]]) {
+   const status = await evaluate(`(async () => (await fetch(${JSON.stringify(path)}, {method:'PUT',headers:{'Content-Type':'application/json'},body:'{}'})).status)()`);
+   assert.equal(status, expected, 'Anonymous public token must not authorize writes');
+ }
+ assert.equal(await evaluate(`(async () => (await fetch(${JSON.stringify(publicRoot + '/songs/' + extra.body.id + '/tracks/' + recovered.tracks[0].id + '/media')})).status)()`),404);
+ // Decode and play the actual worker output through the guest UI and media API.
+ await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]')?.disabled === false`), 'Real public audio not ready');
+ await input('loopStart', '1');await input('loopEnd', '1');
+ await evaluate(`document.querySelector('[aria-label="Повтор фрагмента"]').click()`);
+ const point = await evaluate(`(() => { const r=document.querySelector('[aria-label="Воспроизвести"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`);
+ await send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...point});
+ await send('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...point});
+ await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value) > .1`), 'Public playback clock did not advance');
+ await evaluate(`(async () => {document.querySelector('[aria-label="Пауза"]').click();await new Promise(requestAnimationFrame);})()`);
+ await poll(() => evaluate(`!!document.querySelector('[aria-label="Воспроизвести"]')`), 'Pause did not complete');
+ const paused = await evaluate(`Number(document.querySelector('input[type=range]').value)`);
+ await delay(200);
+ assert.equal(await evaluate(`Number(document.querySelector('input[type=range]').value)`),paused,'Paused cursor must remain stable');
+ await evaluate(`(() => {const el=document.querySelector('input[type=range]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,'0.5');el.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+ await poll(() => evaluate(`Number(document.querySelector('input[type=range]').value) === .5`),'Seek failed');
  await navigate(guestList);await expectText('Мои изменения');assert.equal(await evaluate(`!!document.querySelector('[aria-label="Создать песню"]')`),false);
  // Admin can edit all; another teacher can read published but cannot write.
  await navigate('?page=library');await expectText('Вход');await submit('admin@example.test','fictional password 123');await expectText('Администратор');await expectText('Мои изменения');
