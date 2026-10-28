@@ -81,9 +81,5 @@ jobs:
           google-chrome --version
           ffmpeg -version
           ffprobe -version
-      - name: Build explicit Pages demo for auth smoke
-        run: VITE_APP_DEMO=true npm run build
-      - run: npm run build-storybook
-      - run: node scripts/assemble-pages.mjs
       - name: Real HTTP SQLite FFmpeg and browser flows
         run: npm run test:e2e

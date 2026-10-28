@@ -240,7 +240,7 @@ try {
   assert.equal(await bodyIncludes('Администратор'), false);
   await navigate('?page=library'); await expectText('Администратор');
   await click('Выйти'); await expectText('Вход');
-  staticServer = await serveDirectory(join(root, 'storybook-static'));
+  staticServer = await serveDirectory(join(root, 'dist/e2e-demo'));
   await send('Page.navigate', { url: staticServer.origin + '/app/?page=sign-in' });
   await poll(() => evaluate('document.title === "Демонстрация · Хор" && !!document.querySelector("form")'), 'Pages demo did not load');
   await submit('fictional@example.test', 'fictional password 123');

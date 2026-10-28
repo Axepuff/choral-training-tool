@@ -8,8 +8,11 @@ backend — исторический срез; актуальные реализ
 
 Нужны Node 24, Go из `backend/go.mod`, Chrome с AAC/WebCodecs, FFmpeg и FFprobe
 и sqlite3 CLI в PATH (для backup/restore). Системный Go может оказаться старее требуемого: проверять `go version`.
-Auth browser suite также проверяет явную Pages demo сборку; runtime при этом
-собирается с `VITE_APP_DEMO=false` в `dist/e2e-runtime` самим `test:e2e`. Никакие аккаунты production, API-ключи, внешний сервис или Docker не нужны.
+Auth browser suite также проверяет явную Pages demo сборку. Команды `test:e2e`
+и `test:auth:browser` сами вызывают `build:e2e`: runtime с `VITE_APP_DEMO=false`
+в `dist/e2e-runtime`, demo с `VITE_APP_DEMO=true` в `dist/e2e-demo/app`.
+Они не зависят от содержимого `dist/index.html` или `storybook-static/app`
+и не требуют предварительной сборки Storybook/Pages. Никакие аккаунты production, API-ключи, внешний сервис или Docker не нужны.
 
 ```sh
 npm ci --cache /tmp/choral-npm-cache --no-audit --no-fund
@@ -20,7 +23,6 @@ npm run test:audio
 npm run test:audio:browser
 npm run build
 npm run build-storybook
-VITE_APP_DEMO=true npm run build
 node scripts/assemble-pages.mjs
 npm run test:stories
 npm run test:e2e
@@ -38,8 +40,8 @@ go build -o /tmp/choral-server ./cmd/server
 порт и передаёт одинаковый origin серверной auth и браузеру через `CHORAL_TEST_WEB`.
 Собранный runtime и API отдаёт существующий production `platform.NewService` на
 одном origin, с реальными headers/лимитами тела и static serving. В harness нет
-Vite dev server или самодельного API proxy. Storybook/Pages обслуживает отдельный
-статический Node HTTP server. Сквозная приёмка проверяет production assets без HMR.
+Vite dev server или самодельного API proxy. Storybook и изолированный Pages demo
+обслуживаются статическими Node HTTP servers. Сквозная приёмка проверяет production assets без HMR.
 Browser suite имеет общий Go timeout и таймауты ожиданий.
 
 `test:stories` читает **все** entries типа story из собранного `index.json`, открывает
@@ -154,3 +156,29 @@ FFmpeg/FFprobe 6.1.1, sqlite3 3.45.1. Новых npm-зависимостей н
 Это локальные результаты, а не опубликованный GitHub Actions run. Контроллер
 должен выполнить remote CI после публикации; физические iOS/Android и production
 HTTPS/hosting в этой среде не проверялись. Матрица выше сохраняет эти ограничения.
+
+
+## Исправление повторного прогона Issue #15
+
+Причина `Pages demo did not load`: auth smoke читал `storybook-static/app`,
+куда assemble копировал последнюю обычную runtime-сборку. Успех зависел от
+предварительного ручного `VITE_APP_DEMO=true npm run build`.
+Теперь обе browser-команды сами собирают runtime и явно помеченную demo
+в отдельные каталоги через общий `build:e2e`; smoke по-прежнему проверяет
+заголовок демонстрации и отказ фиктивного входа от настоящей авторизации.
+E2E job больше не строит неиспользуемый Storybook; все его play по-прежнему
+выполняются в frontend job. Production frontend и согласованный дизайн не менялись.
+
+Проверка исправления 28 октября 2026:
+
+- `npm run test:e2e`: **2/2 pass**, включая Pages demo smoke.
+- Повтор исходной последовательности `npm run build` → `npm run build-storybook`
+  → `node scripts/assemble-pages.mjs` → `npm run test:e2e`: **2/2 pass**.
+- Typecheck/lint, auth **15/15**, audio/MP4 **55/55**, audio browser прошли.
+- Storybook runner: **45/45** обнаруженных stories вместе с play прошли.
+- `go test -count=1 ./...`, vet, mod verify и build прошли. Обычный Go suite
+  не включает два opt-in browser tests; они выполнены указанной e2e-командой.
+  В системном PATH нет sqlite3, поэтому backup/restore отдельно выполнен с
+  `/tmp/issue14-sqlite/usr/bin` в PATH: `TestBackupCleanRestore` прошёл без skip.
+- `git diff --check` прошёл. Remote CI и физические iOS/Android остаются
+  проверками владельца/контроллера; локальный результат их не подменяет.
