@@ -7,7 +7,7 @@
 
 ## Сборка и запуск
 
-Нужны Docker Engine с Compose v2, Linux containers, интернет для сборки и место
+Нужны Docker Engine с Buildx/BuildKit и Compose v2, Linux containers, интернет для сборки и место
 для image/build cache, данных и резервной копии. Хостинг и платные сервисы не нужны.
 Из корня checkout:
 
@@ -202,10 +202,9 @@ Go TestBackupCleanRestore вызывает тот же entrypoint с насто�
 настоящий Go/FFmpeg сервис, HTTP frontend/readiness и SIGTERM; platform suite
 также проверяет drain активного HTTP. Никакой mock success в runtime не добавлен.
 
-В текущей sandbox среде Docker CLI отсутствует, daemon socket недоступен: Docker build/run и
-контейнерная версия FFmpeg **не проверены**. Исполняемый smoke подготовлен, но
-контейнерная приёмка остаётся обязательной на Docker-хосте. Успешные локальные
-Go/frontend проверки не означают запуска production или завершения #16.
+Первичный агент не имел доступа к Docker из sandbox. После установки Docker
+владельцем контейнерная проверка выполнена на WSL-хосте (результаты ниже).
+Локальные проверки не означают запуска production или завершения #16.
 
 Pages/Storybook остаются отдельным статическим preview: workflow использует
 VITE_APP_DEMO=true и относительный base, assemble-pages публикует приложение в
@@ -228,3 +227,31 @@ Storybook/demo preview не является production и не предоста
 - check-container.sh **не запускался**: Docker CLI отсутствует и подключение к
   /var/run/docker.sock недоступно. Container FFmpeg, image build и Docker volume
   persistence не следует считать проверенными по результатам host-тестов.
+
+### Проверка на Docker-хосте 28 октября 2026
+
+Docker Engine 29.1.3, Compose 2.40.3, Buildx 0.30.1, Linux/amd64 в WSL.
+Buildx из Ubuntu-пакета подключён во временном Docker config; членство в группе
+docker применено через `sg docker`, без изменения прав daemon socket.
+
+`sh scripts/check-container.sh` прошёл: сборка, health/readiness, deep URL/query
+и assets, ответы 404 для отсутствующих assets/API, UID 10001 и read-only root,
+сохранение записи SQLite и файла после restart/rebuild, SIGTERM exit 0,
+backup → новый чистый volume → чтение исходной записи и файла. Тестовый project
+и его volumes удалены самим сценарием; пользовательские данные не затрагивались.
+
+До исправления `.dockerignore` BuildKit воспроизвёл `stat /src/cmd/server:
+directory not found`: правило `**/server` исключало исходники команды вместе
+с бинарником. Правило сужено до `/backend/server`; полный сценарий прошёл
+после исправления. Сборка сохраняет TLS, проверку digest образов и подписей APT.
+
+В собранном образе `choral:check-40002` с FFmpeg 5.1.9-0+deb12u1 прошёл полный
+`internal/processing` suite без skip: test binary собран через
+`CGO_ENABLED=0 go test -c -o /tmp/choral-issue14-processing.test ./internal/processing`
+из backend и смонтирован read-only в image; запуск — с UID image и read-only root.
+Первый прогон с обычным noexec `/tmp` не смог выполнить тестовые подмены
+ffmpeg/ffprobe и провалил fault injection. Повтор с
+`--tmpfs /tmp:exec,size=512m,mode=1777` прошёл все проверки реальных форматов,
+артефактов, восстановления worker, отмены и ошибок. Exec включён только для
+этого теста, Compose приложения не менялся. Это проверка packaged FFmpeg,
+а не новый браузерный или физический мобильный прогон.

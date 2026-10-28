@@ -14,7 +14,7 @@
 !scripts/container-data.sh
 **/data
 **/backups
-**/server
+/backend/server
 **/*.sqlite*
 **/*.db
 **/.env

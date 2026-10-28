@@ -158,6 +158,6 @@ Commit/PR/merge оставлены контроллеру; настройки о
 
 Подготовлены контейнерная упаковка, frontend/static serving, persistent volume,
 ограниченные права, backup/restore и проверки. [operations.md](operations.md)
-содержит инструкции и границы: Docker отсутствует в текущей sandbox, поэтому
-контейнерный build/run/volume smoke ещё требуется на Docker-хосте. Это не rollout
+содержит инструкции и границы: build/run/volume/clean restore smoke прошёл
+на Docker-хосте в WSL после первичной реализации в sandbox. Это не rollout
 #16; сквозная приёмка #15 остаётся отдельной задачей. Commit/PR/merge — контроллеру.

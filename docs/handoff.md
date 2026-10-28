@@ -216,6 +216,6 @@ Stories/Pages demo по-прежнему явно визуальные; runtime 
 Подготовлены Docker/Compose, same-origin frontend в Go, private persistent volume,
 backup/clean restore с SQLite integrity/checksum и поведенческие проверки.
 Исторический срез «backend отсутствует» выше не относится к текущему runtime.
-Инструкции, реальные результаты и ограничение отсутствующего Docker в sandbox:
+Инструкции, результаты sandbox и успешной контейнерной проверки на WSL-хосте:
 [operations.md](operations.md). Production rollout остаётся #16; commit/PR/merge
 выполняет контроллер. Дизайн и Pages/Storybook demo сохранены.
