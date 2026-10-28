@@ -202,10 +202,40 @@ Run завершён в `2026-10-28T15:47:10Z`, status `completed`, conclusion `
 и `/jobs`. Запуск уже существовал; агент не создавал и не перезапускал workflow,
 не использовал gh, credentials, commit или push.
 
-Оставшаяся граница доказательства: endpoint скачивания job logs без авторизации
-возвращает HTTP 403. Поэтому фактические remote counts stories/play и browser
-tests в этой сессии не прочитаны; локальные **45/45 stories** и **2/2 browser
-tests** выше не выдаются за remote counts. Для полного закрытия замечания ревью
-контроллеру нужно сверить эти счётчики в логах связанных jobs и записать их сюда.
+### Сверка фактически выполненных тестов remote CI
+
+28 октября 2026 логи того же attempt 1 получены через подключённый GitHub
+инструмент `github_fetch_workflow_job_logs` (без gh, чтения credentials или
+перезапуска workflow). Предыдущее ограничение HTTP 403 относилось к
+неавторизованному скачиванию; счётчики ниже прочитаны именно из remote logs.
+
+| Job / проверка | Фактические записи в логах |
+| --- | --- |
+| [frontend — Storybook](https://github.com/Axepuff/choral-training-tool/actions/runs/40719067990/job/122924676295) | 45 отдельных `PASS` с 45 уникальными story ID; итог в `15:47:05.4367556Z`: `Storybook: 45/45 stories finished successfully (including their play functions).` |
+| [e2e — auth](https://github.com/Axepuff/choral-training-tool/actions/runs/40719067990/job/122924676288) | `=== RUN TestFrontendBrowser` в `15:45:42.7974071Z`, `--- PASS: TestFrontendBrowser (8.91s)` в `15:45:51.7052351Z` |
+| [e2e — songs](https://github.com/Axepuff/choral-training-tool/actions/runs/40719067990/job/122924676288) | `=== RUN TestSongsFrontendBrowser` в `15:45:52.5572526Z`, `--- PASS: TestSongsFrontendBrowser (37.63s)` в `15:46:30.1894795Z` |
+| frontend — Node suites | auth: 15 tests / 15 pass; audio/MP4: 55 / 55; queue: 44 / 44. Во всех трёх итогах fail 0, skipped 0 |
+
+Discovered/completed stories: **45/45**. По отдельным `PASS`: CreateSong 11,
+RehearsalPlayer 10, SignIn 7, SongLibrary 12, TrackControls 5; сумма 45,
+дубликатов ID нет. Runner берёт discovered count из собранного `index.json`
+и сверяет completed после успешного `storyFinished`, включая выполнение play.
+Это зафиксированный результат данного run, а не постоянный ожидаемый размер suite.
+
+Browser suite: **2 запущены, 2 PASS, 0 SKIP, 0 FAIL**; списки `=== RUN` и
+`--- PASS` совпадают по именам, неожиданных пропусков нет. В Storybook все
+обнаруженные stories имеют отдельный PASS; пропусков и failures нет.
+Remote audio browser также содержит восемь итоговых PASS, включая PCM mix,
+loop/metronome, seek, Solo/Mute, ошибки и responsive размеры. Backend log
+подтверждает `ok` для всех десяти тестируемых пакетов; обычный невёрбозный
+Go suite не сообщает число отдельных тестов, поэтому локальные 158 pass
+не выдаются за remote count.
+
+`git diff b82c7b00bad8576c90ea40516954bf343b4253b1 HEAD --stat` на момент
+сверки показал только `docs/e2e.md`: исполняемый код, fixtures и workflow
+совпадают с проверенным run. Полный CI повторно не запускался ради изменения
+документации. В документ перенесены только имена тестов, статусы и счётчики;
+полные логи и временные данные не сохраняются в репозитории.
+
 Повторный запуск физических iPhone-проверок #11/#12 не требуется по результату
 ревью владельца; Android отложен в #34, production HTTPS/hosting остаётся #16.
