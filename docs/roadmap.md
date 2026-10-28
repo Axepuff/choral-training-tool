@@ -153,3 +153,11 @@ Commit/PR/merge выполняет контроллер.
 Поведение seek/restart/смены диапазона, проверки и ограничения описаны в
 [audio-player.md](audio-player.md#выбор-тактов-и-метроном--issue-12).
 Commit/PR/merge оставлены контроллеру; настройки очереди не менялись.
+
+## Локальный результат Issue #14
+
+Подготовлены контейнерная упаковка, frontend/static serving, persistent volume,
+ограниченные права, backup/restore и проверки. [operations.md](operations.md)
+содержит инструкции и границы: Docker отсутствует в текущей sandbox, поэтому
+контейнерный build/run/volume smoke ещё требуется на Docker-хосте. Это не rollout
+#16; сквозная приёмка #15 остаётся отдельной задачей. Commit/PR/merge — контроллеру.

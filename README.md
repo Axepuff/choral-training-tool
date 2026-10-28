@@ -238,3 +238,12 @@ fixtures; Pages/Storybook остаются явным demo. Реальный aud
 Реальный Web Audio плеер с оконной Range-загрузкой 1–32 дорожек до 20 минут,
 команды поведенческих проверок, границы памяти и
 проверенные браузеры: [docs/audio-player.md](docs/audio-player.md).
+
+## Контейнерный запуск и резервные копии
+
+Go + production frontend на одном origin, SQLite/файлы в отдельном volume,
+FFmpeg/FFprobe, непривилегированный процесс и проверяемый backup/restore:
+[docs/operations.md](docs/operations.md). Конфигурация: Dockerfile, compose.yaml,
+.env.example. Проверка в изолированном Docker project:
+`sh scripts/check-container.sh`. Это подготовка #14, не production rollout #16;
+Pages/Storybook остаются отдельным статическим demo preview.

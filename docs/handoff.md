@@ -210,3 +210,12 @@ cache; системный Go 1.22.2 для проекта устарел. Commit
 двух числовых полей. Правила seek/restart/live change, поведенческие проверки и
 мобильные ограничения: [audio-player.md](audio-player.md#выбор-тактов-и-метроном--issue-12).
 Stories/Pages demo по-прежнему явно визуальные; runtime не подменяется ими.
+
+## Локальное дополнение: Issue #14
+
+Подготовлены Docker/Compose, same-origin frontend в Go, private persistent volume,
+backup/clean restore с SQLite integrity/checksum и поведенческие проверки.
+Исторический срез «backend отсутствует» выше не относится к текущему runtime.
+Инструкции, реальные результаты и ограничение отсутствующего Docker в sandbox:
+[operations.md](operations.md). Production rollout остаётся #16; commit/PR/merge
+выполняет контроллер. Дизайн и Pages/Storybook demo сохранены.
