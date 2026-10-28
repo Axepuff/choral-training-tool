@@ -1,0 +1,13 @@
+[Unit]
+Description=Choral consistent offline backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/choral
+Environment=COMPOSE_PROJECT_NAME=choral
+UMask=0077
+ExecStart=/usr/bin/flock -n /run/lock/choral-maintenance.lock /bin/sh scripts/scheduled-backup.sh /var/backups/choral
+# Allow a large archive to finish; alert on duration instead of killing writers.
+TimeoutStartSec=infinity

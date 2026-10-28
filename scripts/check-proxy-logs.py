@@ -5,7 +5,9 @@ import http.server
 from pathlib import Path
 import shutil
 import socket
+import ssl
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -47,6 +49,30 @@ def main():
                               f"client_body_temp_path {root}/body;\nproxy_temp_path {root}/proxy;\n"
                               f"fastcgi_temp_path {root}/fastcgi;\nuwsgi_temp_path {root}/uwsgi;\nscgi_temp_path {root}/scgi;\n"
                               + example + "\n}\n")
+            tls = '--deployment' in sys.argv
+            if tls:
+                subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+                                '-days', '1', '-subj', '/CN=localhost',
+                                '-addext', 'subjectAltName=IP:127.0.0.1',
+                                '-keyout', str(root / 'key.pem'), '-out', str(root / 'cert.pem')],
+                               check=True, capture_output=True)
+                with socket.socket() as reserve:
+                    reserve.bind(('127.0.0.1', 0))
+                    http_port = reserve.getsockname()[1]
+                template = (Path(__file__).resolve().parent.parent / 'deploy/nginx.conf').read_text()
+                template = template.replace('user www-data;', 'daemon off;\nmaster_process off;')
+                template = template.replace('/run/nginx.pid', str(root / 'nginx.pid'))
+                template = template.replace('listen 80 default_server;', f'listen 127.0.0.1:{http_port} default_server;')
+                template = template.replace('listen [::]:80 default_server;', '')
+                template = template.replace('listen 443 ssl default_server;', f'listen 127.0.0.1:{port} ssl default_server;')
+                template = template.replace('listen [::]:443 ssl default_server;', '')
+                template = template.replace('/etc/letsencrypt/live/choir.example.test/fullchain.pem', str(root / 'cert.pem'))
+                template = template.replace('/etc/letsencrypt/live/choir.example.test/privkey.pem', str(root / 'key.pem'))
+                template = template.replace('127.0.0.1:8080', f'127.0.0.1:{upstream.server_port}')
+                template = template.replace('http {', f'http {{\nclient_body_temp_path {root}/body;\nproxy_temp_path {root}/proxy;')
+                template = template.replace('http {', f'http {{\nfastcgi_temp_path {root}/fastcgi;\nuwsgi_temp_path {root}/uwsgi;\nscgi_temp_path {root}/scgi;')
+                config.write_text(template)
+                context = ssl.create_default_context(cafile=str(root / 'cert.pem'))
             with (root / "stderr.log").open("w") as stderr:
                 process = subprocess.Popen([nginx, "-p", directory, "-c", str(config)],
                                            stdout=stderr, stderr=stderr)
@@ -69,10 +95,20 @@ def main():
                              (prefix + f"media?token={query_token}", {"Content-Length": str(102*1024*1024)}, 413),
                              (prefix + f"%ZZ?token={query_token}", {}, 400)]
                     for path, headers, expected in cases:
-                        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                        conn = (http.client.HTTPSConnection("127.0.0.1", port, timeout=5, context=context)
+                                if tls else http.client.HTTPConnection("127.0.0.1", port, timeout=5))
                         conn.request("GET", path, headers={"Host": "choir.example.test", **headers})
                         response = conn.getresponse()
                         assert response.status == expected, (response.status, expected)
+                        response.read()
+                        conn.close()
+                    if tls:
+                        conn = http.client.HTTPConnection('127.0.0.1', http_port, timeout=5)
+                        path = prefix + f'media?token={query_token}'
+                        conn.request('GET', path, headers={'Host': 'untrusted.example'})
+                        response = conn.getresponse()
+                        assert response.status == 308
+                        assert response.getheader('Location') == 'https://choir.example.test' + path
                         response.read()
                         conn.close()
                 finally:

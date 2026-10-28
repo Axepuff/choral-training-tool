@@ -59,7 +59,11 @@ jobs:
       - run: go test -count=1 ./...
       - run: go vet ./...
       - name: Proxy logs never contain public tokens
-        run: python3 ../scripts/check-proxy-logs.py
+        run: |
+          python3 ../scripts/check-proxy-logs.py
+          python3 ../scripts/check-proxy-logs.py --deployment
+      - name: Scheduled backup failure recovery
+        run: python3 ../scripts/check-scheduled-backup.py
       - run: go build -o /tmp/choral-server ./cmd/server
 
   e2e:

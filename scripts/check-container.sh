@@ -50,14 +50,23 @@ verify
 docker compose up -d --build --force-recreate
 wait_ready
 verify
+# Exercise the scheduler against real Compose/SQLite before the clean restore below.
+mkdir "$backup"
+sh scripts/scheduled-backup.sh "$backup"
+wait_ready
+verify
+scheduled=$(find "$backup" -mindepth 1 -maxdepth 1 -type d)
+test -f "$scheduled/IMAGE_ID"
+test -f "$scheduled/COMMIT"
+(cd "$scheduled" && sha256sum -c SHA256SUMS)
 # stop sends SIGTERM; exit code distinguishes graceful stop from SIGKILL.
 docker compose stop app
 container=$(docker compose ps -aq app)
 test "$(docker inspect -f '{{.State.ExitCode}}' "$container")" = 0
-sh scripts/backup-restore.sh backup "$backup"
+sh scripts/backup-restore.sh backup "$backup/manual"
 # Removing only this disposable project creates a genuinely clean named volume.
 docker compose down -v
-sh scripts/backup-restore.sh restore "$backup"
+sh scripts/backup-restore.sh restore "$backup/manual"
 docker compose up -d
 wait_ready
 verify
