@@ -255,6 +255,12 @@ func (s *Service) sessionError(w http.ResponseWriter, err error) {
 	}
 }
 
+const (
+	loginFailureWindow = 5 * time.Minute
+	loginCooldown      = 30 * time.Second
+	loginFailureLimit  = 20
+)
+
 func (s *Service) login(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Origin") != s.Origin {
 		fail(w, 403, "csrf_failed", "Запрос отклонён")
@@ -294,7 +300,7 @@ func (s *Service) login(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 	now := s.now().UTC()
 	n := now.Unix()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM login_attempts WHERE window_start<=? AND locked_until<=?`, n-900, n); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM login_attempts WHERE window_start<=? AND locked_until<=?`, n-int64(loginFailureWindow/time.Second), n); err != nil {
 		s.sessionError(w, err)
 		return
 	}
@@ -306,11 +312,24 @@ func (s *Service) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if locked > n {
+		// Shorten pre-upgrade locks once, persistently; retries must not extend them.
+		if remaining := int64(loginCooldown / time.Second); locked-n > remaining {
+			locked = n + remaining
+			if _, err = tx.ExecContext(ctx, `UPDATE login_attempts SET locked_until=? WHERE scope=?`, locked, scope); err != nil {
+				s.sessionError(w, err)
+				return
+			}
+			if err = tx.Commit(); err != nil {
+				s.sessionError(w, err)
+				return
+			}
+		}
 		w.Header().Set("Retry-After", strconv.FormatInt(locked-n, 10))
 		fail(w, 429, "rate_limited", "Слишком много попыток входа")
 		return
 	}
-	if n-start >= 900 {
+	if locked != 0 || n-start >= int64(loginFailureWindow/time.Second) {
+		locked = 0
 		failures = 0
 		start = n
 	}
@@ -370,8 +389,8 @@ func (s *Service) login(w http.ResponseWriter, r *http.Request) {
 	n = now.Unix()
 	if !valid || blocked || a.User.ID == "" || e != nil {
 		failures++
-		if failures >= 5 {
-			locked = n + 900
+		if failures >= loginFailureLimit {
+			locked = n + int64(loginCooldown/time.Second)
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO login_attempts(scope,failures,window_start,locked_until) VALUES(?,?,?,?) ON CONFLICT(scope) DO UPDATE SET failures=excluded.failures,window_start=excluded.window_start,locked_until=excluded.locked_until`, scope, failures, start, locked)
 		if err == nil {
