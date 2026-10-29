@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Behavior checks with fictional backups on distinct filesystems."""
 import importlib.util
+import sys
+sys.dont_write_bytecode = True
 from pathlib import Path
 import tempfile
 import datetime as dt
