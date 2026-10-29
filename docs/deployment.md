@@ -110,6 +110,8 @@ sudo systemctl enable --now certbot.timer
 
 ```sh
 sudo install -d -m 0700 /var/backups/choral
+sudo install -d -m 0755 /usr/local/lib/choral-backup
+sudo install -m 0755 scripts/scheduled-backup.sh scripts/backup-restore.sh scripts/copy-backup.sh /usr/local/lib/choral-backup/
 sudo install -m 0644 deploy/choral-backup.service deploy/choral-backup.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl start choral-backup.service

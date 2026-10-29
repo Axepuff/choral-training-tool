@@ -66,6 +66,8 @@ jobs:
         run: python3 ../scripts/check-scheduled-backup.py
       - name: Second filesystem backup copy
         run: python3 ../scripts/check-backup-copy.py
+      - name: Backup freshness and second copy health
+        run: python3 ../scripts/check-backup-health.py
       - name: Caddy shared-host TLS and privacy regressions
         timeout-minutes: 3
         run: |

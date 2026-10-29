@@ -138,7 +138,12 @@ curl --fail http://127.0.0.1:8081/readyz
 service failed, но не продлевает остановку приложения. При отсутствующих переменных
 сохраняется прежняя локальная процедура. Общий maintenance lock удерживается
 до конца копирования. `deploy/choral-backup.service` читает необязательный
-root-owned `/etc/choral-backup.conf`.
+root-owned `/etc/choral-backup.conf`. Unit запускает root-owned scripts из
+`/usr/local/lib/choral-backup`, сохраняя WorkingDirectory=/opt/choral:
+COMMIT и Compose относятся к действующему релизу приложения. Это позволяет
+обновить операционные скрипты без изменения app image или production checkout.
+Установить вместе scheduled-backup.sh, backup-restore.sh и copy-backup.sh;
+helper-скрипты разрешаются относительно самого scheduled-backup.sh.
 
 Пример для согласованного HDD velette (выполнять после выбора защиты копии):
 
@@ -330,3 +335,52 @@ ffmpeg/ffprobe и провалил fault injection. Повтор с
 Проверка подключена в backend CI. На исходном примере из main тот же сценарий
 обнаруживает токен в access.log. TLS, внешний CDN/WAF и production-конфигурацию
 эта локальная проверка не подтверждает; их журналы нужно проверить при #16.
+
+
+## Контроль backup через Beszel на velette
+
+`deploy/choral-backup-health.service` запускает `scripts/backup-health.py` из
+`/usr/local/lib/choral-backup` на **127.0.0.1:18082**, единственный путь `/readyz`.
+Ответ 200 `backup_ready` означает: отдельный HDD смонтирован, на обоих дисках
+свободно не менее 15% bytes/inodes, завершённая копия не старше 26 часов,
+на HDD совпадают COMMIT/IMAGE_ID/SHA256SUMS и размер архива, backup service
+загружен и не сообщает ошибку последнего запуска. Остальные состояния дают 503.
+Partial-каталоги не принимаются. Проверка не хеширует большой архив каждые
+30 секунд: checksum проверяется при создании второй копии; периодический
+полный restore всё равно нужен. Наличие здоровой ручной копии не доказывает,
+что timer уже включён или впервые успешно сработал.
+
+```sh
+sudo install -m 0755 scripts/backup-health.py /usr/local/lib/choral-backup/
+sudo install -m 0644 deploy/choral-backup-health.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now choral-backup-health.service
+curl --fail --max-time 5 http://127.0.0.1:18082/readyz
+```
+
+Перед установкой проверить свободный порт; не использовать 8082 — на velette
+его занимает Quantum. Caddy не проксирует health endpoint в интернет. Agent
+Beszel работает в host network и может опрашивать loopback. Endpoint read-only,
+не возвращает имена песен, URL, токены, ключи или содержимое БД; access log выключен.
+
+В Beszel созданы HTTP monitors, интервал 30 секунд:
+`https://choral-train.ru/readyz` и `http://127.0.0.1:18082/readyz`.
+NetworkMonitorLoss настроен на 5% потерь за предыдущий час, без отдельной duration.
+Это правило относится ко всем Network Monitors системы velette, включая прежние.
+По [контракту Beszel](https://beszel.dev/guide/network-monitors) нужны минимум
+три пробы; при накопленной часовой истории тревога обычно требует более трёх
+минут отказа. Поэтому это не точное оповещение о превышении двух минут downtime.
+Почта использует существующую настройку Beszel, SMTP secrets не копируются.
+
+Безопасный тест доставки: временный loopback HTTP endpoint, возвращающий 503,
+и отдельный monitor с интервалом 5 секунд. Проверить появление incident в
+alerts_history, отсутствие ошибки отправки в приватном журнале Hub и получение
+письма владельцем; затем удалить только созданный тестовый monitor/endpoint.
+Не имитировать ошибку остановкой production или повреждением реального backup.
+Beszel на том же ноутбуке не может отправить письмо при потере питания/сети
+самого ноутбука: для этого нужен внешний наблюдатель.
+
+Откат: отключить только choral-backup.timer и choral-backup-health.service,
+удалить/отключить только два созданных choral monitors через Beszel UI;
+проверить общий NetworkMonitorLoss перед изменением, чтобы сохранить чужие правила.
+Копии, production volume, app, Caddy и службы Beszel при откате не удалять.
