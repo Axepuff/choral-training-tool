@@ -30,7 +30,7 @@ else:
     raise SystemExit('unexpected Docker operation')
 '''
 
-for case in ('success', 'archive-fails', 'killed', 'stopped', 'restart-fails'):
+for case in ('success', 'archive-fails', 'killed', 'stopped', 'restart-fails', 'mirror-fails'):
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         binary = root / 'docker'
@@ -41,12 +41,17 @@ for case in ('success', 'archive-fails', 'killed', 'stopped', 'restart-fails'):
         if case != 'stopped':
             (root / 'running').touch()
         env = dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}', FIXTURE=directory, CASE=case)
+        env.pop('CHORAL_BACKUP_MIRROR_ROOT', None)
+        env.pop('CHORAL_BACKUP_MIRROR_MOUNT', None)
+        if case == 'mirror-fails':
+            env.update(CHORAL_BACKUP_MIRROR_ROOT=str(root / 'absent-disk' / 'backups'),
+                       CHORAL_BACKUP_MIRROR_MOUNT=str(root / 'absent-disk'))
         result = subprocess.run(['sh', 'scripts/scheduled-backup.sh', str(backups)],
                                 cwd=ROOT, env=env, capture_output=True)
         assert (result.returncode == 0) == (case == 'success'), case
         assert (root / 'running').exists() == (case not in ('stopped', 'restart-fails')), case
         archives = list(backups.glob('*/data.tar'))
-        assert bool(archives) == (case in ('success', 'restart-fails')), case
+        assert bool(archives) == (case in ('success', 'restart-fails', 'mirror-fails')), case
         if case == 'archive-fails':
             assert list(backups.glob('*/data.tar.partial'))
             assert not list(backups.glob('*/SHA256SUMS'))

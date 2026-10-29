@@ -110,6 +110,8 @@ sudo systemctl enable --now certbot.timer
 
 ```sh
 sudo install -d -m 0700 /var/backups/choral
+sudo install -d -m 0755 /usr/local/lib/choral-backup
+sudo install -m 0755 scripts/scheduled-backup.sh scripts/backup-restore.sh scripts/copy-backup.sh /usr/local/lib/choral-backup/
 sudo install -m 0644 deploy/choral-backup.service deploy/choral-backup.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl start choral-backup.service
@@ -136,7 +138,8 @@ shell trap запуститься: проверить app/health вручную 
 переключая production traffic. Проверить контрольную песню, media/Range/peaks и
 ранее выпущенную ссылку; сессии/ключи копии чувствительны так же, как production.
 
-После успешного restore: `sudo systemctl enable --now choral-backup.timer`.
+После успешного restore, согласования всех параметров, проверки второй копии
+и доставки тестового уведомления: `sudo systemctl enable --now choral-backup.timer`.
 Согласовать retention и зашифрованный вынос **на другое устройство/хранилище**;
 локальная копия на том же диске не защищает от потери сервера. Автоудаление пока
 не включено: удалять старые копии только после проверки новой и внешней копии.
@@ -200,3 +203,36 @@ e2e (реальный HTTP/SQLite/FFmpeg/browser). Подтверждены run 
 прогон повторно прошёл. Новые proxy/backup checks добавлены в backend CI.
 Production-доступ, DNS/ACME, внешний backup/monitoring и два браузера на реальном
 origin остаются этапом после согласования; результаты здесь их не подменяют.
+
+
+## Продолжение эксплуатации velette
+
+Первичная установка завершена, PR #43 объединён. Не повторять установку.
+[Проверка 29 октября](deployment-velette.md#эксплуатационная-проверка--29-октября-2026)
+фиксирует restore реальной копии и оставшиеся ограничения. Согласованы 03:00 UTC
+(06:00 МСК), перерыв до двух минут, хранение месяц. После подтверждения
+тестового письма Beszel timer включён; первый запуск — 30 октября 2026 в 06:00 МСК.
+Подготовлена [вторая копия](operations.md#вторая-копия-на-отдельном-диске)
+на отдельный HDD после согласования защиты. Автоудаления нет.
+
+Перед включением выбрать канал и проверить **доставку** тестовой ошибки. На хосте
+есть Beszel, но наличие контейнеров не доказывает настроенный канал или сбор
+статуса backup. Варианты: действующий канал мониторинга владельца, его Telegram-бот
+или существующий SMTP; новые аккаунты агент не создаёт. Секреты передаются только
+в закрытый локальный конфиг. До подключения канала эти команды — ручной контроль,
+а не работающие оповещения:
+
+```sh
+curl --fail --max-time 15 https://choral-train.ru/readyz
+systemctl show choral-backup.service -p Result -p ExecMainStatus
+systemctl list-timers --all choral-backup.timer
+df -B1 / /mnt/storage
+df -i / /mnt/storage
+```
+
+Отдельный внешний наблюдатель нужен для проверки входящей доступности. Проверять
+возраст последней **успешной полной** операции с обеими копиями (порог 26 часов),
+ошибки service, превышение согласованных двух минут перерыва и свободное место
+на обоих дисках. `Result=success` без свежего запуска недостаточен; отсутствие
+units — отсутствие расписания. Пороги места и тестовая тревога требуют фиксации
+при подключении мониторинга. Проверка renew относится к Caddy, не Certbot.
