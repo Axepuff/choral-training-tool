@@ -59,7 +59,19 @@ jobs:
       - run: go test -count=1 ./...
       - run: go vet ./...
       - name: Proxy logs never contain public tokens
-        run: python3 ../scripts/check-proxy-logs.py
+        run: |
+          python3 ../scripts/check-proxy-logs.py
+          python3 ../scripts/check-proxy-logs.py --deployment
+      - name: Scheduled backup failure recovery
+        run: python3 ../scripts/check-scheduled-backup.py
+      - name: Caddy shared-host TLS and privacy regressions
+        timeout-minutes: 3
+        run: |
+          mkdir -p "$RUNNER_TEMP/choral-caddy"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/choral-caddy/caddy.tar.gz" https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_amd64.tar.gz
+          echo "727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b  $RUNNER_TEMP/choral-caddy/caddy.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/choral-caddy/caddy.tar.gz" -C "$RUNNER_TEMP/choral-caddy" caddy
+          PATH="$RUNNER_TEMP/choral-caddy:$PATH" python3 ../scripts/check-caddy.py
       - run: go build -o /tmp/choral-server ./cmd/server
 
   e2e:

@@ -1,0 +1,23 @@
+# Install with caddy-logging.caddy via prepare-caddy.py; this file ALONE is unsafe.
+# Requires Caddy 2.11.7 (tested). Do not replace existing sites or expose backend.
+choral-train.ru {
+	# No `log` directive: enabling a named logger also enables fallback access
+	# logging for other hosts on the shared listener. Keep access logs disabled.
+	request_body {
+		max_size 105906176
+	}
+	timeouts {
+		read_timeout 30s
+		write_timeout 35s
+	}
+	reverse_proxy 127.0.0.1:8080 {
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 35s
+			read_timeout 35s
+			write_timeout 35s
+		}
+	}
+	# Keep Caddy's normal error handling/diagnostics (including other sites).
+	# Global runtime filtering also protects errors after headers have been sent.
+}

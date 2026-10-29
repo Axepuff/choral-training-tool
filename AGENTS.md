@@ -1,97 +1,79 @@
-# Работа агентов с проектом
+# Working on this project
 
-## Начало задачи
+## Workflow
 
-- Прочитайте `docs/handoff.md`, `docs/architecture.md`, `docs/authentication.md`,
-  `docs/roadmap.md` и целевую GitHub Issue вместе с её зависимостями.
-- Источник текущего состояния — репозиторий, Issues и PR, а не предыдущая переписка.
-  Если документация расходится с кодом, проверьте код и явно зафиксируйте расхождение.
-- Работайте с актуальным `main`. Перед изменениями проверьте рабочее дерево,
-  не перезаписывайте чужие правки.
-- Одна задача — отдельная ветка `issue-<номер>-<описание>` и один PR. Достаточно
-  создать PR с результатом и проверками; не объединяйте его автоматически с `main`.
-- Исключение по прямому поручению владельца: локальная очередь из
-  `scripts/agent-queue/` может объединять PR задач #2–12, #14–15 и #31 после обязательных
-  проверок и независимого ревью без замечаний. Это право контроллера очереди;
-  исполняющие и ревьюирующие агенты не вызывают merge сами. #13 и production #16
-  в очередь не входят; обновление самого контроллера #32 выполняется отдельным
-  ручным PR. Порядок после #11: исправления редактора #31, затем #12, #14, #15.
-  Подробности: [docs/local-automation.md](docs/local-automation.md).
-- В облаке используйте существующий checkout: отдельная задача уже имеет свою
-  среду. Не создавайте Git worktree без прямой просьбы пользователя.
-- Не начинайте зависимую реализацию до принятия её контракта. Независимые части
-  можно разрабатывать параллельно; перечисление областей в Issue задаёт границы.
+- Start from current `main`; inspect the working tree and preserve unrelated edits.
+  In cloud environments, use the existing checkout; create worktrees only on request.
+- Read the target Issue and dependencies. Implement only its scope, after dependent
+  contracts are accepted. Use `issue-<number>-<description>` and one PR per task.
+- Code and GitHub determine current state. Report documentation discrepancies:
+  `docs/handoff.md`, `docs/architecture.md`, and `docs/roadmap.md` contain historical
+  stages; read later supplements before treating old limitations as current.
+- Update affected contracts/docs. PRs describe the problem, new behavior, checks,
+  limitations, and `Closes #N`. Do not merge automatically.
+- Queue work: read `docs/local-automation.md` and `scripts/agent-queue/policy.mjs`.
+  Only the controller may merge the explicitly authorized #2–12, #14–15, #31 after
+  required checks and clean independent review. No authorization extends to new
+  Issues; #13, production #16, and controller update #32 require manual PRs.
 
-## Состояние и стек
+## Architecture and scope
 
-- Сейчас готов UI на моках: React + TypeScript + Vite, CSS Modules, Storybook.
-  Backend, сессии, реальная обработка файлов и аудиодвижок ещё отсутствуют.
-- React выбран с разрешения пользователя. Не переводите проект обратно на Preact.
-- Backend должен быть на Go. Базовый план первой версии: один Go-сервис,
-  SQLite, постоянное хранилище файлов и FFmpeg; подробности фиксирует первая
-  задача о контрактах. Frontend остаётся в корне, Go-код размещается в `backend/`.
-- Существующая команда `/usr/bin/go` в текущей облачной среде не прошла
-  `go version` и не является подтверждённым Go toolchain. Наличие файла или
-  успешный `command -v go` не означает, что установлен компилятор Go.
-- Не добавляйте зависимости без необходимости и не меняйте версии стека попутно.
+React/TypeScript/Vite and CSS Modules at the root; Go/SQLite/FFmpeg in `backend/`.
+One service serves API and frontend on one origin with persistent private storage.
+Runtime has real sessions, songs, uploads, sharing, and Web Audio playback.
+Mocks belong in stories/tests or explicit Pages demo (`VITE_APP_DEMO=true`), never
+as runtime fallback or fake success. Pages cannot run Go.
 
-## Продуктовые ограничения
+Preserve React and the approved design. Avoid incidental dependency/version changes.
+Recording, self-registration, social login, payments, and redesign require a task.
+Account administration API/UI is #13; production rollout is #16, not implied by
+container readiness. Check live Issues for status.
 
-- Дизайн согласован. Сохраняйте компактный мобильный интерфейс и общие компоненты
-  приложения/Storybook. Один отступ страницы, без внешних серых карточек и демо-шапок.
-- Светлая тема, основной ориентир 360 px; проверяйте также 320 px, поворот телефона
-  и desktop. Области касания минимум 44 × 44 px. Не скрывайте переполнение всей
-  страницы для маскировки ошибки вёрстки.
-- Две роли: преподаватель редактирует свои песни; администратор — все и аккаунты.
-  Гость открывает опубликованный список/песню по ссылке без регистрации и без прав записи.
-- Название списка — «Песни». Гостю не показываются создание, редактирование и
-  кнопка ссылки на список. Поиск и сортировка доступны гостю.
-- Solo жёлтый. Solo и Mute взаимно исключаются; включение Solo у всех треков
-  сбрасывает все Solo. Минус на общей волне отображается очень тускло.
-- Сохраняйте горизонтальную прокрутку длинного таймлайна свайпом без скроллбара,
-  общий курсор и адаптацию landscape. Повтор пока жёстко задан тактами 2–3:
-  это известная незавершённая функция, а не согласованный предел.
-- Название, BPM, размер, треки с названиями/файлами и заметки до 1000 символов
-  должны стать реальными данными. Текущие числовые пределы описаны в handoff;
-  согласуйте одинаковую валидацию frontend/backend в API-контракте.
-- Не добавляйте запись звука, самостоятельную регистрацию, социальный вход,
-  платёжные функции или новый дизайн без соответствующей задачи.
+## Read before changing an area
 
-## Проверки
+- **Architecture/dependencies:** `docs/architecture.md`, `docs/roadmap.md`.
+- **API, data, validation, migrations:** `docs/api/openapi.yaml`, `docs/api/README.md`,
+  `docs/decisions/0001-mvp-contract.md`, `docs/backend.md`. Match frontend/backend
+  limits and Unicode counting to the contract.
+- **Auth, roles, public access:** `docs/authentication.md`, `docs/frontend-auth.md`,
+  `docs/backend.md`. Preserve login limits, Argon2id outside DB transactions, and
+  account rechecks before session creation.
+- **Forms, uploads, filenames, sharing:** `docs/frontend-songs.md`.
+- **UI:** approved UX in `docs/handoff.md`; reuse application/Storybook components.
+  Light, compact layout with one page padding, no outer gray cards/demo headers;
+  44 × 44 px targets. Check 320/360 px, landscape, desktop; never mask page overflow.
+  Preserve the title "Песни", guest search/sort, and editor-only create/edit/link actions.
+- **Player/mixer/timeline:** `docs/audio-player.md` and handoff UX. Preserve yellow
+  Solo, exclusive Solo/Mute, all-Solo reset, faint backing waveform, scrollbar-free
+  timeline swipes, shared cursor/clock, inclusive bar loops, and metronome.
+- **Containers, proxy/TLS, backup/restore, deployment:** `docs/operations.md`.
+  Prepare configuration and verifiable instructions before requesting owner hosting
+  or secrets. Protect public tokens from proxy access/error logs.
+- **MCP:** run `npm run storybook`, then `npm run check:mcp`; protocol success does
+  not prove client tool activation. Pages does not run MCP.
 
-Frontend из корня репозитория:
+## Validation
 
-```sh
-npm ci
-npm run typecheck
-npm run lint
-npm run build
-npm run build-storybook
-node scripts/assemble-pages.mjs
-```
+- Read `docs/e2e.md` for commands, prerequisites, and coverage; required CI checks
+  live in `.github/workflows/checks.yml`, scripts in `package.json`. Run frontend
+  commands from the root and Go commands from `backend/`. Verify `go version`
+  against `backend/go.mod`; system Go may be too old.
+- Build is not browser proof: `test:stories` runs all built stories/play;
+  `test:e2e` builds isolated runtime/demo and tests real Go/SQLite/FFmpeg flows.
+  Ordinary `go test` excludes opt-in browser tests. Run container smoke/restore
+  and proxy-log checks separately per operations docs.
+- Test behavior, especially authorization, persistence, processing failures, and
+  synchronization; avoid tests that merely mirror implementation.
+- Report skipped checks and distinguish local results, remote CI, and physical
+  devices. Mobile viewport emulation is not device testing; check Issue #34 and
+  audio QA for device evidence. Do not present cloud localhost as a usable preview.
+- Markdown-only changes: verify sources/links and run `git diff --check`.
 
-При недоступном домашнем npm-кеше: `npm ci --cache /tmp/choral-npm-cache --no-audit --no-fund`.
-`npm run build` уже включает typecheck. Сборка Storybook не запускает `play`-проверки.
-На момент передачи есть 34 stories; проверяйте затронутые состояния в браузере.
-Не добавляйте формальные тесты, повторяющие код; для прав доступа, хранения,
-падений обработки и синхронизации нужны поведенческие проверки.
+## Security
 
-Для MCP: `npm run storybook`, затем `npm run check:mcp`. Это проверка протокола,
-а не гарантия активации инструмента в клиенте агента. Pages не запускает MCP.
-Не выдавайте пользователю ссылки на localhost облачной среды как готовый preview.
-
-Команды Go и закреплённая версия toolchain появятся в задаче каркаса backend;
-до её завершения не заявляйте, что Go-проверки уже настроены или прошли.
-
-## Безопасность и завершение
-
-- Роль из UI, query-параметр и скрытая кнопка не являются авторизацией.
-  Проверка роли/владельца/публичного токена выполняется сервером.
-- Не сохраняйте пароли, ключи, cookies, исходное аудио и production-базу в Git.
-  Используйте вымышленные данные для stories. Не выводите секреты в логи/отчёт.
-- Не удаляйте оригинал до успешной проверки и фиксации результата конвертации.
-- Не подменяйте реальную функцию мок-успехом без явного обозначения этого ограничения.
-- PR: проблема и новое поведение, `Closes #N`, выполненные проверки и ограничения.
-  Обновите затронутые контракты/документацию. Не включайте соседние задачи попутно.
-- Деплой на настоящий сервер потребует хостинга и секретов владельца. Закончите
-  контейнеры, конфигурацию и проверяемые инструкции до запроса этих данных.
+- Enforce roles, ownership, and public-token scope on the server: teachers edit
+  their songs, admins all songs/accounts, guests only read published content.
+  UI visibility and query parameters are not authorization.
+- Keep passwords, keys, cookies, tokens, original audio, and production databases
+  out of Git/logs/reports; use fictional fixtures.
+- Delete originals only after conversion is validated and its result committed.
