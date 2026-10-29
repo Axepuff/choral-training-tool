@@ -4,10 +4,197 @@
 и CSS Modules, без UI-кита. React выбран вместо Preact с разрешения пользователя:
 нативный Preact framework Storybook пока не генерирует манифест API для MCP.
 
+## Управление сервером вручную
+
+Агенты для эксплуатации не нужны. Команды ниже рассчитаны на **существующий**
+Debian-ноутбук `velette`: Docker, Compose и Caddy уже установлены. Не повторяйте
+первичную установку поверх него. С компьютера с вашим Tailscale подключитесь:
+
+```sh
+ssh axepuff@velette
+```
+
+На самом ноутбуке достаточно открыть терминал. Рабочая копия сервера —
+`/opt/choral`, данные — Docker volume `choral_data`, настройки — закрытый
+`/opt/choral/.env`. Caddy принимает HTTPS и передаёт запросы на `127.0.0.1:8080`.
+Исходники разработчика в `~/projects/choral-training-tool` — другая копия.
+
+### Проверить состояние
+
+```sh
+cd /opt/choral
+sudo docker compose ps
+curl --fail https://choral-train.ru/readyz
+sudo docker compose logs --tail 50 app
+sudo systemctl is-active caddy tailscaled ssh
+df -h / /var/backups
+df -i /
+```
+
+Нормальное состояние приложения — `healthy`, readiness возвращает HTTP 200.
+Затем откройте сайт, войдите и воспроизведите песню: readiness не проверяет звук.
+Не публикуйте содержимое `.env`, резервных копий, cookies или паролей.
+Используйте именно **https://choral-train.ru**: HTTP на порту 80 пока может
+перенаправлять на страницу Keenetic. Обновление приложения этого не исправляет.
+
+### Обновить приложение
+
+Сначала объедините проверенный PR через GitHub и дождитесь зелёных проверок.
+Выберите **полный SHA коммита** — 40 символов из GitHub. Сам merge ничего на
+сервере не устанавливает. Пока PR #43 не объединён, релизы берутся из его ветки
+`issue-16-production-deployment`, куда предварительно включён актуальный `main`:
+так сохраняются deployment-скрипты. После объединения #43 можно брать `main`.
+Не деплойте произвольную вершину ветки без проверки её изменений.
+
+Предупредите преподавателя о коротком перерыве: во время резервного копирования
+и перезапуска сайт несколько секунд/минут может отвечать ошибкой. Сборка до этого
+идёт при работающем приложении и на ноутбуке может занять несколько минут.
+
+Откройте отдельную root-сессию; выполняйте следующие блоки в ней по порядку.
+`set -e` остановит процедуру при ошибке. Не продолжайте после ошибки вслепую.
+
+```sh
+sudo -i
+set -eu
+cd /opt/choral
+exec 9>/run/lock/choral-maintenance.lock
+flock -n 9
+# Если lock занят — другой оператор/backup работает; повторите позже.
+test -z "$(git status --porcelain)"
+git fetch origin
+read -r -p 'Полный SHA проверенного релиза: ' RELEASE
+[[ "$RELEASE" =~ ^[0-9a-f]{40}$ ]]
+git cat-file -e "$RELEASE^{commit}"
+OLD_RELEASE=$(git rev-parse HEAD)
+OLD_IMAGE=$(docker inspect --format '{{.Config.Image}}' choral-app-1)
+```
+
+Создайте отдельный каталог исходников и соберите образ с уникальным тегом. Уже
+настроенный builder `choral-issue16` ограничен 2 CPU/2 GiB RAM и сам запустится.
+
+```sh
+BUILD_DIR=$(mktemp -d /tmp/choral-release.XXXXXX)
+git archive "$RELEASE" | tar -x -C "$BUILD_DIR"
+docker buildx build --builder choral-issue16 --load -t "choral:$RELEASE" "$BUILD_DIR"
+docker buildx stop choral-issue16
+rm -rf -- "$BUILD_DIR"
+```
+
+Перед переключением остановите запись и сохраните **весь** volume. Секреты и
+пароли входят в копию: доступ к каталогу только у root. Не запускайте команды
+управления аккаунтами в другой сессии во время backup.
+
+```sh
+install -d -m 700 /var/backups/choral
+BACKUP="/var/backups/choral/$(date -u +%Y%m%dT%H%M%SZ)-before-update"
+# При ошибке до переключения вернуть прежнее приложение.
+trap 'docker compose up -d --no-build --wait --wait-timeout 90 app' EXIT
+docker compose stop app
+test "$(docker inspect -f '{{.State.ExitCode}}' choral-app-1)" = 0
+sh scripts/backup-restore.sh backup "$BACKUP"
+cp -p .env "$BACKUP/env.before"
+printf '%s\n' "$OLD_RELEASE" > "$BACKUP/COMMIT"
+printf '%s\n' "$OLD_IMAGE" > "$BACKUP/IMAGE_TAG"
+docker inspect -f '{{.Image}}' choral-app-1 > "$BACKUP/IMAGE_ID"
+# Копия завершена. Дальнейшая ошибка требует ручного разбора/отката ниже.
+trap - EXIT
+git switch --detach "$RELEASE"
+# В существующей .env меняется только тег образа.
+test "$(grep -c '^CHORAL_IMAGE_TAG=' .env)" = 1
+sed -i "s/^CHORAL_IMAGE_TAG=.*/CHORAL_IMAGE_TAG=$RELEASE/" .env
+chmod 600 .env
+docker compose up -d --no-build --wait --wait-timeout 90 app
+curl --fail http://127.0.0.1:8080/readyz
+curl --fail https://choral-train.ru/readyz
+docker compose ps
+exit
+```
+
+Проверьте вход, список и звук в браузере. Не удаляйте предыдущий образ и backup.
+Нельзя выполнять `docker compose down -v`: это удалит песни и аккаунты.
+Caddy, DNS, роутер, SSH и Tailscale при обычном обновлении менять не требуется.
+
+### Если обновление не работает
+
+Сначала посмотрите `sudo docker compose logs --tail 100 app`. Если релиз **не
+меняет схему БД** и совместимость подтверждена (как исправление лимита #47),
+можно вернуть предыдущий код и `.env`, сохранив текущие песни и пароли:
+
+```sh
+sudo -i
+set -eu
+cd /opt/choral
+exec 9>/run/lock/choral-maintenance.lock
+flock -n 9
+read -r -p 'Полный путь к backup перед обновлением: ' BACKUP
+OLD_RELEASE=$(cat "$BACKUP/COMMIT")
+docker compose stop app
+git switch --detach "$OLD_RELEASE"
+cp -p "$BACKUP/env.before" .env
+docker compose up -d --no-build --wait --wait-timeout 90 app
+curl --fail https://choral-train.ru/readyz
+exit
+```
+
+После миграций БД одного старого образа недостаточно. Восстанавливайте старый
+образ и полный backup **в новый пустой volume** по
+[инструкции восстановления](docs/operations.md#восстановление-в-чистый-volume).
+Не распаковывайте архив поверх рабочего volume. Возврат данных из копии теряет
+изменения после её создания; сначала выберите нужную копию и согласуйте это.
+
+### Сделать резервную копию отдельно
+
+Команда ненадолго останавливает приложение и запускает его обратно даже при
+ошибке копирования. Каталог назначения должен существовать.
+
+```sh
+sudo install -d -m 700 /var/backups/choral
+sudo flock -n /run/lock/choral-maintenance.lock sh -c 'cd /opt/choral && sh scripts/scheduled-backup.sh /var/backups/choral'
+```
+
+Копии содержат чувствительные данные. Копия на том же диске не защищает от его
+поломки; нужна отдельная защищённая копия на другом носителе и проверка восстановления.
+Автоматическое расписание backup пока **не включено**.
+
+### Пароли и аккаунты
+
+Обычная смена пароля выполняется самим пользователем на сайте. Если преподаватель
+забыл пароль, администратор может сбросить его через API управления аккаунтами;
+готового интерфейса управления пользователями пока нет. CLI `reset-admin`
+восстанавливает только администратора — для преподавателя его не используйте.
+Контракт сброса: `PUT /api/v1/admin/users/{userId}/password`, сессия администратора
+и CSRF; подробности в [API](docs/api/README.md#сессии-csrf-и-аккаунты).
+
+Для создания нового преподавателя в Bash на сервере (пароль не попадёт в историю
+и не будет показан при вводе; минимум 12 символов):
+
+```sh
+cd /opt/choral
+sudo -v
+read -r -p 'Email нового преподавателя: ' TEACHER_EMAIL
+read -r -s -p 'Временный пароль: ' CHORAL_PASSWORD
+printf '\n'
+printf '%s' "$CHORAL_PASSWORD" | sudo flock -n /run/lock/choral-maintenance.lock docker compose exec -T app choral-accounts create-teacher "$TEACHER_EMAIL"
+unset CHORAL_PASSWORD
+```
+
+Для восстановления администратора используйте такой же скрытый ввод, но команду
+`choral-accounts reset-admin` без email. `bootstrap EMAIL` нужен только для самого
+первого администратора на новой установке; существующие аккаунты повторно не создавайте.
+Передайте временный пароль человеку лично; после обязательной смены удалите его
+временный файл, если создавали. Пароль не истекает по таймеру, но после смены старый
+больше не подходит. Теперь 20 ошибок за 5 минут дают паузу 30 секунд; общий лимит
+сервера 20 проверок в минуту может потребовать подождать до минуты.
+
+Подробности сервера: [velette](docs/deployment-velette.md),
+[deployment](docs/deployment.md), [эксплуатация](docs/operations.md).
+
 ## Продолжение разработки
 
-Этап дизайна завершён. UI пока работает на моках; каркас Go/SQLite уже добавлен,
-подключение бизнес-API и реальных данных/аудио — следующие задачи.
+Рабочее приложение: React + Go/SQLite + FFmpeg, реальные аккаунты, песни,
+загрузка аудио и воспроизведение. Production: https://choral-train.ru.
+Stories и Pages — отдельная демонстрация; исторические описания макетов ниже
+не описывают возможности production.
 Начинайте новую задачу с [AGENTS.md](AGENTS.md).
 
 - [Итог созданного и известные ограничения](docs/handoff.md).
@@ -25,10 +212,9 @@
 
 ## Backend
 
-Каркас Go/SQLite, health endpoints, миграции и PR checks реализованы в `backend/`.
+Go/SQLite backend, авторизация, API песен, обработка FFmpeg, health endpoints
+и миграции реализованы в `backend/`; frontend подключён к API.
 [Setup, env, готовность, интерфейсы и правила миграций](docs/backend.md).
-Авторизация backend реализована в #4 (см. ниже). API песен и интеграция UI
-остаются следующими задачами.
 
 ## Локальный запуск
 
