@@ -157,3 +157,63 @@ func TestLoginReleasesDatabaseAndRechecksAccount(t *testing.T) {
 		})
 	}
 }
+
+func TestTenMistakesStillAllowLogin(t *testing.T) {
+	f := setup(t)
+	for i := 0; i < 10; i++ {
+		expect(t, loginRequest(f.s, "TEACHER@example.test", "incorrect password"), 401)
+	}
+	expect(t, loginRequest(f.s, "teacher@example.test", sample), 200)
+	var count int
+	if err := f.db.QueryRow(`SELECT count(*) FROM login_attempts WHERE scope=?`, digest("192.0.2.4\x00teacher@example.test")).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("successful login did not clear failures: count=%d err=%v", count, err)
+	}
+}
+
+func TestLoginCooldownAndLegacyLocks(t *testing.T) {
+	for _, duration := range []time.Duration{30 * time.Second, 15 * time.Minute} {
+		t.Run(duration.String(), func(t *testing.T) {
+			f := setup(t)
+			now := time.Now().Truncate(time.Second)
+			f.s.now = func() time.Time { return now }
+			// Persisted lock from either the current policy or a pre-upgrade server.
+			scope := digest("192.0.2.4\x00teacher@example.test")
+			_, err := f.db.Exec(`INSERT INTO login_attempts(scope,failures,window_start,locked_until) VALUES(?,?,?,?)`, scope, 20, now.Unix(), now.Add(duration).Unix())
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := loginRequest(f.s, "teacher@example.test", sample)
+			expect(t, w, 429)
+			if w.Header().Get("Retry-After") != "30" {
+				t.Fatal("lock not capped at 30 seconds")
+			}
+			restarted, err := New(f.db, f.s.Origin, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			restarted.now = func() time.Time { return now }
+			now = now.Add(10 * time.Second)
+			w = loginRequest(restarted, "teacher@example.test", sample)
+			expect(t, w, 429)
+			if w.Header().Get("Retry-After") != "20" {
+				t.Fatal("retry or restart extended cooldown")
+			}
+			now = now.Add(20 * time.Second)
+			// A new mistake must start a fresh counter instead of locking again.
+			expect(t, loginRequest(restarted, "teacher@example.test", "incorrect password"), 401)
+			expect(t, loginRequest(restarted, "teacher@example.test", sample), 200)
+		})
+	}
+}
+
+func TestLoginFailureWindowExpires(t *testing.T) {
+	f := setup(t)
+	now := time.Now()
+	f.s.now = func() time.Time { return now }
+	for i := 0; i < 19; i++ {
+		expect(t, loginRequest(f.s, "teacher@example.test", "incorrect password"), 401)
+	}
+	now = now.Add(5 * time.Minute)
+	expect(t, loginRequest(f.s, "teacher@example.test", "incorrect password"), 401)
+	expect(t, loginRequest(f.s, "teacher@example.test", sample), 200)
+}

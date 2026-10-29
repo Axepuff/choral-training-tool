@@ -1029,7 +1029,7 @@ components:
     RateLimited:
       description: Превышен лимит попыток входа
       headers:
-        Retry-After: {schema: {type: integer}, example: 900}
+        Retry-After: {schema: {type: integer}, example: 30}
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
