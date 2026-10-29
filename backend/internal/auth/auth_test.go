@@ -168,6 +168,8 @@ func TestSessionLifecycle(t *testing.T) {
 }
 func TestInvalidCredentialsAndPersistentLimiter(t *testing.T) {
 	f := setup(t)
+	now := time.Now()
+	f.s.now = func() time.Time { return now }
 	for _, email := range []string{"absent@example.test", "teacher@example.test", "not an email"} {
 		b, _ := json.Marshal(map[string]string{"email": email, "password": "incorrect password"})
 		w := f.request("POST", "/api/v1/auth/login", string(b), nil, "", f.s.Origin)
@@ -182,9 +184,10 @@ func TestInvalidCredentialsAndPersistentLimiter(t *testing.T) {
 			t.Fatal("credential enumeration")
 		}
 	}
-	// teacher already has one failed attempt; the fifth failure is 401, next is 429.
+	// Teacher already has one failure. Spread attempts across the global budget window.
 	body := `{"email":"TEACHER@example.test","password":"wrong"}`
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 19; i++ {
+		now = now.Add(4 * time.Second)
 		expect(t, f.request("POST", "/api/v1/auth/login", body, nil, "", f.s.Origin), 401)
 	}
 	if err := f.db.Close(); err != nil {
@@ -203,12 +206,13 @@ func TestInvalidCredentialsAndPersistentLimiter(t *testing.T) {
 	restarted.Register(mux)
 	f.handler = mux
 	f.s = restarted
+	f.s.now = func() time.Time { return now }
 	w := f.request("POST", "/api/v1/auth/login", body, nil, "", f.s.Origin)
 	expect(t, w, 429)
-	if w.Header().Get("Retry-After") == "" {
-		t.Fatal("missing retry delay")
+	if w.Header().Get("Retry-After") != "30" {
+		t.Fatal("incorrect retry delay")
 	}
-	f.s.now = func() time.Time { return time.Now().Add(16 * time.Minute) }
+	now = now.Add(30 * time.Second)
 	f.login("teacher@example.test", sample, nil)
 }
 func TestPasswordResetBlockingAndAuthorization(t *testing.T) {
