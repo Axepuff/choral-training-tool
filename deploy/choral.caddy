@@ -1,0 +1,26 @@
+# Import at top level into the existing Caddyfile; do not replace other sites.
+# Requires Caddy 2.11.7 (tested). No global settings or public backend listener.
+choral-train.ru {
+	# No `log` directive: enabling a named logger also enables fallback access
+	# logging for other hosts on the shared listener. Keep access logs disabled.
+	request_body {
+		max_size 105906176
+	}
+	timeouts {
+		read_timeout 30s
+		write_timeout 35s
+	}
+	reverse_proxy 127.0.0.1:8080 {
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 35s
+			read_timeout 35s
+			write_timeout 35s
+		}
+	}
+	# Handle proxy failures without logging or returning the request URI/error text.
+	# Upstream HTTP responses (including API errors) pass through unchanged.
+	handle_errors {
+		respond "Service unavailable" {err.status_code}
+	}
+}

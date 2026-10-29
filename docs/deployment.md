@@ -1,6 +1,10 @@
 # Первый запуск на Debian 13 — Issue #16
 
-Статус: подготовка, сервер/DNS/production ещё не изменялись. Используем существующие
+Статус: подготовка, production ещё не запущен. Для выбранного ноутбука velette и
+домена choral-train.ru используйте [план с существующим Caddy](deployment-velette.md):
+владелец настроил DNS, HTTPS существующего сайта проверен с телефона. Nginx ниже —
+вариант для отдельного сервера, не инструкция замены Caddy на velette.
+Используем существующие
 Dockerfile/Compose и backup/restore из [operations.md](operations.md). Go/frontend
 имеют один HTTPS origin; Pages остаётся отдельным demo. Автодеплой из GitHub и
 доступ к production из CI не нужны для первого ручного релиза.
