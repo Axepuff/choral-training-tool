@@ -1,0 +1,10 @@
+[Unit]
+Description=Verify the first Choral scheduled backup in isolation
+
+[Timer]
+OnCalendar=2026-10-30 03:10:00 UTC
+Persistent=true
+Unit=choral-acceptance-restore.service
+
+[Install]
+WantedBy=timers.target

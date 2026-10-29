@@ -32,4 +32,7 @@ trap - EXIT HUP INT TERM
 test "$restart_status" -eq 0
 if test -n "${CHORAL_BACKUP_MIRROR_ROOT:-}"; then
  sh "$script_dir/copy-backup.sh" "$backup" "$CHORAL_BACKUP_MIRROR_ROOT" "${CHORAL_BACKUP_MIRROR_MOUNT:?Mirror mount is required}"
+ if test -n "${CHORAL_BACKUP_RETENTION_DAYS:-}"; then
+  python3 "$script_dir/prune-backups.py" "$1" "$CHORAL_BACKUP_MIRROR_ROOT" "$CHORAL_BACKUP_MIRROR_MOUNT" --days "$CHORAL_BACKUP_RETENTION_DAYS" --apply
+ fi
 fi
