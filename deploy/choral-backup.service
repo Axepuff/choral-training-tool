@@ -7,6 +7,8 @@ After=docker.service
 Type=oneshot
 WorkingDirectory=/opt/choral
 Environment=COMPOSE_PROJECT_NAME=choral
+# Optional root-owned configuration for a separate physical backup disk.
+EnvironmentFile=-/etc/choral-backup.conf
 UMask=0077
 ExecStart=/usr/bin/flock -n /run/lock/choral-maintenance.lock /bin/sh scripts/scheduled-backup.sh /var/backups/choral
 # Allow a large archive to finish; alert on duration instead of killing writers.

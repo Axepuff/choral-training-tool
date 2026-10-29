@@ -130,6 +130,50 @@ curl --fail http://127.0.0.1:8081/readyz
    Старый volume оставить до подтверждения. В изолированном тесте удалить только
    project choral-restore-check, убедившись в правильном COMPOSE_PROJECT_NAME.
 
+## Вторая копия на отдельном диске
+
+`scheduled-backup.sh` поддерживает необязательные `CHORAL_BACKUP_MIRROR_ROOT` и
+`CHORAL_BACKUP_MIRROR_MOUNT`. После успешного локального backup он сначала
+возвращает app в healthy, затем вызывает `copy-backup.sh`. Ошибка mirror оставляет
+service failed, но не продлевает остановку приложения. При отсутствующих переменных
+сохраняется прежняя локальная процедура. Общий maintenance lock удерживается
+до конца копирования. `deploy/choral-backup.service` читает необязательный
+root-owned `/etc/choral-backup.conf`.
+
+Пример для согласованного HDD velette (выполнять после выбора защиты копии):
+
+```sh
+sudo install -d -m 0700 /mnt/storage/choral-backups
+# В root-owned /etc/choral-backup.conf с mode 0600:
+# CHORAL_BACKUP_MIRROR_ROOT=/mnt/storage/choral-backups
+# CHORAL_BACKUP_MIRROR_MOUNT=/mnt/storage
+```
+
+Сначала убедиться через `lsblk`/`findmnt`, что mount находится на другом физическом
+диске. Скрипт проверяет другой device ID файловой системы, но сам по себе этот ID
+не отличает два раздела одного физического диска. Отсутствующий mount вызывает
+отказ: скрипт не складывает архивы на системный диск под пустой точкой монтирования.
+Каталог назначения должен принадлежать оператору и иметь mode 0700. При ручном
+копировании уже завершённой копии, без остановки production:
+
+```sh
+sudo flock -n /run/lock/choral-maintenance.lock sh scripts/copy-backup.sh \
+  /var/backups/choral/20261029T105628Z-before-issue47 \
+  /mnt/storage/choral-backups /mnt/storage
+```
+
+Команды запускать из checkout с проверенной новой версией скрипта. Копируются
+архив, checksum, image ID/commit и при наличии исходные env/image tag.
+Checksum проверяется до/после copy; завершённый каталог не перезаписывается.
+`.partial-*` не считать готовой копией. Скрипт не шифрует архив и не удаляет старые
+копии. Для диска без шифрования mode 0700 защищает от обычных локальных пользователей,
+но не от чтения снятого диска. Срок хранения и шифрование согласовать отдельно.
+Хранить совместимый image: IMAGE_ID не заменяет сам образ.
+
+Проверки: `python3 scripts/check-backup-copy.py` (Linux, /dev/shm и /tmp должны
+быть разными FS), `python3 scripts/check-scheduled-backup.py`.
+Синтетический тест не подтверждает наличие второй production-копии.
+
 ## HTTPS proxy и ограничения
 
 TLS терминирует отдельный reverse proxy на хосте, backend порт доступен только
