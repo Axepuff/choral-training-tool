@@ -440,10 +440,14 @@ NetworkMonitorLoss 5%. Прежние records сохранены приватн�
 
 Тестовый HTTP 503 на отдельном loopback endpoint вызвал настоящий incident
 Beszel; ошибок network-alert/SMTP в журнале за окно теста не обнаружено.
-Временный monitor удалён. Подтверждение получения именно тестового письма
-запрошено у владельца; успешный incident сам по себе не доказывает доставку.
-Backup timer установлен, но до этого подтверждения не включён.
-Первый backup в согласованном окне 06:00 МСК ещё не выполнялся.
+Временный monitor удалён. Владелец подтвердил получение именно тестового письма.
+После подтверждения выполнен `systemctl enable --now choral-backup.timer`:
+статус enabled, следующее срабатывание **30 октября 2026, 06:00 МСК**.
+`Persistent=false` не запустил backup немедленно: service inactive,
+ExecMainStartTimestamp пуст. Первый backup в согласованном окне ещё не выполнялся;
+Result=success до первого запуска не является доказательством успешного backup.
+После включения health endpoint возвращает backup_ready, HTTPS — ready,
+Caddy/SSH/Tailscale active. Production не останавливался.
 
 Локально прошли проверки scheduler (6 сценариев), second-filesystem copy,
 backup-health (готовая/отсутствующая/partial/устаревшая/расходящаяся вторая копия).
