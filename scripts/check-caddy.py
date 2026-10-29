@@ -7,6 +7,7 @@ No ACME, system trust installation, Docker, production config or admin API acces
 import http.client
 import http.server
 import itertools
+import json
 import os
 from pathlib import Path
 import shutil
@@ -28,6 +29,14 @@ HOST = 'choral-train.ru'
 
 class Upstream(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if 'truncated' in self.path:
+            self.send_response(200)
+            self.send_header('Content-Length', '100')
+            self.end_headers()
+            self.wfile.write(b'x')
+            self.wfile.flush()
+            self.close_connection = True
+            return
         if 'unavailable' in self.path:
             self.connection.close()
             return
@@ -82,7 +91,7 @@ def check_prepare(root):
                                str(source), str(destination)], capture_output=True).returncode
 
     assert prepare(base, candidate) == 0
-    assert candidate.read_text() == original + '\n\n' + (ROOT / 'deploy/choral.caddy').read_text()
+    assert candidate.read_text().endswith(original + '\n\n' + (ROOT / 'deploy/choral.caddy').read_text())
     assert candidate.stat().st_mode & 0o777 == 0o600
     assert prepare(base, candidate) != 0, 'existing candidate must not be overwritten'
     assert prepare(candidate, root / 'duplicate') != 0, 'duplicate host accepted'
@@ -93,6 +102,10 @@ def check_prepare(root):
     base.write_text(original.replace(' respond "one"', ' log\n respond "one"'))
     assert prepare(base, root / 'access') != 0, 'access logging accepted'
     assert not (root / 'access').exists()
+    # Existing globals/comments must remain intact when inserting logging.
+    base.write_text('# leading comment\n{ # global options\n admin off\n}\n' + original)
+    assert prepare(base, root / 'globals') == 0
+    assert ' admin off\n}\n' + original in (root / 'globals').read_text()
     print('PASS: candidate preserves original, mode 0600, refuses overwrite/duplicate/debug/access logs')
 
 
@@ -119,12 +132,13 @@ def main():
                                         f' bind 127.0.0.1\n tls {root}/cert.pem {root}/key.pem')
             fragment = fragment.replace('127.0.0.1:8080', f'127.0.0.1:{upstream.server_port}')
             config = root / 'Caddyfile'
-            config.write_text('{' + f'\n admin off\n persist_config off\n'
+            logging = (ROOT / 'deploy/caddy-logging.caddy').read_text()
+            config.write_text('{\n' + logging + f'\n admin off\n persist_config off\n'
                               f' http_port {http_port}\n https_port {https_port}\n'
                               ' servers {\n protocols h1 h2\n }\n}\n' + fragment +
                               f'\nhttps://other.example.test:{https_port} {{\n'
                               f' bind 127.0.0.1\n tls {root}/cert.pem {root}/key.pem\n'
-                              ' handle /unavailable {\n'
+                              ' @broken path /unavailable /truncated\n handle @broken {\n'
                               f' reverse_proxy 127.0.0.1:{upstream.server_port}\n }}\n'
                               ' handle {\n respond "existing site"\n }\n}\n')
             log_path = root / 'process.log'
@@ -184,14 +198,33 @@ def main():
                     status, _, _ = request(path='/unavailable', headers={'Host': 'other.example.test',
                                             'Cookie': '', 'Authorization': '', 'Referer': ''})
                     assert status == 502, 'adjacent site error status changed'
+                    for path, host in [(PATH + '&truncated', HOST),
+                                       ('/truncated', 'other.example.test')]:
+                        try:
+                            request(path, headers={'Host': host})
+                        except http.client.IncompleteRead:
+                            pass
+                        else:
+                            raise AssertionError('truncated response must fail at the client')
                 finally:
                     process.terminate()
                     process.wait(timeout=10)
                     upstream.shutdown()
             logs = log_path.read_text()
+            entries = [json.loads(line) for line in logs.splitlines() if line.startswith('{')]
+            aborted = [e for e in entries if e.get('msg') == 'aborting with incomplete response']
+            assert len(aborted) == 2, 'truncated response diagnostics missing or duplicated'
+            assert {e['request']['host'] for e in aborted} == {HOST, 'other.example.test'}
+            for entry in aborted:
+                assert entry['level'] == 'warn' and entry['error']
+                assert entry['request']['method'] == 'GET'
+                assert 'uri' not in entry['request'] and 'headers' not in entry['request']
+            assert any(e.get('logger') == 'http.log.error'
+                       and e.get('request', {}).get('host') == 'other.example.test'
+                       for e in entries), 'adjacent site error diagnostic disappeared'
             for secret in SECRETS:
                 assert secret not in logs, 'synthetic secret leaked to Caddy process logs'
-    print('PASS: Caddy TLS, 200/404/502/413/400, upload, HEAD/Range, redirect, adjacent site and secret-free logs')
+    print('PASS: Caddy TLS, 200/404/502/413/400, upload, HEAD/Range, redirect, truncated bodies, adjacent diagnostics and secret-free logs')
 
 
 if __name__ == '__main__':

@@ -37,7 +37,10 @@
 `Internet → existing Caddy → 127.0.0.1:8080 → choral Compose → private data volume`.
 
 Используем существующие Dockerfile, Compose, backup/restore и systemd timer PR #43.
-[`deploy/choral.caddy`](../deploy/choral.caddy) добавляет только `choral-train.ru`.
+[`deploy/choral.caddy`](../deploy/choral.caddy) добавляет маршрут `choral-train.ru`.
+Он устанавливается **только вместе** с
+[`deploy/caddy-logging.caddy`](../deploy/caddy-logging.caddy) через скрипт подготовки:
+один site fragment не защищает runtime-журнал при обрывах аудио.
 Caddy получает/обновляет сертификат автоматически. Не нужен отдельный Certbot.
 Лимит тела — 105906176 bytes (101 MiB с multipart overhead; файл до 100 MiB).
 Idle read/write — 30/35 секунд; upstream dial — 5 секунд, response headers и
@@ -47,9 +50,22 @@ X-Forwarded-Proto задаётся Caddy. Кеширование приватн�
 
 Access logging намеренно не включается даже с `output discard`: именованный
 logger может включить fallback access log для соседних сайтов на общем listener.
-`handle_errors` возвращает фиксированный текст и исходный код ошибки proxy,
-не подставляя URI/ошибку в тело. Ответы API, включая JSON ошибок, проходят без
-замены. Это проверено при INFO logging; **debug/trace включать нельзя**.
+Глобальный `log default` использует JSON filter: удаляет только `request.uri` и
+`request.headers` из runtime-записей. WARN при обрыве после заголовков остаётся,
+но без bearer-токена из пути/query и Referer. Удаляются все request headers,
+включая Cookie/Authorization, независимо от стандартной редакции Caddy.
+Это намеренное изменение **общего runtime-журнала**, в том числе соседних сайтов:
+в нём больше нет URL и заголовков. Уровни, сообщения, error, host, method,
+duration/status (когда их сообщает Caddy) сохраняются. Журнал не отключается.
+Другие настройки и маршруты соседних сайтов остаются прежними. Такое влияние
+нужно согласовать при установке; если URL соседей необходимы для диагностики,
+потребуется отдельный проверенный вариант конфигурации, а не снятие фильтра.
+
+Пользовательский `handle_errors` удалён: он не ловит сбой копирования тела после
+начала ответа и влияет на диагностику соседних сайтов общего listener. Используем
+штатные ответы/ошибки Caddy; API JSON проходит без замены. Клиент получает ошибку
+неполного тела, а не фиктивный успешный аудиофайл. Проверено при INFO logging;
+**debug/trace включать нельзя**.
 Проверка кандидата отказывается работать при существующих custom/access/trace
 logs. Добавление логирования, CDN/WAF или обновление Caddy требует повторной
 проверки токенов в пути/query, Referer, Cookie и Authorization.
@@ -57,7 +73,8 @@ logs. Добавление логирования, CDN/WAF или обновле
 Документация Caddy: [reverse_proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy),
 [request_body](https://caddyserver.com/docs/caddyfile/directives/request_body),
 [timeouts](https://caddyserver.com/docs/caddyfile/directives/timeouts),
-[handle_errors](https://caddyserver.com/docs/caddyfile/directives/handle_errors).
+[runtime logging](https://caddyserver.com/docs/caddyfile/options#log),
+[filter encoder](https://caddyserver.com/docs/caddyfile/directives/log#filter).
 Директива timeouts экспериментальная; проверяем именно установленную 2.11.7.
 
 ## Проверка без установки
@@ -72,11 +89,18 @@ python3 scripts/prepare-caddy.py /etc/caddy/Caddyfile /tmp/choral-Caddyfile.cand
 временный доверенный только тестом TLS-сертификат и синтетический upstream. Не
 обращается к ACME, системному trust store или admin API действующего Caddy.
 Проверяет TLS, 200/404/502/413/400, реальную передачу 101 MiB + 1 byte, небольшой
-upload, HEAD/Range, HTTP redirect, соседний сайт и его ошибку, отсутствие секретов
-в stdout/stderr. Это proxy integration, не full-stack production smoke.
+upload, HEAD/Range, HTTP redirect, соседний сайт и его ошибку. Для обоих сайтов
+upstream объявляет 100 bytes, отдаёт один и обрывается: клиент обязан получить
+IncompleteRead, runtime WARN должен остаться без URI/headers. Проверяются также
+ошибки до заголовков и сохранение диагностики соседнего сайта. Все пять
+синтетических секретов проверяются на отсутствие во всём stdout/stderr.
+Это proxy integration, не full-stack production smoke.
 
 Второй скрипт читает текущий Caddyfile, добавляет fragment и проверяет JSON после
-адаптации: прежние настройки/маршруты не должны измениться. Игнорируется только
+адаптации: кроме точного добавления runtime-фильтра, прежние настройки/маршруты
+не должны измениться. Фильтр вставляется внутрь существующего начального блока
+глобальных опций либо в новый блок перед исходным текстом. Исходные комментарии,
+настройки и imports сохраняются. Игнорируется только
 перенумерация внутренних групп маршрутов с сохранением их связей. Кандидат
 создаётся с mode 0600, существующий файл/символическая ссылка не перезаписывается.
 Конфигурация не печатается, сервис не перезагружается. Относительные imports
@@ -129,9 +153,20 @@ upload, HEAD/Range, HTTP redirect, соседний сайт и его ошиб�
 ## Результат подготовки
 
 На Caddy 2.11.7 прошёл изолированный proxy integration выше. Кандидат на основе
-реального `/etc/caddy/Caddyfile` прошёл структурную проверку сохранности всех
-существующих настроек/маршрутов; полный приватный конфиг не добавлен в Git.
+реального `/etc/caddy/Caddyfile` прошёл структурную проверку: кроме согласуемой
+редакции общего runtime-журнала, существующие настройки/маршруты сохранены;
+полный приватный конфиг не добавлен в Git.
 CI использует официальный Caddy 2.11.7 amd64 archive с закреплённым SHA-256.
 Это не установка, не ACME и не приёмка приложения на публичном origin.
 Предыдущие full-stack/container результаты находятся в deployment.md/e2e.md;
 повтор на этом ноутбуке и production backup/restore пока не выполнены.
+
+### Исправление P1 независимого ревью
+
+[Замечание](https://github.com/Axepuff/choral-training-tool/pull/43#discussion_r4409724942)
+к `29c0645` подтверждено: новый тест с обрывом **после** заголовков на прежнем
+fragment падает на проверке секретов. Предыдущий зелёный CI проверял только обрыв
+до заголовков и не доказывал безопасность этого случая. После runtime-фильтра и
+удаления `handle_errors` расширенный тест проходит, включая сохранение WARN для
+обоих сайтов и обычной error-диагностики. На работающий сервер исправление не
+установлено; требуется повторное независимое ревью перед rollout.

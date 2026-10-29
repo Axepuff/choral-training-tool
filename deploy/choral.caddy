@@ -1,5 +1,5 @@
-# Import at top level into the existing Caddyfile; do not replace other sites.
-# Requires Caddy 2.11.7 (tested). No global settings or public backend listener.
+# Install with caddy-logging.caddy via prepare-caddy.py; this file ALONE is unsafe.
+# Requires Caddy 2.11.7 (tested). Do not replace existing sites or expose backend.
 choral-train.ru {
 	# No `log` directive: enabling a named logger also enables fallback access
 	# logging for other hosts on the shared listener. Keep access logs disabled.
@@ -18,9 +18,6 @@ choral-train.ru {
 			write_timeout 35s
 		}
 	}
-	# Handle proxy failures without logging or returning the request URI/error text.
-	# Upstream HTTP responses (including API errors) pass through unchanged.
-	handle_errors {
-		respond "Service unavailable" {err.status_code}
-	}
+	# Keep Caddy's normal error handling/diagnostics (including other sites).
+	# Global runtime filtering also protects errors after headers have been sent.
 }

@@ -1,0 +1,12 @@
+# Insert INSIDE the existing global options block (prepare-caddy.py does this).
+# Runtime logs remain enabled for all sites. Remove only request URI and headers:
+# reverse_proxy can log them at WARN after headers, outside handle_errors.
+log default {
+	format filter {
+		wrap json
+		fields {
+			request>uri delete
+			request>headers delete
+		}
+	}
+}

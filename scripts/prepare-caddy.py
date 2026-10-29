@@ -8,6 +8,7 @@ original only after approval. Re-run against the latest original before rollout.
 import copy
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -44,6 +45,19 @@ def normalize_groups(config):
     return visit(config)
 
 
+def add_logging(original, logging):
+    # Preserve the original text, including comments and relative imports. Only
+    # insert into a literal leading global block; ambiguous imports fail adaptation.
+    offset = 0
+    for line in original.splitlines(keepends=True):
+        if line.strip() and not line.lstrip().startswith('#'):
+            if re.fullmatch(r'\s*\{\s*(?:#[^\n]*)?\n?', line):
+                return original[:offset + len(line)] + logging + '\n' + original[offset + len(line):]
+            break
+        offset += len(line)
+    return '{\n' + logging + '\n}\n' + original
+
+
 def main():
     if len(sys.argv) != 3:
         raise SystemExit(__doc__)
@@ -51,7 +65,8 @@ def main():
     source = source.resolve()
     original = source.read_text()
     fragment = (ROOT / 'deploy/choral.caddy').read_text()
-    candidate = original + '\n\n' + fragment
+    logging = (ROOT / 'deploy/caddy-logging.caddy').read_text()
+    candidate = add_logging(original, logging) + '\n\n' + fragment
     before, after = adapt(original, source.parent), adapt(candidate, source.parent)
     # This host was inspected with no custom loggers or access logging. Refuse
     # changes to that premise instead of quietly disabling someone else's logs.
@@ -63,31 +78,27 @@ def main():
             raise SystemExit('Existing access/trace logging requires a separate privacy review.')
         if any(is_choral(route) for route in server.get('routes', [])):
             raise SystemExit('Choral host already configured; refusing duplicate installation.')
-    # Remove exactly the two additions and require every existing setting/route
+    # Allow exactly the reviewed runtime filter, keeping all diagnostic events.
+    expected_logging = adapt('{\n' + logging + '\n}\n', source.parent)['logging']
+    if after.get('logging') != expected_logging:
+        raise SystemExit('Unexpected logging configuration; manual review required.')
+    # Remove exactly the logging filter and new route; every existing setting/route
     # to remain identical, including TLS, other apps and ordering of old routes.
     projected = copy.deepcopy(after)
-    added_routes = added_errors = 0
+    projected.pop('logging')
+    added_routes = 0
     for server in projected.get('apps', {}).get('http', {}).get('servers', {}).values():
         routes = server.get('routes', [])
         added_routes += sum(is_choral(r) for r in routes)
         server['routes'] = [r for r in routes if not is_choral(r)]
-        errors = server.get('errors', {})
-        routes = errors.get('routes', [])
-        added_errors += sum(is_choral(r) for r in routes)
-        if routes:
-            errors['routes'] = [r for r in routes if not is_choral(r)]
-            if not errors['routes']:
-                del errors['routes']
-            if not errors:
-                server.pop('errors', None)
-    if ((added_routes, added_errors) != (1, 1)
+    if (added_routes != 1
             or normalize_groups(projected) != normalize_groups(before)):
         raise SystemExit('Candidate changes more than the new host; manual review required.')
     # O_EXCL protects existing candidates and symlinks; configuration may be private.
     fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, 'w') as output:
         output.write(candidate)
-    print('PASS: private candidate created; existing routes/settings preserved; nothing installed.')
+    print('PASS: private candidate created; existing routes/settings preserved except reviewed runtime redaction; nothing installed.')
 
 
 if __name__ == '__main__':
