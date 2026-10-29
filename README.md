@@ -142,13 +142,20 @@ exit
 
 ### Сделать резервную копию отдельно
 
-Команда ненадолго останавливает приложение и запускает его обратно даже при
-ошибке копирования. Каталог назначения должен существовать.
+После согласования короткого перерыва запустите установленный service вручную.
+Он останавливает приложение и запускает его обратно даже при ошибке копирования,
+затем сохраняет вторую копию на HDD. Каталог назначения должен существовать.
 
 ```sh
 sudo install -d -m 700 /var/backups/choral
-sudo flock -n /run/lock/choral-maintenance.lock sh -c 'cd /opt/choral && set -a && . /etc/choral-backup.conf && set +a && sh /usr/local/lib/choral-backup/scheduled-backup.sh /var/backups/choral'
+sudo systemctl start choral-backup.service
+sudo systemctl show choral-backup.service -p Result -p ExecMainStatus
 ```
+
+Service сам берёт maintenance lock и читает настройки второй копии. Не оборачивайте
+`systemctl start` в дополнительный flock: это помешает service получить lock.
+Запускайте штатный ручной backup через service, чтобы Beszel получил результат
+именно этой попытки; прямой вызов скрипта не обновляет systemd Result.
 
 Копии содержат чувствительные данные. Копия на том же диске не защищает от его
 поломки; нужна отдельная защищённая копия на другом носителе и проверка восстановления.
