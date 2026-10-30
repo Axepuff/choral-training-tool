@@ -7,7 +7,8 @@
 
 Для первого ручного размещения на Debian 13: [план и конфигурация #16](deployment.md).
 Он включает согласование доступа/DNS, TLS, scheduled backup и приёмку. Первый
-запуск на velette выполнен; полная production-приёмка #16 остаётся открытой.
+запуск и ночная backup/restore-приёмка velette выполнены, #16 закрыта.
+DHCP reservation и внешний HTTP→HTTPS вынесены с согласия владельца в #51.
 Для выбранного общего хоста velette с работающим Caddy: [дополнение и безопасное
 добавление choral-train.ru](deployment-velette.md). Не устанавливать nginx поверх
 занятых 80/443 и не заменять существующие сайты.
@@ -384,3 +385,69 @@ Beszel на том же ноутбуке не может отправить пи
 удалить/отключить только два созданных choral monitors через Beszel UI;
 проверить общий NetworkMonitorLoss перед изменением, чтобы сохранить чужие правила.
 Копии, production volume, app, Caddy и службы Beszel при откате не удалять.
+
+
+## Месячное хранение ежедневных копий
+
+Подготовлен `scripts/prune-backups.py`, по умолчанию dry-run. Опция
+`CHORAL_BACKUP_RETENTION_DAYS=31` в `/etc/choral-backup.conf` включает вызов
+с `--apply` в конце scheduled-backup, после возврата app в healthy и успешного
+выноса на HDD. Это **отдельное согласуемое включение удаления**, не следствие
+самого наличия timer или договорённости о сроке хранения.
+
+Устанавливать helper рядом с scheduled-backup.sh в `/usr/local/lib/choral-backup`.
+Правила: удалить можно только парные ежедневные каталоги с именем
+YYYYMMDDTHHMMSSZ, строго старше 31 суток. Нужна свежая (не старше 26 часов)
+пара с совпадающими image/commit/manifest и проверенными SHA-256 обоих архивов.
+Перед любым удалением проверяются также все выбранные старые пары. Последняя
+пара сохраняется. Ссылки, неожиданные файлы, неполные пары и ручные копии с суффиксом
+(`-before-update`, `-before-issue47`) не удаляются. Удаления рекурсивным обходом нет.
+После сбоя незавершённые/повреждённые копии требуют ручного разбора, а не зачистки.
+
+```sh
+# Только просмотр, без удаления; выполнять под общим lock.
+sudo flock -n /run/lock/choral-maintenance.lock python3 \
+  /usr/local/lib/choral-backup/prune-backups.py \
+  /var/backups/choral /mnt/storage/choral-backups /mnt/storage --days 31
+```
+
+Если ещё нет ни одной ежедневной пары, helper откажет с no_completed_daily_pair:
+старая ручная копия не используется как разрешение очистки. Тесты с фиктивными
+данными: `python3 scripts/check-backup-retention.py`. После отдельного подтверждения владельца 29 октября helper установлен,
+CHORAL_BACKUP_RETENTION_DAYS=31 включён. Существующие копии при установке
+не удалялись; очистка выполняется только после успешного backup/mirror.
+
+## Одноразовая приёмка первой ночной копии
+
+Подготовлены `verify-backup-restore.py` и `choral-acceptance-restore.service/timer`.
+Предложенное время — 30 октября 2026, 06:10 МСК, после backup в 06:00.
+Владелец отдельно подтвердил включение; timer установлен и enabled.
+Запуск 30 октября 2026, 06:10:05–06:10:12 МСК завершён успешно: новая
+копия с HDD, исходные song/list links, media hash, peaks и Range проверены.
+Временный project/volume удалён. [Результаты ночной приёмки](deployment-velette.md#ночная-приёмка--30-октября-2026).
+
+Скрипт требует закрытый `/var/lib/choral-acceptance/fixture.json` от production
+smoke; этот файл содержит только технический аккаунт и тестовые токены и никогда
+не коммитится. Берётся ежедневная копия **с HDD**, созданная позже fixture;
+старый pre-update архив не может дать ложный успех. Проверяются checksum и
+сохранённый image ID; новый project/volume имеет случайное отдельное имя,
+network=none, без ports, 0,5 CPU/768 MiB/64 PID. Production volume не монтируется.
+
+После штатного restore (SQLite integrity/foreign keys) приложение запускается,
+внутри его network namespace проверяются исходные song/list tokens, metadata,
+SHA-256 тестового media, peaks и Range. Затем удаляется только созданный тестом
+project/volume. Копии и production сохраняются. Результат без секретов пишется
+в `/var/lib/choral-acceptance/restore-result.json`; при ошибке service failed.
+Новая версия backup-health учитывает ошибку установленного acceptance service,
+поэтому существующий Beszel сможет уведомить о неудаче. До первого выполнения
+успешный default Result не означает прошедшую приёмку.
+
+Полный Docker-тест со специально созданной синтетической БД, фиктивными media
+и токенами (это не тест обработки аудио):
+
+```sh
+sudo python3 scripts/check-restore-acceptance.py sha256:<существующий-runtime-image-ID>
+```
+
+Тест сам создаёт и удаляет только свои временные volumes; production не читает.
+Реальный upload/FFmpeg отдельно проверен на production синтетическим WAV.

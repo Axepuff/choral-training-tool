@@ -52,12 +52,16 @@ def backup_status(root=ROOT, mirror=MIRROR, mount=MOUNT, now=None, service=True)
         raise ValueError('second_copy_size_mismatch')
     # Checksums are verified at copy time, not rehashing large archives every probe.
     if service:
-        result = subprocess.run(['systemctl', 'show', 'choral-backup.service',
-                                 '-p', 'LoadState', '-p', 'Result'],
-                                capture_output=True, text=True, timeout=5, check=True)
-        values = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
-        if values.get('LoadState') != 'loaded' or values.get('Result') != 'success':
-            raise ValueError('backup_service_failed')
+        services = ['choral-backup.service']
+        if Path('/etc/systemd/system/choral-acceptance-restore.service').is_file():
+            services.append('choral-acceptance-restore.service')
+        for unit in services:
+            result = subprocess.run(['systemctl', 'show', unit,
+                                     '-p', 'LoadState', '-p', 'Result'],
+                                    capture_output=True, text=True, timeout=5, check=True)
+            values = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+            if values.get('LoadState') != 'loaded' or values.get('Result') != 'success':
+                raise ValueError('backup_service_failed' if unit == services[0] else 'restore_acceptance_failed')
     return 'backup_ready'
 
 

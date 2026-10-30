@@ -43,6 +43,7 @@ for case in ('success', 'archive-fails', 'killed', 'stopped', 'restart-fails', '
         env = dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}', FIXTURE=directory, CASE=case)
         env.pop('CHORAL_BACKUP_MIRROR_ROOT', None)
         env.pop('CHORAL_BACKUP_MIRROR_MOUNT', None)
+        env.pop('CHORAL_BACKUP_RETENTION_DAYS', None)
         if case == 'mirror-fails':
             env.update(CHORAL_BACKUP_MIRROR_ROOT=str(root / 'absent-disk' / 'backups'),
                        CHORAL_BACKUP_MIRROR_MOUNT=str(root / 'absent-disk'))

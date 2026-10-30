@@ -68,6 +68,8 @@ jobs:
         run: python3 ../scripts/check-backup-copy.py
       - name: Backup freshness and second copy health
         run: python3 ../scripts/check-backup-health.py
+      - name: Backup retention preserves recoverable pairs
+        run: python3 ../scripts/check-backup-retention.py
       - name: Caddy shared-host TLS and privacy regressions
         timeout-minutes: 3
         run: |

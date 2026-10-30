@@ -1,0 +1,10 @@
+[Unit]
+Description=One-shot Choral acceptance restore after first scheduled backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/bin/flock -n /run/lock/choral-maintenance.lock /usr/bin/python3 /usr/local/lib/choral-backup/verify-backup-restore.py
+TimeoutStartSec=10min
