@@ -23,13 +23,13 @@ export function BarWheel({ label, value, count, onChange }: {
   return <div ref={root} className={styles.barWheel} onKeyDownCapture={event => {
     // Commit keyboard steps immediately, without racing the library's inertia
     // against a controlled range update from the other wheel or the player.
-    const next = { ArrowUp: safeValue - 1, ArrowDown: safeValue + 1, Home: 1, End: count }[event.key];
+    const next = { ArrowUp: safeValue + 1, ArrowDown: safeValue - 1, Home: 1, End: count }[event.key];
     if (next === undefined) return;
     event.preventDefault();
     event.stopPropagation();
     onChange(Math.min(count, Math.max(1, next)));
   }}>
-    <span className={styles.wheelLabel} title={label}>{label === 'По такт включительно' ? 'По такт' : label}</span>
+    <span className={styles.wheelLabel} title={label}>{label === 'По такт включительно' ? 'По такт вкл.' : label}</span>
     <WheelPickerWrapper>
       <WheelPicker options={options} value={safeValue} onValueChange={onChange}
         infinite={false} visibleCount={8} optionItemHeight={44} scrollSensitivity={20}

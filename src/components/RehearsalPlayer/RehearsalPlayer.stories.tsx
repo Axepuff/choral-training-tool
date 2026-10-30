@@ -142,7 +142,7 @@ export const WheelRange: Story = {
     const start = canvas.getByRole('spinbutton', { name: 'С такта' });
     const end = canvas.getByRole('spinbutton', { name: 'По такт включительно' });
     start.focus();
-    await userEvent.keyboard('{ArrowDown}');
+    await userEvent.keyboard('{ArrowUp}');
     await waitFor(() => expect(start).toHaveAttribute('aria-valuenow', '2'));
     await expect(end).toHaveAttribute('aria-valuenow', '2');
     end.focus();
@@ -153,9 +153,34 @@ export const WheelRange: Story = {
     end.focus();
     await userEvent.keyboard('{Home}');
     await waitFor(() => expect(canvas.getByText('Повтор: такты 1–1')).toBeVisible(), { timeout: 3000 });
-    await userEvent.keyboard('{ArrowUp}');
+    await userEvent.keyboard('{ArrowDown}');
     await expect(end).toHaveAttribute('aria-valuenow', '1');
     fireEvent.wheel(end, { deltaY: 100, cancelable: true });
     await waitFor(() => expect(canvas.getByText('Повтор: такты 1–2')).toBeVisible(), { timeout: 3000 });
+  },
+};
+
+export const LongScoreRange: Story = {
+  name: 'Длинная песня · ввод диапазона',
+  args: { song: { id: 'long-score-fixture', title: 'Длинная песня', notes: '', bpm: 60,
+    beatsPerBar: 1, beatUnit: 4, durationMs: 1001000, tracks: [] } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const start = canvas.getByRole('spinbutton', { name: 'Первый такт' });
+    const end = canvas.getByRole('spinbutton', { name: 'Последний такт' });
+    const repeat = canvas.getByRole('button', { name: 'Повтор фрагмента' });
+    await expect(start).toBeVisible();
+    await expect(end).toBeVisible();
+    fireEvent.input(end, { target: { value: '1001' } });
+    fireEvent.input(start, { target: { value: '1001' } });
+    await userEvent.click(repeat);
+    await expect(canvas.getByText('Повтор: такты 1001–1001')).toBeVisible();
+    fireEvent.input(end, { target: { value: '1002' } });
+    await expect(canvas.getByRole('alert')).toBeVisible();
+    await expect(repeat).toBeDisabled();
+    fireEvent.input(start, { target: { value: '1' } });
+    fireEvent.input(end, { target: { value: '1001' } });
+    await expect(repeat).toBeEnabled();
+    await expect(canvas.getByText('Повтор: такты 1–1001')).toBeVisible();
   },
 };
