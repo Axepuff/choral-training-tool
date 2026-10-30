@@ -566,3 +566,49 @@ Caddy и соседние сервисы не перезапускались. Н
 выполнялись; их результаты нельзя выводить из enabled timer или текущего
 Result=success до первого старта. Отчёт restore ожидается в закрытом
 `/var/lib/choral-acceptance/restore-result.json`.
+
+## Ночная приёмка — 30 октября 2026
+
+Backup `20261030T030005Z` выполнен по timer с 06:00:05 до 06:00:18 МСК:
+Result=success. От начала stop до подтверждения healthy — около 8 секунд
+(06:00:05–06:00:13), весь service — 13 секунд, меньше согласованных двух минут.
+Checksum обеих копий на SSD и отдельном HDD повторно проверен после запуска.
+Retention завершился успешно: удалено 0 пар, ручная pre-update копия сохранена.
+Следующий ежедневный backup — 31 октября в 06:00 МСК.
+
+Одноразовый restore выполнен 06:10:05–06:10:12 МСК, Result=success.
+Закрытый отчёт `/var/lib/choral-acceptance/restore-result.json` содержит
+status=passed, source=secondary_disk. Восстановлена именно новая HDD-копия
+тем же image `sha256:8c9cc113548b9692a2ad9fd6083764383fb8c93b4966e5493c99d53186084c86`.
+Подтверждены checksum, SQLite integrity/foreign keys, исходные song/list links,
+metadata, media hash, peaks и Range. Это полноценная проверка восстановления
+технической песни; ограничение старой копии без raw token остаётся историческим.
+Временные контейнер и volume удалены; production volume не заменялся.
+
+После проверки штатным HTTPS API отозваны обе технические ссылки, удалена только
+синтетическая песня и завершена тестовая сессия. Неиспользуемая техническая учётная
+запись остаётся: установленный CLI не поддерживает удаление аккаунта. Закрытая
+fixture остаётся root-only для воспроизводимости восстановления сохранённой копии;
+токены уже отозваны в production. Реальные пользователи и песни не менялись.
+
+Приложение healthy на прежнем release, HTTPS readiness и backup_ready успешны.
+Caddy/SSH/Tailscale active. Beszel: оба monitor enabled, loss1h=0.
+Свободно 64 419 565 568 bytes / 5 922 625 inode на SSD и
+3 798 492 905 472 bytes / 244 168 407 inode на HDD (разовый замер).
+Первый HTTPS timeout был вызван прокси терминала: прямой запрос без прокси
+и HTTPS через loopback с проверкой сертификата успешны. Это не новая внешняя probe.
+
+Владелец согласовал [отдельную задачу #51](https://github.com/Axepuff/choral-training-tool/issues/51) для DHCP reservation и внешнего HTTP→HTTPS.
+Роутер/firewall не менялись. Automatic HTTPS/renewal Caddy настроен; фактическое
+будущее продление ещё не происходило и не заявляется проверенным.
+
+Проверенные команды (не выводят данные копий или секреты):
+
+```sh
+sudo systemctl show choral-backup.service choral-acceptance-restore.service \
+  -p Result -p ExecMainStartTimestamp -p ExecMainExitTimestamp
+sudo sh -c 'cd /var/backups/choral/20261030T030005Z && sha256sum -c SHA256SUMS'
+sudo sh -c 'cd /mnt/storage/choral-backups/20261030T030005Z && sha256sum -c SHA256SUMS'
+curl --noproxy '*' --fail https://choral-train.ru/readyz
+curl --noproxy '*' --fail http://127.0.0.1:18082/readyz
+```

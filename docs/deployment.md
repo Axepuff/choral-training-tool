@@ -1,6 +1,8 @@
 # Первый запуск на Debian 13 — Issue #16
 
-Статус: первый запуск на velette выполнен, полная production-приёмка не завершена.
+Статус: запуск и ночная backup/restore-приёмка velette выполнены 30 октября 2026.
+Результаты оформлены в PR #49; DHCP reservation и внешний HTTP→HTTPS
+по согласованию владельца вынесены в отдельную сетевую задачу [#51](https://github.com/Axepuff/choral-training-tool/issues/51).
 Для выбранного ноутбука velette и
 домена choral-train.ru используйте [план с существующим Caddy](deployment-velette.md):
 владелец настроил DNS, приложение и HTTPS запущены; ограничения и результаты

@@ -421,7 +421,9 @@ CHORAL_BACKUP_RETENTION_DAYS=31 включён. Существующие коп�
 Подготовлены `verify-backup-restore.py` и `choral-acceptance-restore.service/timer`.
 Предложенное время — 30 октября 2026, 06:10 МСК, после backup в 06:00.
 Владелец отдельно подтвердил включение; timer установлен и enabled.
-Следующее срабатывание проверено: 30 октября 2026, 06:10 МСК.
+Запуск 30 октября 2026, 06:10:05–06:10:12 МСК завершён успешно: новая
+копия с HDD, исходные song/list links, media hash, peaks и Range проверены.
+Временный project/volume удалён. [Результаты ночной приёмки](deployment-velette.md#ночная-приёмка--30-октября-2026).
 
 Скрипт требует закрытый `/var/lib/choral-acceptance/fixture.json` от production
 smoke; этот файл содержит только технический аккаунт и тестовые токены и никогда
