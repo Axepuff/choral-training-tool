@@ -1,6 +1,6 @@
 .page { min-height: 100dvh; background: var(--color-surface); padding: 28px 16px; }
 .content { width: 100%; max-width: 400px; margin: 0 auto; }
-.content h1 { font-weight: 400; margin: 0; font-size: 28px; line-height: 1.25; letter-spacing: 0.02em; }
+.content h1 { font-weight: 300; margin: 0; font-size: 28px; line-height: 1.25; letter-spacing: 0.02em; }
 .intro { margin: 10px 0 28px; color: var(--color-text-muted); font-size: 14px; }
 .content form { display: flex; flex-direction: column; min-width: 0; }
 .content label { font-size: 13px; font-weight: 500; margin-bottom: 8px; }
@@ -11,7 +11,7 @@
 .password input { padding-right: 56px; }
 .visibility { position: absolute; inset: 2px 2px 2px auto; width: 44px; min-height: 44px; display: grid; place-items: center; background: transparent; border: 0; border-radius: 6px; color: var(--color-text-muted); }
 .visibility:hover { background: var(--color-surface-soft); }
-.submit { min-height: 48px; width: 100%; margin-top: 24px; border: 0; border-radius: 10px; background: var(--color-accent); color: var(--color-on-accent); box-shadow: var(--shadow-raised); font-size: 16px; font-weight: 500; }
+.submit { min-height: 48px; width: 100%; margin-top: 24px; border: 0; border-radius: 10px; background: var(--color-accent); color: var(--color-on-accent); box-shadow: var(--shadow-raised); font-size: 16px; font-weight: 400; }
 .submit:hover:enabled { background: var(--color-accent-hover); }
 .submit:disabled { opacity: 0.65; }
 .error { margin: 12px 0 0; padding: 12px; border-radius: 8px; background: var(--color-mute-soft); color: var(--color-mute); font-size: 13px; }

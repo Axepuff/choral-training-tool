@@ -1,0 +1,22 @@
+Jost variable font, upright, weight axis 100-900.
+Copyright 2020 The Jost Project Authors (https://github.com/indestructible-type).
+License: SIL Open Font License 1.1; see OFL.txt.
+Downloaded 2026-10-30 from the official Google Fonts CSS API:
+https://fonts.googleapis.com/css2?family=Jost:wght@100..900&display=swap
+Google Fonts distribution revision: v20 (as recorded in the source URLs).
+Files are unmodified WOFF2 subsets; local filenames only were changed.
+Repository font files: src/assets/fonts/jost/. Vite emits hashed asset names.
+License and provenance are distributed in fonts/jost/ in both builds.
+License source: https://raw.githubusercontent.com/google/fonts/main/ofl/jost/OFL.txt
+
+jost-cyrillic-variable.woff2
+https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oDd4iYl.woff2
+SHA-256: 732ac61fdb7b964d3edfe40fe4a96aba1d1e34c349aebf0353118f8bda4aabdb
+
+jost-latin-ext-variable.woff2
+https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73ord4iYl.woff2
+SHA-256: 312ef2b80cefd8d6fd0e8553536862e7103f80be117a5aeba333dac68e4c0a6a
+
+jost-latin-variable.woff2
+https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4g.woff2
+SHA-256: 7726a5cd6f3c0e876c028ea2a643d45f7aad4b0f164b70966c669f4a4668f4b9
