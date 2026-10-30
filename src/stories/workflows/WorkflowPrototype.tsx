@@ -59,7 +59,7 @@ export function WorkflowPrototype({ role = 'teacher', initialScreen = 'songs', s
   const account = accounts.find(a => a.email === accountEmail);
   const scope = selected ?? 'list';
   const url = shareURLs[scope];
-  const publicPieces = pieces.filter(p => p.state === 'published' && (!selected || p.id === selected));
+  const publicPieces = pieces.filter(p => p.state === 'published' && readyToPublish(p) && (!selected || p.id === selected));
   const activeLinks = links.filter(l => l.scope === scope && l.active);
   const go = (next: Screen) => { setScreen(next); setNotice(''); setConfirm(null); setQuery(''); window.scrollTo(0, 0); };
   function openShare(songId: string | null) { setSelected(songId); go('share'); }
@@ -83,18 +83,12 @@ export function WorkflowPrototype({ role = 'teacher', initialScreen = 'songs', s
   const heading = screen === 'accounts' ? 'Аккаунты' : screen === 'account' ? accountMode === 'create' ? 'Новый преподаватель' : accountMode === 'reset' ? 'Сбросить пароль' : 'Аккаунт' : screen === 'share' ? selected ? 'Ссылка на песню' : 'Ссылка на список' : 'Песни';
 
   if (screen === 'editor') return <div className={styles.root}>
-    <div className={styles.editorBack}><button className={styles.textButton} onClick={() => go('songs')}>‹ К песням</button><small>Макет: файлы не отправляются</small></div>
+    <div className={styles.editorBack}><small>Макет: файлы не отправляются</small></div>
     <CreateSong key={selected ?? 'new'} live {...(piece ? { initialSong: defaultForm(piece) } : {})}
       status={notice} onCancel={() => go('songs')}
       {...(piece ? {
         publication: piece.state === 'published' ? 'published' as const : 'draft' as const,
-        audioReady: defaultForm(piece).tracks.every(t => !!t.existingFileName),
-        canListen: defaultForm(piece).tracks.some(t => !!t.existingFileName),
-        onListen: () => { setPlayingPiece(piece); setPlayerReturn('songs'); go('player'); },
-        onPublish: () => {
-          if (piece.state !== 'published' && !readyToPublish(piece)) { setNotice('Сначала дождитесь обработки всех партий. Этот макет не загружает и не обрабатывает файлы.'); return; }
-          go('songs'); changePublication(piece);
-        },
+        audioReady: readyToPublish(piece),
       } : {})}
       onSave={value => {
         const saved: Piece = { id: selected ?? `fixture-${pieces.length + 1}`, title: value.title, bpm: value.bpm, parts: value.tracks.length, state: piece?.state ?? 'draft', form: value };
@@ -158,7 +152,7 @@ export function WorkflowPrototype({ role = 'teacher', initialScreen = 'songs', s
               </div>
               {screen !== 'guest' && <><div className={styles.publication}>
                 <span id={`${id}-state-${p.id}`} className={p.state === 'published' ? styles.published : styles.state}>{stateLabel[p.state]}</span>
-                {p.state === 'draft' && !readyToPublish(p) && <span className={styles.state}>Сначала подготовьте все партии</span>}
+                {p.state !== 'processing' && !readyToPublish(p) && <span className={styles.state}>Сначала подготовьте все партии</span>}
               </div>
                 <div className={styles.rowActions}>
                   <button className={styles.iconButton} title="Редактировать" aria-label={`Редактировать: ${p.title}`} onClick={() => { setSelected(p.id); go('editor'); }}><LibraryIcon name="edit" /></button>

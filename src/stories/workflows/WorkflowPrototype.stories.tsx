@@ -97,3 +97,18 @@ export const PublishFlow: Story = { name: 'Проверка · переключ�
   await userEvent.click(canvas.getByRole('button', { name: 'Ссылка на список' }));
   await expect(canvas.getByRole('list')).not.toHaveTextContent('Утро');
 } };
+
+// Saved edits can make previously published audio incomplete; sharing must recheck readiness.
+export const PublishedEditFlow: Story = { name: 'Проверка · неготовая партия после публикации', play: async ({ canvasElement }) => {
+  const canvas = within(canvasElement);
+  await userEvent.click(canvas.getByRole('button', { name: 'Редактировать: Тихий вечер' }));
+  await userEvent.selectOptions(canvas.getByRole('combobox', { name: 'Количество треков' }), '6');
+  await expect(canvas.getByText('Выбрано файлов: 5 из 6')).toBeVisible();
+  await userEvent.click(canvas.getByRole('button', { name: 'Сохранить изменения' }));
+  await userEvent.click(canvas.getByRole('button', { name: 'Ссылка на список' }));
+  await expect(canvas.getByRole('list')).not.toHaveTextContent('Тихий вечер');
+  await expect(canvas.getByRole('list')).toHaveTextContent('Дорога домой');
+  await userEvent.click(canvas.getByRole('button', { name: 'Посмотреть как ученик' }));
+  await expect(canvas.queryByRole('button', { name: 'Тихий вечер' })).not.toBeInTheDocument();
+  await expect(canvas.getByRole('button', { name: 'Дорога домой' })).toBeVisible();
+} };
