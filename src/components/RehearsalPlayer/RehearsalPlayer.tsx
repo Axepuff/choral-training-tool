@@ -1,3 +1,4 @@
+import { RangeSlider } from '../ui/RangeSlider';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -297,7 +298,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
           </div>
           </div>
           <label className="visually-hidden" htmlFor={positionId}>Позиция воспроизведения</label>
-          <input className={styles.seek} id={positionId} type="range" min="0" max={duration} step="0.01" value={time}
+          <RangeSlider variant="seek" id={positionId} min="0" max={duration} step="0.01" value={time}
             aria-valuetext={`${formatTime(time)} из ${formatTime(duration)}`}
             onChange={(event) => seek(Number(event.currentTarget.value))} />
         </section>

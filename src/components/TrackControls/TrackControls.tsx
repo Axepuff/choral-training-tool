@@ -1,6 +1,6 @@
+import { RangeSlider } from '../ui/RangeSlider';
 import { Button } from '../ui/Button';
 import { useId } from 'react';
-import type { CSSProperties } from 'react';
 import styles from './TrackControls.module.css';
 
 export type TrackTone = 'soprano' | 'alto' | 'tenor' | 'bass' | 'backing';
@@ -33,7 +33,6 @@ export function TrackControls({
 }: TrackControlsProps) {
   const volumeId = useId();
   const safeVolume = Math.min(100, Math.max(0, volume));
-  const rangeStyle = { '--volume': `${safeVolume}%` } as CSSProperties;
 
   return (
     <div className={styles.controls} data-tone={tone} data-orientation={orientation} aria-busy={loading}>
@@ -55,10 +54,10 @@ export function TrackControls({
           disabled={loading || disabled} onClick={() => { if (!muted && solo) onSoloChange(false); onMuteChange(!muted); }}
         >M</Button>
         <label className="visually-hidden" htmlFor={volumeId}>Громкость: {name}</label>
-        <input
-          id={volumeId} className={styles.volume} type="range" min="0" max="100" step="1"
+        <RangeSlider
+          id={volumeId} className={styles.volume} min="0" max="100" step="1"
           value={safeVolume} aria-valuetext={`${safeVolume}%`} aria-orientation={orientation} disabled={loading || disabled}
-          style={rangeStyle} onChange={(event) => onVolumeChange(Number(event.currentTarget.value))}
+          orientation={orientation} tone={orientation === 'vertical' ? tone : 'accent'} onChange={(event) => onVolumeChange(Number(event.currentTarget.value))}
         />
         <output className={styles.value} htmlFor={volumeId}>{safeVolume}<span className="visually-hidden">%</span></output>
       </div>
