@@ -1,3 +1,4 @@
+import { Message } from '../ui/Message';
 import { Select } from '../ui/Select';
 import { Input } from '../ui/Input';
 import { ActionLink } from '../ui/ActionLink';
@@ -92,8 +93,8 @@ export function SongLibrary({ role = 'guest', songs = [], initialQuery = '', son
           </Select>
         </label>
       </div>}
-      {notice && <p className={styles.notice} role="status">{notice}</p>}
-      {loading ? <p role="status">Загрузка песен…</p> : error ? <p role="alert">{error}</p> : matches.length > 0 ? <ul className={styles.list} aria-label="Песни">
+      {notice && <Message tone="info" variant="banner" className={styles.notice} role="status">{notice}</Message>}
+      {loading ? <Message tone="muted" role="status">Загрузка песен…</Message> : error ? <Message tone="error" role="alert">{error}</Message> : matches.length > 0 ? <ul className={styles.list} aria-label="Песни">
         {matches.map((song) => <li className={styles.song} key={song.id}>
           <a className={styles.songLink} href={songHref ? songHref(song.id) : appUrl(`?song=${song.id}`)} target="_top" aria-label={`Открыть: ${song.title}`}>
             <h2>{song.title}</h2>

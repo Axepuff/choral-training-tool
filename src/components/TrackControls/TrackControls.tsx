@@ -1,3 +1,4 @@
+import { Message } from '../ui/Message';
 import { RangeSlider } from '../ui/RangeSlider';
 import { Button } from '../ui/Button';
 import { useId } from 'react';
@@ -38,7 +39,7 @@ export function TrackControls({
     <div className={styles.controls} data-tone={tone} data-orientation={orientation} aria-busy={loading}>
       <div className={styles.heading}>
         <span className={styles.name}>{name}</span>
-        {loading && <span className={styles.loading} role="status" aria-label={`Загрузка: ${name}`} />}
+        {loading && <Message as="span" tone="muted" variant="spinner" className={styles.loading} role="status" aria-label={`Загрузка: ${name}`} />}
       </div>
       <div className={styles.actions}>
         <Button

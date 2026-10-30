@@ -8,8 +8,8 @@
 .password { position: relative; }
 .visibility { position: absolute; inset: 2px 2px 2px auto; }
 .submit { width: 100%; margin-top: var(--space-5); }
-.error { margin: 12px 0 0; padding: 12px; border-radius: 8px; background: var(--color-mute-soft); color: var(--color-mute); font-size: 13px; }
-.status { margin: 12px 0 0; color: var(--color-text-muted); font-size: 13px; }
+.error { margin: var(--space-3) 0 0; }
+.status { margin: var(--space-3) 0 0; }
 .help, .guest { font-size: 13px; color: var(--color-text-muted); }
 .help { margin: 24px 0; }
 .guest { border-top: 1px solid var(--color-border); padding-top: 20px; margin: 0; }

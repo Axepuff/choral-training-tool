@@ -1,3 +1,4 @@
+import { Message } from '../ui/Message';
 import { Select } from '../ui/Select';
 import { Textarea } from '../ui/Textarea';
 import { Input } from '../ui/Input';
@@ -66,8 +67,8 @@ function TrackRow({ track, index, onChange, state }: {
       {selectedName && (track.file || !track.id) && <Button variant="dangerText" size="small" className={styles.fileRemove} type="button" aria-label={`Убрать файл трека ${index + 1}`}
         onClick={() => { const { file: _file, ...rest } = track; void _file; onChange(track.id ? rest : { name: track.name }); }}>Убрать</Button>}
     </div>
-    {track.file && track.existingFileName && <p className={styles.trackStatus}>Сохранённый файл: {track.existingFileName}</p>}
-    {state && <p className={styles.trackStatus} role="status">{state}</p>}
+    {track.file && track.existingFileName && <Message size="compact" className={styles.trackStatus}>Сохранённый файл: {track.existingFileName}</Message>}
+    {state && <Message tone="muted" size="compact" className={styles.trackStatus} role="status">{state}</Message>}
   </div>;
 }
 
@@ -156,9 +157,9 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
           aria-describedby={`${id}-notes-count`} onChange={(event) => setNotes(event.target.value)} />
       </label>
       <div className={styles.counter} id={`${id}-notes-count`}>{[...notes.normalize('NFC')].length} / 1000</div>
-      {message && <p className={styles.message} role="status">{message}</p>}
-      {status && <p role="status">{status}</p>}
-      {error && <p role="alert">{error}</p>}
+      {message && <Message tone="info" variant="banner" className={styles.message} role="status">{message}</Message>}
+      {status && <Message tone="muted" role="status">{status}</Message>}
+      {error && <Message tone="error" role="alert">{error}</Message>}
       <div className={styles.actions}>
       <Button variant="primary" size="form" className={styles.submit} type="submit">{initialSong ? 'Сохранить изменения' : 'Создать песню'}</Button>
       {onCancel && <Button className={styles.cancel} type="button" onClick={() => { if (!live || !dirty || window.confirm('Отменить несохранённые изменения? Сохранённый черновик останется на сервере.')) { leaving.current = true; onCancel(); } }}>Отмена</Button>}

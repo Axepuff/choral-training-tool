@@ -1,3 +1,4 @@
+import { Message } from '../ui/Message';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { useId, useState } from 'react';
@@ -64,14 +65,14 @@ export function SignIn({ onSignIn, initialEmail = '' }: SignInProps) {
             </svg>
           </Button>
         </div>
-        {error && <p className={styles.error} id={`${id}-feedback`} role="alert">
+        {error && <Message tone="error" variant="banner" className={styles.error} id={`${id}-feedback`} role="alert">
           {state === 'invalid' ? 'Неверный email или пароль. Проверьте данные и попробуйте ещё раз.' : 'Не удалось войти. Попробуйте ещё раз позже.'}
-        </p>}
+        </Message>}
         <Button variant="primary" size="form" className={styles.submit} type="submit" disabled={busy}>{busy ? 'Входим…' : 'Войти'}</Button>
         <div aria-live="polite" aria-atomic="true">
-          {busy && <p className={styles.status} role="status">Проверяем данные…</p>}
-          {state === 'demo' && <p className={styles.status} role="status">Это макет: данные не отправлены, вход пока не подключён.</p>}
-          {state === 'success' && <p className={styles.status} role="status">Вход выполнен.</p>}
+          {busy && <Message tone="muted" size="small" className={styles.status} role="status">Проверяем данные…</Message>}
+          {state === 'demo' && <Message tone="muted" size="small" className={styles.status} role="status">Это макет: данные не отправлены, вход пока не подключён.</Message>}
+          {state === 'success' && <Message tone="muted" size="small" className={styles.status} role="status">Вход выполнен.</Message>}
         </div>
       </form>
       <p className={styles.help}>Забыли пароль или нужен аккаунт? Обратитесь к администратору хора.</p>

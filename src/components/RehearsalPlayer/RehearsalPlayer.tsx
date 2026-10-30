@@ -1,3 +1,4 @@
+import { Message } from '../ui/Message';
 import { RangeSlider } from '../ui/RangeSlider';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
@@ -248,7 +249,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
             </Button>
           </div>
           <div className={styles.transportStatus}>
-            <span role="status">{playbackLoading ? 'Загрузка аудио…' : activeLoop ? `Повтор: такты ${range[0]}–${range[1]}` : `Все партии · ${count} ${barLabel}`}</span>
+            <Message as="span" tone="muted" role="status">{playbackLoading ? 'Загрузка аудио…' : activeLoop ? `Повтор: такты ${range[0]}–${range[1]}` : `Все партии · ${count} ${barLabel}`}</Message>
             {metronome && <span className={styles.beats} aria-label="Визуальный метроном">
               {Array.from({ length: beatsPerBar }, (_, index) => <i key={index} data-active={isPlaying && index === currentBeat} />)}
             </span>}
@@ -275,7 +276,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
             <summary>Ввести номера</summary>
             {manualFields}
           </details> : manualFields}
-          {!validRange && <span id={`${rangeId}-error`} role="alert">Укажите целые такты: 1 ≤ начало ≤ конец ≤ {count}.</span>}
+          {!validRange && <Message as="span" tone="error" id={`${rangeId}-error`} role="alert">Укажите целые такты: 1 ≤ начало ≤ конец ≤ {count}.</Message>}
         </div>
         <section className={styles.timeline} style={gridStyle} aria-label="Общий таймлайн партий">
           <div className={styles.timelineViewport} ref={timelineRef} tabIndex={0} role="region" aria-label="Прокрутка тактов">
@@ -303,8 +304,8 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
             onChange={(event) => seek(Number(event.currentTarget.value))} />
         </section>
 
-        {loopError && <p role="alert">{loopError}</p>}
-        {audio.error && <p role="alert">{audio.error}</p>}
+        {loopError && <Message tone="error" role="alert">{loopError}</Message>}
+        {audio.error && <Message tone="error" role="alert">{audio.error}</Message>}
         {import.meta.env.DEV && Object.keys(audio.diagnostics).length > 0 && <details className={styles.diagnostics}>
           <summary>Диагностика воспроизведения</summary>
           <pre>{JSON.stringify(Object.values(audio.diagnostics), null, 2)}</pre>
@@ -322,7 +323,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
                   onMuteChange={(muted) => updateTrack(track.id, { muted })}
                   onSoloChange={(solo) => updateTrack(track.id, { solo })}
                 />
-                {song && <small role="status">{audio.states[track.id] ?? "Ожидание…"}</small>}
+                {song && <Message as="small" tone="muted" size="micro" className={styles.trackState} role="status">{audio.states[track.id] ?? "Ожидание…"}</Message>}
               </div>
             ))}
           </div>

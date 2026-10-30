@@ -1,3 +1,4 @@
+import { Message } from './components/ui/Message';
 import { Button } from './components/ui/Button';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { ApiError } from './api/client';
@@ -42,8 +43,8 @@ export function App() {
   if (route.kind === 'public-list' || route.kind === 'public-song') {
     return <PublicRoute key={`${route.kind}:${route.token}:${'songId' in route ? route.songId : ''}`} token={route.token} songId={route.songId} single={route.kind === 'public-song'} />;
   }
-  if (auth.status === 'loading') return <p role="status">Проверяем сессию…</p>;
-  if (auth.status === 'error' && !auth.session) return <main className={styles.page}><p role="alert">Не удалось проверить сессию. Нет соединения с сервером.</p>
+  if (auth.status === 'loading') return <Message tone="muted" role="status">Проверяем сессию…</Message>;
+  if (auth.status === 'error' && !auth.session) return <main className={styles.page}><Message tone="error" role="alert">Не удалось проверить сессию. Нет соединения с сервером.</Message>
     <Button onClick={() => void restoreSession()}>Повторить</Button></main>;
   if (!auth.session) {
     const returnTo = route.kind === 'sign-in' ? route.returnTo : safeReturn(search);
@@ -71,7 +72,7 @@ export function App() {
       }}>{busy ? 'Выходим…' : 'Выйти'}</Button>
     </header>
     <p>{user.email} · {user.role === 'admin' ? 'Администратор' : 'Преподаватель'}</p>
-    {error && <p role="alert">{error}</p>}
-    {auth.status === 'error' && <p role="alert">Нет соединения с сервером. Изменения остаются в форме. <Button onClick={() => void restoreSession()}>Повторить проверку сессии</Button></p>}
+    {error && <Message tone="error" role="alert">{error}</Message>}
+    {auth.status === 'error' && <Message tone="error" role="alert">Нет соединения с сервером. Изменения остаются в форме. <Button onClick={() => void restoreSession()}>Повторить проверку сессии</Button></Message>}
   </div><LiveLibrary key={`${user.id}:${route.kind === 'create-song' || route.kind === 'edit-song' ? 'editor' : 'library'}`} user={user} create={route.kind === 'create-song'} editId={route.kind === 'edit-song' ? route.songId : null} /></>;
 }

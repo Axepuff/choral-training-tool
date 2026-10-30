@@ -20,7 +20,7 @@
 .empty { padding: 24px 0; }
 .empty h2 { font-weight: 300; letter-spacing: 0.01em; margin: 0; font-size: 18px; }
 .empty p { color: var(--color-text-muted); font-size: 13px; }
-.notice { font-size: 12px; padding: 8px; margin: 8px 0; background: var(--color-accent-soft); border-radius: 8px; overflow-wrap: anywhere; }
+.notice { margin: var(--space-2) 0; }
 @media (min-width: 640px) { .page { padding: 20px 24px; } .filters { grid-template-columns: minmax(0, 1fr) 160px; } }
 
 .sharePanel { max-width: 664px; margin: 0 auto; padding: 16px; overflow-wrap: anywhere; }

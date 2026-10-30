@@ -1,3 +1,4 @@
+import { Message } from '../../components/ui/Message';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { Select } from '../../components/ui/Select';
 import { Input } from '../../components/ui/Input';
@@ -129,14 +130,14 @@ export function WorkflowPrototype({ role = 'teacher', initialScreen = 'songs', s
         </div>}
         {screen === 'accounts' && <Button variant="primary" size="small" className={styles.primary} onClick={() => { setAccountEmail(null); setAccountMode('create'); go('account'); }}><LibraryIcon name="add" />Преподаватель</Button>}
       </header>
-      {notice && <p className={styles.notice} role="status">{notice}</p>}
+      {notice && <Message tone="info" variant="banner" className={styles.notice} role="status">{notice}</Message>}
 
       {(screen === 'songs' || screen === 'guest') && <>
         <div className={styles.filters}>
           <label className={styles.search}><LibraryIcon name="search" /><span className="visually-hidden">Найти песню</span><Input id={`${id}-search`} name="songSearch" type="search" decoration="leadingIcon" value={query} placeholder="Найти песню" onChange={e => setQuery(e.target.value)} /></label>
           <label><span className="visually-hidden">Порядок песен</span><Select textSize="small" id={`${id}-sort`} name="songSort" value={sort} onChange={e => setSort(e.target.value)}><option value="recent">По обновлению</option><option value="title">По названию</option></Select></label>
         </div>
-        {screen === 'songs' && status === 'loading' ? <p className={styles.empty} role="status">Загружаем песни…</p> : screen === 'songs' && status === 'error' ? <div className={styles.empty} role="alert"><h2>Не удалось загрузить песни</h2><p>Проверьте подключение и попробуйте ещё раз.</p><Button size="small" className={styles.secondary} onClick={() => setStatus('ready')}>Повторить загрузку</Button></div> : <>
+        {screen === 'songs' && status === 'loading' ? <Message tone="muted" className={styles.empty} role="status">Загружаем песни…</Message> : screen === 'songs' && status === 'error' ? <Message as="div" tone="error" className={styles.empty} role="alert"><h2>Не удалось загрузить песни</h2><p>Проверьте подключение и попробуйте ещё раз.</p><Button size="small" className={styles.secondary} onClick={() => setStatus('ready')}>Повторить загрузку</Button></Message> : <>
           <ul className={styles.list} aria-label="Песни">
             {(screen === 'guest' ? publicPieces : pieces).filter(p => p.title.toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru'))).sort((a,b) => sort === 'title' ? a.title.localeCompare(b.title, 'ru') : 0).map(p => <li className={`${styles.song} ${screen === 'songs' && p.state === 'published' ? styles.songPublished : ''}`} key={p.id}>
               <div className={styles.songInfo}>
@@ -192,18 +193,18 @@ export function WorkflowPrototype({ role = 'teacher', initialScreen = 'songs', s
           </div></div>)}
           {url && <Button variant="text" size="small" onClick={() => issueLink()}>Создать ещё одну ссылку</Button>}
         </section>
-        {confirm && confirm.kind !== 'block' && <section className={styles.confirm} role="alert" aria-label="Подтверждение действия со ссылкой">
+        {confirm && confirm.kind !== 'block' && <Message as="section" tone="error" variant="confirmation" className={styles.confirm} role="alert" aria-label="Подтверждение действия со ссылкой">
           <h2>{confirm.kind === 'rotate' ? 'Заменить ссылку?' : 'Отключить ссылку?'}</h2><p>Старый адрес перестанет открываться у всех, кому вы его отправили. Другие ссылки продолжат работать.</p>
           <div className={styles.actions}><Button variant="danger" size="small" onClick={() => {
             if (confirm.kind === 'rotate') issueLink(confirm.link);
             else { setLinks(current => current.map(l => l.id === confirm.link ? { ...l, active: false } : l)); setShareURLs(current => url?.endsWith(`-${confirm.link}`) ? { ...current, [scope]: '' } : current); setConfirm(null); setNotice('Ссылка отключена.'); }
           }}>{confirm.kind === 'rotate' ? 'Заменить ссылку' : 'Отключить ссылку'}</Button><Button size="small" className={styles.secondary} onClick={() => setConfirm(null)}>Отмена</Button></div>
-        </section>}
+        </Message>}
       </>}
 
       {screen === 'accounts' && <>
         <label className={styles.search}><LibraryIcon name="search" /><span className="visually-hidden">Найти аккаунт</span><Input id={`${id}-account-search`} name="accountSearch" type="search" decoration="leadingIcon" placeholder="Найти по email" value={query} onChange={e => setQuery(e.target.value)} /></label>
-        {status === 'loading' ? <p role="status" className={styles.empty}>Загружаем аккаунты…</p> : status === 'error' ? <div role="alert" className={styles.empty}><h2>Не удалось загрузить аккаунты</h2><p>Проверьте подключение и повторите запрос.</p><Button size="small" className={styles.secondary} onClick={() => setStatus('ready')}>Повторить загрузку</Button></div> : <>
+        {status === 'loading' ? <Message tone="muted" role="status" className={styles.empty}>Загружаем аккаунты…</Message> : status === 'error' ? <Message as="div" tone="error" role="alert" className={styles.empty}><h2>Не удалось загрузить аккаунты</h2><p>Проверьте подключение и повторите запрос.</p><Button size="small" className={styles.secondary} onClick={() => setStatus('ready')}>Повторить загрузку</Button></Message> : <>
           <ul className={styles.list} aria-label="Аккаунты">{accounts.filter(a => a.email.includes(query.trim().toLowerCase())).map(a => <li key={a.email}>
             <Button variant="row" className={styles.accountRow} onClick={() => { setAccountEmail(a.email); setAccountMode('detail'); go('account'); }}>
               <span><strong>{a.email}</strong><small>{a.role === 'admin' ? 'Администратор · это вы' : 'Преподаватель'}</small></span>
@@ -229,8 +230,8 @@ export function WorkflowPrototype({ role = 'teacher', initialScreen = 'songs', s
               if (account.blocked) { setAccounts(current => current.map(a => a.email === account.email ? { ...a, blocked: false } : a)); setNotice('Доступ восстановлен в макете.'); }
               else setConfirm({ kind: 'block' });
             }}>{account.blocked ? 'Разблокировать' : 'Заблокировать'}</Button></section>
-          {account.role === 'admin' && <p className={styles.notice}>Это единственный активный администратор. Его нельзя заблокировать. Для своего пароля используйте смену пароля; восстановление доступа выполняет оператор.</p>}
-          {confirm?.kind === 'block' && <section className={styles.confirm} role="alert"><h2>Заблокировать преподавателя?</h2><p>{account.email} потеряет доступ. Все его текущие сессии завершатся.</p><div className={styles.actions}><Button variant="danger" size="small" onClick={() => { setAccounts(current => current.map(a => a.email === account.email ? { ...a, blocked: true } : a)); setConfirm(null); setNotice('Аккаунт заблокирован в макете.'); }}>Подтвердить блокировку</Button><Button size="small" className={styles.secondary} onClick={() => setConfirm(null)}>Отмена</Button></div></section>}
+          {account.role === 'admin' && <Message tone="info" variant="banner" className={styles.notice}>Это единственный активный администратор. Его нельзя заблокировать. Для своего пароля используйте смену пароля; восстановление доступа выполняет оператор.</Message>}
+          {confirm?.kind === 'block' && <Message as="section" tone="error" variant="confirmation" className={styles.confirm} role="alert"><h2>Заблокировать преподавателя?</h2><p>{account.email} потеряет доступ. Все его текущие сессии завершатся.</p><div className={styles.actions}><Button variant="danger" size="small" onClick={() => { setAccounts(current => current.map(a => a.email === account.email ? { ...a, blocked: true } : a)); setConfirm(null); setNotice('Аккаунт заблокирован в макете.'); }}>Подтвердить блокировку</Button><Button size="small" className={styles.secondary} onClick={() => setConfirm(null)}>Отмена</Button></div></Message>}
         </>}
       </>}
     </main>
@@ -254,8 +255,8 @@ function AccountForm({ mode, email, existingEmails, onDone, onCancel }: { mode: 
     <label className={styles.field}>Временный пароль<Input id={`${id}-password`} name="temporaryPassword" type={show ? 'text' : 'password'} autoComplete="new-password" required value={password} aria-describedby={`${id}-help`} onChange={e => setPassword(e.target.value)} /></label>
     <Checkbox id={`${id}-show`} name="showPassword" checked={show} onChange={e => setShow(e.target.checked)} >Показать пароль</Checkbox>
     <p className={styles.help} id={`${id}-help`}>От 12 до 128 символов. Передайте пароль лично. При первом входе преподаватель задаст свой пароль.</p>
-    {mode === 'reset' && <p className={styles.warning}>Текущий пароль перестанет работать, все сессии завершатся. Блокировка аккаунта при этом не снимается.</p>}
-    {error && <p className={styles.warning} role="alert">{error}</p>}
+    {mode === 'reset' && <Message tone="error" variant="banner" className={styles.warning}>Текущий пароль перестанет работать, все сессии завершатся. Блокировка аккаунта при этом не снимается.</Message>}
+    {error && <Message tone="error" variant="banner" className={styles.warning} role="alert">{error}</Message>}
     <div className={styles.actions}><Button variant="primary" size="small" className={styles.primary} type="submit">{mode === 'create' ? 'Создать преподавателя' : 'Сбросить пароль'}</Button><Button size="small" className={styles.secondary} type="button" onClick={onCancel}>Отмена</Button></div>
     <p className={styles.footnote}>Storybook: используйте вымышленные данные. Форма ничего не отправляет.</p>
   </form>;

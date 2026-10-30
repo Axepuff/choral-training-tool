@@ -1,0 +1,13 @@
+.message { overflow-wrap: anywhere; }
+.muted { color: var(--color-text-muted); }
+.info { color: var(--color-accent-strong); }
+.error { color: var(--color-mute); }
+.small { font-size: var(--font-control); }
+.compact { font-size: var(--font-xs); }
+.banner { padding: var(--space-3); border-radius: var(--radius-sm); font-size: var(--font-control); background: var(--color-accent-soft); }
+.banner.error { background: var(--color-mute-soft); }
+.confirmation { padding: 18px; border-left: 3px solid var(--color-mute); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--color-mute-soft); color: var(--color-text); }
+.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--color-border); border-top-color: var(--color-accent); border-radius: var(--radius-full); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.micro { font-size: var(--font-micro); }

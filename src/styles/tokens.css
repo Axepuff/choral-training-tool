@@ -58,6 +58,7 @@
   --color-backing: #7d8396;
   --font-family: Jost, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-xs: 0.75rem;
+  --font-micro: 0.625rem;
   --font-sm: 0.875rem;
   --font-control: 0.8125rem;
   --font-md: 1rem;
