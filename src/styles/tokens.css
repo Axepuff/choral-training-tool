@@ -45,6 +45,10 @@
   --color-solo: #facc15;
   --color-solo-hover: #eab308;
   --color-mute: #a23446;
+  --color-mute-hover: #852a39;
+  --color-switch: #8591a2;
+  --color-published: #357653;
+  --color-published-text: #24583e;
   --color-mute-soft: #fff0f2;
   --color-soprano: #bd5a71;
   --color-alto: #ab7930;
@@ -54,6 +58,7 @@
   --font-family: Jost, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-xs: 0.75rem;
   --font-sm: 0.875rem;
+  --font-control: 0.8125rem;
   --font-md: 1rem;
   --font-lg: 1.25rem;
   --font-xl: clamp(1.625rem, 4vw, 2.125rem);
@@ -66,10 +71,12 @@
   --space-6: 2rem;
   --space-7: 3rem;
   --radius-sm: 0.5rem;
+  --radius-control: 0.625rem;
   --radius-md: 0.875rem;
   --radius-lg: 1.25rem;
   --radius-full: 999px;
   --touch-target: 44px;
+  --control-large: 48px;
   --focus-ring: 0 0 0 3px var(--color-accent-strong);
   --shadow-raised:
     1px 1px 2px rgb(112 125 145 / 38%),

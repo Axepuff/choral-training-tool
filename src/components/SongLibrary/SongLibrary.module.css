@@ -28,17 +28,14 @@
 .empty { padding: 24px 0; }
 .empty h2 { font-weight: 300; letter-spacing: 0.01em; margin: 0; font-size: 18px; }
 .empty p { color: var(--color-text-muted); font-size: 13px; }
-.empty button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--color-control-border); border-radius: 8px; background: var(--background-control); color: var(--color-accent-strong); box-shadow: var(--shadow-raised); font-size: 13px; }
 .notice { font-size: 12px; padding: 8px; margin: 8px 0; background: var(--color-accent-soft); border-radius: 8px; overflow-wrap: anywhere; }
-.page :is(a,select,input,button):focus-visible { outline: 2px solid var(--color-accent-strong); outline-offset: 2px; }
 @media (min-width: 640px) { .page { padding: 20px 24px; } .filters { grid-template-columns: minmax(0, 1fr) 160px; } }
 
 .sharePanel { max-width: 664px; margin: 0 auto; padding: 16px; overflow-wrap: anywhere; }
-.sharePanel button { min-height: 44px; min-width: 44px; margin: 4px; padding: 8px 12px; border: 1px solid var(--color-control-border); border-radius: 8px; background: var(--background-control); color: var(--color-text); box-shadow: var(--shadow-raised); }
+.shareAction { margin: var(--space-1); }
 .sharePanel a { display: block; }
 
 .sessionHeader { max-width: 696px; margin: auto; padding: 16px 16px 0; overflow-wrap: anywhere; }
 
-.iconButton:active:not(:disabled), .empty button:active:enabled, .sharePanel button:active:enabled { box-shadow: var(--shadow-pressed); }
 
 .sharePanel h2 { font-weight: 300; letter-spacing: 0.01em; }

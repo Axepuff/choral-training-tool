@@ -1,3 +1,4 @@
+import { Button } from '../ui/Button';
 import { useId, useState } from 'react';
 import { appUrl } from '../../navigation/appUrl';
 import { CreateSong } from '../CreateSong/CreateSong';
@@ -67,10 +68,10 @@ export function SongLibrary({ role = 'guest', songs = [], initialQuery = '', son
       <header className={styles.header}>
         <div className={styles.heading}><h1>Песни</h1><span className={styles.count} aria-label={`Песен: ${available.length}`}>{available.length}</span></div>
         {canCreate && <div className={styles.headerActions}>
-          <button className={styles.iconButton} type="button" aria-label="Ссылка на список" title="Скопировать ссылку на список"
+          <Button size="icon" type="button" aria-label="Ссылка на список" title="Скопировать ссылку на список"
             onClick={() => live ? live.onShare() : copyLink('?page=library&list=choir-demo', 'Демо-ссылка на список скопирована.')}>
             <LibraryIcon name="link" />
-          </button>
+          </Button>
           <a className={`${styles.iconButton} ${styles.create}`} href={appUrl('?page=create-song')} target="_top" aria-label="Создать песню" title="Создать песню">
             <LibraryIcon name="add" />
           </a>
@@ -97,19 +98,19 @@ export function SongLibrary({ role = 'guest', songs = [], initialQuery = '', son
             {role === 'admin' && <p className={styles.owner}>{song.owner}</p>}
           </a>
           <div className={styles.actions}>
-            {canEdit(song) && <button className={styles.iconButton} type="button" aria-label={`Редактировать: ${song.title}`} title="Редактировать песню"
-              onClick={() => { if (live) { live.onEdit(song.id); return; } setEditingId(song.id); setNotice(''); window.scrollTo(0, 0); }}><LibraryIcon name="edit" /></button>}
-            <button className={styles.iconButton} type="button" disabled={live ? !canEdit(song) : !song.shared} aria-label={`Скопировать ссылку: ${song.title}`}
+            {canEdit(song) && <Button size="icon" type="button" aria-label={`Редактировать: ${song.title}`} title="Редактировать песню"
+              onClick={() => { if (live) { live.onEdit(song.id); return; } setEditingId(song.id); setNotice(''); window.scrollTo(0, 0); }}><LibraryIcon name="edit" /></Button>}
+            <Button size="icon" type="button" disabled={live ? !canEdit(song) : !song.shared} aria-label={`Скопировать ссылку: ${song.title}`}
               title={song.shared ? 'Скопировать ссылку на песню' : 'Песня не опубликована'}
               onClick={() => live ? live.onShare(song.id) : copyLink(songHref ? new URL(songHref(song.id)).search : `?song=${song.id}`, `${songHref ? 'Ссылка' : 'Демо-ссылка'} на «${song.title}» скопирована.`)}>
               <LibraryIcon name={song.shared ? 'link' : 'private'} />
-            </button>
+            </Button>
           </div>
         </li>)}
       </ul> : <section className={styles.empty} aria-label={hasSearch ? 'Ничего не найдено' : 'Нет песен'}>
         <h2>{hasSearch ? 'Песня не найдена' : 'Пока нет песен'}</h2>
         <p>{hasSearch ? 'Попробуйте другое название.' : (canCreate ? 'Создайте первую песню и добавьте голосовые партии.' : 'В этом списке пока нет песен, доступных по ссылке.')}</p>
-        {hasSearch && <button type="button" onClick={() => { setQuery(''); live?.onFilter('', sort); }}>Сбросить поиск</button>}
+        {hasSearch && <Button size="small" type="button" onClick={() => { setQuery(''); live?.onFilter('', sort); }}>Сбросить поиск</Button>}
       </section>}
     </div>
   </main>;

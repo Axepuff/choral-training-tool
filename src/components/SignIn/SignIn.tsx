@@ -1,3 +1,4 @@
+import { Button } from '../ui/Button';
 import { useId, useState } from 'react';
 import styles from './SignIn.module.css';
 
@@ -53,19 +54,19 @@ export function SignIn({ onSignIn, initialEmail = '' }: SignInProps) {
             required readOnly={busy} value={password}
             aria-describedby={error ? `${id}-feedback` : undefined}
             onChange={(event) => { setPassword(event.target.value); clearFeedback(); }} />
-          <button className={styles.visibility} type="button" aria-label="Показать пароль" aria-pressed={visible}
+          <Button variant="text" size="icon" className={styles.visibility} type="button" aria-label="Показать пароль" aria-pressed={visible}
             title={visible ? 'Скрыть пароль' : 'Показать пароль'} aria-controls={`${id}-password`}
             onClick={() => setVisible(!visible)}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
               <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" />
               {visible && <path d="m3 3 18 18" />}
             </svg>
-          </button>
+          </Button>
         </div>
         {error && <p className={styles.error} id={`${id}-feedback`} role="alert">
           {state === 'invalid' ? 'Неверный email или пароль. Проверьте данные и попробуйте ещё раз.' : 'Не удалось войти. Попробуйте ещё раз позже.'}
         </p>}
-        <button className={styles.submit} type="submit" disabled={busy}>{busy ? 'Входим…' : 'Войти'}</button>
+        <Button variant="primary" size="form" className={styles.submit} type="submit" disabled={busy}>{busy ? 'Входим…' : 'Войти'}</Button>
         <div aria-live="polite" aria-atomic="true">
           {busy && <p className={styles.status} role="status">Проверяем данные…</p>}
           {state === 'demo' && <p className={styles.status} role="status">Это макет: данные не отправлены, вход пока не подключён.</p>}

@@ -1,3 +1,4 @@
+import { Button } from './components/ui/Button';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { ApiError } from './api/client';
 import { getAuth, subscribeAuth, restoreSession, login, logout } from './auth/session';
@@ -43,7 +44,7 @@ export function App() {
   }
   if (auth.status === 'loading') return <p role="status">Проверяем сессию…</p>;
   if (auth.status === 'error' && !auth.session) return <main className={styles.page}><p role="alert">Не удалось проверить сессию. Нет соединения с сервером.</p>
-    <button className="sessionAction" onClick={() => void restoreSession()}>Повторить</button></main>;
+    <Button onClick={() => void restoreSession()}>Повторить</Button></main>;
   if (!auth.session) {
     const returnTo = route.kind === 'sign-in' ? route.returnTo : safeReturn(search);
     return <SignIn onSignIn={async (credentials) => {
@@ -61,16 +62,16 @@ export function App() {
   const user = auth.session.user;
   return <><div className={styles.sessionHeader}>
     <header className={styles.header}>
-      <button className="sessionAction" disabled={busy} onClick={async () => {
+      <Button disabled={busy} onClick={async () => {
         if ((route.kind === 'create-song' || route.kind === 'edit-song') && !window.confirm('Выйти? Несохранённые изменения будут потеряны.')) return;
         setBusy(true); setError('');
         try { await logout(); navigate('?page=library'); }
         catch (e) { setError(e instanceof ApiError ? e.message : 'Не удалось выйти.'); }
         finally { setBusy(false); }
-      }}>{busy ? 'Выходим…' : 'Выйти'}</button>
+      }}>{busy ? 'Выходим…' : 'Выйти'}</Button>
     </header>
     <p>{user.email} · {user.role === 'admin' ? 'Администратор' : 'Преподаватель'}</p>
     {error && <p role="alert">{error}</p>}
-    {auth.status === 'error' && <p role="alert">Нет соединения с сервером. Изменения остаются в форме. <button className="sessionAction" onClick={() => void restoreSession()}>Повторить проверку сессии</button></p>}
+    {auth.status === 'error' && <p role="alert">Нет соединения с сервером. Изменения остаются в форме. <Button onClick={() => void restoreSession()}>Повторить проверку сессии</Button></p>}
   </div><LiveLibrary key={`${user.id}:${route.kind === 'create-song' || route.kind === 'edit-song' ? 'editor' : 'library'}`} user={user} create={route.kind === 'create-song'} editId={route.kind === 'edit-song' ? route.songId : null} /></>;
 }

@@ -1,3 +1,4 @@
+import { Button } from '../ui/Button';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { TrackControls } from '../TrackControls/TrackControls';
@@ -229,20 +230,20 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
 
         <div className={styles.transport} aria-label="Управление воспроизведением">
           <div className={styles.playback}>
-            <button className={styles.iconButton} type="button" aria-label="Вернуться к началу" title="Вернуться к началу" onClick={() => seek(0)}>
+            <Button size="icon" type="button" aria-label="Вернуться к началу" title="Вернуться к началу" onClick={() => seek(0)}>
               <PlayerIcon name="restart" />
-            </button>
-            <button className={styles.playButton} disabled={audio.loading} type="button" aria-label={playbackLabel} aria-busy={playbackLoading} title={playbackLabel} onClick={togglePlayback}>
+            </Button>
+            <Button variant="play" disabled={audio.loading} type="button" aria-label={playbackLabel} aria-busy={playbackLoading} title={playbackLabel} onClick={togglePlayback}>
               <PlayerIcon name={canPause ? 'pause' : 'play'} />
-            </button>
+            </Button>
             <span className={styles.time} aria-label={`${formatTime(time)} из ${formatTime(duration)}`}>
               {formatTime(time)} <span>/ {formatTime(duration)}</span>
             </span>
           </div>
           <div className={styles.options}>
-            <button className={styles.optionButton} type="button" aria-label="Метроном" aria-pressed={metronome} title={song ? "Звуковой метроном" : "Визуальный метроном (демо без звука)"} onClick={() => setMetronome(!metronome)}>
+            <Button size="small" className={styles.optionButton} type="button" aria-label="Метроном" aria-pressed={metronome} title={song ? "Звуковой метроном" : "Визуальный метроном (демо без звука)"} onClick={() => setMetronome(!metronome)}>
               <PlayerIcon name="metronome" /><span>Метроном</span>
-            </button>
+            </Button>
           </div>
           <div className={styles.transportStatus}>
             <span role="status">{playbackLoading ? 'Загрузка аудио…' : activeLoop ? `Повтор: такты ${range[0]}–${range[1]}` : `Все партии · ${count} ${barLabel}`}</span>
@@ -255,10 +256,10 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
         <div className={styles.loopControls} role="group" aria-label="Такты повтора">
           <div className={styles.loopHeading}>
             <strong>Повтор по тактам</strong>
-            <button className={styles.loopToggle} type="button" aria-label="Повтор фрагмента" aria-pressed={activeLoop}
+            <Button size="small" className={styles.loopToggle} type="button" aria-label="Повтор фрагмента" aria-pressed={activeLoop}
               disabled={!validRange || duration <= 0} onClick={() => setLoop(!loop)}>
               <PlayerIcon name="loop" />{activeLoop ? 'Включён' : 'Выключен'}
-            </button>
+            </Button>
           </div>
           {showWheels && <div className={styles.wheelRange}>
             <BarWheel label="С такта" value={range[0]} count={count}

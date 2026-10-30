@@ -1,3 +1,4 @@
+import { Button } from '../components/ui/Button';
 import { useState } from 'react';
 import { changePassword } from './session';
 import { ApiError } from '../api/client';
@@ -23,7 +24,7 @@ export function ChangePassword() {
       <label htmlFor="newPassword">Новый пароль (12–128 символов)</label>
       <input id="newPassword" name="newPassword" type="password" autoComplete="new-password" required readOnly={busy} />
       {error && <p className={styles.error} role="alert">{error}</p>}
-      <button className={styles.submit} disabled={busy}>{busy ? 'Сохраняем…' : 'Сменить пароль'}</button>
+      <Button variant="primary" size="form" className={styles.submit} type="submit" disabled={busy}>{busy ? 'Сохраняем…' : 'Сменить пароль'}</Button>
     </form>
   </div></main>;
 }

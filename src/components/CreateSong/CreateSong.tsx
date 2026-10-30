@@ -1,3 +1,4 @@
+import { Button } from '../ui/Button';
 import { useEffect, useId, useRef, useState } from 'react';
 import styles from './CreateSong.module.css';
 
@@ -43,14 +44,14 @@ function TrackRow({ track, index, onChange, state }: {
       <input id={`${id}-name`} name={`tracks[${index}].name`} required value={track.name} placeholder="Название партии"
         onChange={(event) => onChange({ ...track, name: event.target.value })} />
     </label>
-    <button className={styles.upload} type="button" onClick={() => fileRef.current?.click()}
+    <Button size="icon" type="button" onClick={() => fileRef.current?.click()}
       aria-label={`${selectedName ? 'Заменить' : 'Выбрать'} файл трека ${index + 1}`} title={selectedName ? 'Заменить аудиофайл' : 'Выбрать аудиофайл'}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
         <path d="M9 3H4v18h11V9L9 3ZM9 3v6h6M10 12v5" />
         <ellipse cx="8" cy="17" rx="2" ry="1.5" />
         <path d="M20 14V4m-3 3 3-3 3 3" />
       </svg>
-    </button>
+    </Button>
     <input id={`${id}-file`} name={`tracks[${index}].file`} ref={fileRef} type="file" hidden aria-label={`Аудиофайл трека ${index + 1}`}
       onChange={(event) => {
         const file = event.target.files?.[0];
@@ -59,8 +60,8 @@ function TrackRow({ track, index, onChange, state }: {
       }} />
     <div className={styles.fileInfo}>
       <span title={selectedName}>{selectedName ?? 'Файл не выбран'}</span>
-      {selectedName && (track.file || !track.id) && <button type="button" aria-label={`Убрать файл трека ${index + 1}`}
-        onClick={() => { const { file: _file, ...rest } = track; void _file; onChange(track.id ? rest : { name: track.name }); }}>Убрать</button>}
+      {selectedName && (track.file || !track.id) && <Button variant="dangerText" size="small" className={styles.fileRemove} type="button" aria-label={`Убрать файл трека ${index + 1}`}
+        onClick={() => { const { file: _file, ...rest } = track; void _file; onChange(track.id ? rest : { name: track.name }); }}>Убрать</Button>}
     </div>
     {track.file && track.existingFileName && <p className={styles.trackStatus}>Сохранённый файл: {track.existingFileName}</p>}
     {state && <p className={styles.trackStatus} role="status">{state}</p>}
@@ -156,11 +157,11 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
       {status && <p role="status">{status}</p>}
       {error && <p role="alert">{error}</p>}
       <div className={styles.actions}>
-      <button className={styles.submit} type="submit">{initialSong ? 'Сохранить изменения' : 'Создать песню'}</button>
-      {onCancel && <button className={styles.cancel} type="button" onClick={() => { if (!live || !dirty || window.confirm('Отменить несохранённые изменения? Сохранённый черновик останется на сервере.')) { leaving.current = true; onCancel(); } }}>Отмена</button>}
-      {onListen && <button className={styles.cancel} type="button" disabled={!canListen} onClick={onListen}>Слушать песню</button>}
+      <Button variant="primary" size="form" className={styles.submit} type="submit">{initialSong ? 'Сохранить изменения' : 'Создать песню'}</Button>
+      {onCancel && <Button className={styles.cancel} type="button" onClick={() => { if (!live || !dirty || window.confirm('Отменить несохранённые изменения? Сохранённый черновик останется на сервере.')) { leaving.current = true; onCancel(); } }}>Отмена</Button>}
+      {onListen && <Button className={styles.cancel} type="button" disabled={!canListen} onClick={onListen}>Слушать песню</Button>}
       {publication && <p className={styles.help}>Публикация: {publication === 'published' ? 'опубликована' : 'черновик'}. {audioReady ? 'Аудио готово.' : 'Есть неготовые дорожки.'}</p>}
-      {onPublish && <button className={styles.cancel} type="button" onClick={onPublish}>{publication === 'draft' ? 'Опубликовать сохранённую песню' : 'Снять публикацию'}</button>}
+      {onPublish && <Button className={styles.cancel} type="button" onClick={onPublish}>{publication === 'draft' ? 'Опубликовать сохранённую песню' : 'Снять публикацию'}</Button>}
       </div>
       </fieldset>
       {!live && <p className={styles.demo}>Демо: файлы остаются на устройстве и не загружаются на сервер.</p>}

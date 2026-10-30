@@ -1,3 +1,4 @@
+import { Button } from '../ui/Button';
 import { useId } from 'react';
 import type { CSSProperties } from 'react';
 import styles from './TrackControls.module.css';
@@ -41,18 +42,18 @@ export function TrackControls({
         {loading && <span className={styles.loading} role="status" aria-label={`Загрузка: ${name}`} />}
       </div>
       <div className={styles.actions}>
-        <button
-          type="button" className={`${styles.toggle} ${styles.solo}`}
+        <Button
+          type="button" variant="solo" size="icon" className={styles.solo}
           aria-label={`Solo: ${name}`} aria-pressed={solo}
           title={`Solo — слушать только выбранные партии (${name})`}
           disabled={loading || disabled} onClick={() => { if (!solo && muted) onMuteChange(false); onSoloChange(!solo); }}
-        >S</button>
-        <button
-          type="button" className={`${styles.toggle} ${styles.mute}`}
+        >S</Button>
+        <Button
+          type="button" variant="mute" size="icon" className={styles.mute}
           aria-label={`Mute: ${name}`} aria-pressed={muted}
           title={`Mute — выключить партию (${name})`}
           disabled={loading || disabled} onClick={() => { if (!muted && solo) onSoloChange(false); onMuteChange(!muted); }}
-        >M</button>
+        >M</Button>
         <label className="visually-hidden" htmlFor={volumeId}>Громкость: {name}</label>
         <input
           id={volumeId} className={styles.volume} type="range" min="0" max="100" step="1"
