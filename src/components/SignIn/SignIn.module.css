@@ -1,18 +1,18 @@
 .page { min-height: 100dvh; background: var(--color-surface); padding: 28px 16px; }
 .content { width: 100%; max-width: 400px; margin: 0 auto; }
-.content h1 { margin: 0; font-size: 28px; line-height: 1.25; letter-spacing: -0.03em; }
+.content h1 { font-weight: 300; margin: 0; font-size: 28px; line-height: 1.25; letter-spacing: 0.02em; }
 .intro { margin: 10px 0 28px; color: var(--color-text-muted); font-size: 14px; }
 .content form { display: flex; flex-direction: column; min-width: 0; }
-.content label { font-size: 13px; font-weight: 650; margin-bottom: 8px; }
-.content input { width: 100%; min-width: 0; min-height: 48px; padding: 12px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; color: var(--color-text); font: inherit; font-size: 16px; }
+.content label { font-size: 13px; font-weight: 500; margin-bottom: 8px; }
+.content input { width: 100%; min-width: 0; min-height: 48px; padding: 12px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; box-shadow: var(--shadow-inset); color: var(--color-text); font: inherit; font-size: 16px; font-weight: 400; }
 .content input:read-only { background: var(--color-surface-soft); }
 .content input[type='email'] { margin-bottom: 20px; }
 .password { position: relative; }
 .password input { padding-right: 56px; }
 .visibility { position: absolute; inset: 2px 2px 2px auto; width: 44px; min-height: 44px; display: grid; place-items: center; background: transparent; border: 0; border-radius: 6px; color: var(--color-text-muted); }
 .visibility:hover { background: var(--color-surface-soft); }
-.submit { min-height: 48px; width: 100%; margin-top: 24px; border: 0; border-radius: 10px; background: var(--color-accent); color: white; font-size: 16px; font-weight: 650; }
-.submit:hover:enabled { background: var(--color-accent-strong); }
+.submit { min-height: 48px; width: 100%; margin-top: 24px; border: 0; border-radius: 10px; background: var(--color-accent); color: var(--color-on-accent); box-shadow: var(--shadow-raised); font-size: 16px; font-weight: 400; }
+.submit:hover:enabled { background: var(--color-accent-hover); }
 .submit:disabled { opacity: 0.65; }
 .error { margin: 12px 0 0; padding: 12px; border-radius: 8px; background: var(--color-mute-soft); color: var(--color-mute); font-size: 13px; }
 .status { margin: 12px 0 0; color: var(--color-text-muted); font-size: 13px; }
@@ -20,3 +20,5 @@
 .help { margin: 24px 0; }
 .guest { border-top: 1px solid var(--color-border); padding-top: 20px; margin: 0; }
 @media (min-width: 640px) and (min-height: 600px) { .page { padding: 64px 24px; } }
+
+.submit:active:enabled { box-shadow: var(--shadow-pressed); }

@@ -268,6 +268,7 @@ try {
   async function setLoopField(name, value) {
     await evaluate(`(() => { const input=document.querySelector('[name="${name}"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'${value}'); input.dispatchEvent(new Event('input',{bubbles:true})); })()`);
   }
+  await evaluate(`Array.from(document.querySelectorAll('summary')).find(e => e.textContent === 'Ввести номера').click()`);
   await setLoopField('loopStart', 2); await setLoopField('loopEnd', 3);
   await clickPlayback('Повтор фрагмента');
   await poll(() => evaluate(`document.querySelector('[aria-label="Повтор фрагмента"]').getAttribute('aria-pressed')==='true'`));

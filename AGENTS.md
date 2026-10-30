@@ -29,6 +29,33 @@ Recording, self-registration, social login, payments, and redesign require a tas
 Account administration API/UI is #13; production rollout is #16, not implied by
 container readiness. Check live Issues for status.
 
+## UI design: soft neumorphism
+
+- Every new or modified UI component must follow the approved soft-neumorphic
+  style in runtime, Storybook, and prototypes. Before UI work, read the current
+  Issue #52 design section in `docs/handoff.md` and reuse existing components.
+- Use CSS Modules and the shared tokens in `src/styles/tokens.css` for colors,
+  typography, radii, spacing, and shadows. Keep these values centralized.
+  The base is light `#F4F5F7`, with orange `#FD7202` accents and dark readable text.
+- Raised neutral controls use `--background-control` and `--color-control-border`:
+  their face is lighter than the page. Buttons, slider thumbs, and raised surfaces
+  use `--shadow-raised` (or `--shadow-card`): a tight contact shadow, upper-left
+  white highlight, and small inset bevel keep the relief close to the surface.
+- Fields and waveform wells use `--shadow-inset`; pressed/selected raised controls
+  use `--shadow-pressed`. Choose the token by the surface's role and interaction
+  state when adding controls.
+- Inherit the locally bundled Jost through `--font-family`: headings 300 with
+  gentle positive letter-spacing, body/input/button text 400, labels and restrained
+  emphasis 500. Reuse the existing type scale and keep Cyrillic support.
+- The whole app is recessed inside one white rounded rim reaching the viewport
+  edges. Reuse the shell in `src/styles/global.css`; page components supply content
+  within that shell, without another outer frame or gray surround.
+- Preserve semantic colors (yellow Solo, burgundy Mute, track/error colors), dark
+  text on orange fills, and the global visible focus outline. State changes must
+  remain clear through color/text and semantics as well as relief. Check applicable
+  hover, active/selected, disabled, and keyboard-focus states in existing stories
+  at the viewport sizes below, following the Validation section.
+
 ## Read before changing an area
 
 - **Architecture/dependencies:** `docs/architecture.md`, `docs/roadmap.md`.
@@ -54,6 +81,11 @@ container readiness. Check live Issues for status.
 
 ## Validation
 
+- During implementation, use focused checks only when needed to investigate or
+  validate the current change. Defer full frontend checks, including Storybook
+  builds and story tests, until the feature is ready for review or another final
+  handoff. Run the applicable required checks then; repeat them only if later
+  changes or failures make the previous results unreliable.
 - Read `docs/e2e.md` for commands, prerequisites, and coverage; required CI checks
   live in `.github/workflows/checks.yml`, scripts in `package.json`. Run frontend
   commands from the root and Go commands from `backend/`. Verify `go version`

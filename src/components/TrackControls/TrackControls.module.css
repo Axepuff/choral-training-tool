@@ -9,21 +9,22 @@
 .controls[data-tone='bass'] { --track-color: var(--color-bass); }
 .controls[data-tone='backing'] { --track-color: var(--color-backing); }
 .heading { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.name { font-size: var(--font-sm); font-weight: 650; overflow-wrap: anywhere; }
-.actions { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
+.name { font-size: var(--font-sm); font-weight: 500; overflow-wrap: anywhere; }
+.actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .toggle {
   min-width: var(--touch-target);
   min-height: var(--touch-target);
   padding: var(--space-2);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-control-border);
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  background: var(--background-control);
   color: var(--color-text-muted);
   font-size: var(--font-sm);
-  font-weight: 750;
+  font-weight: 400;
+  box-shadow: var(--shadow-raised);
   transition: background 120ms, border-color 120ms;
 }
-.toggle:hover:enabled { background: var(--color-surface-soft); }
+.toggle:hover:enabled { background: var(--color-control); }
 .solo[aria-pressed='true'] {
   background: var(--color-solo);
   border-color: var(--color-solo-hover);
@@ -60,13 +61,13 @@
   border: 3px solid var(--color-surface);
   border-radius: 50%;
   background: var(--color-accent);
-  box-shadow: 0 0 0 1px var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent), var(--shadow-raised);
 }
 .volume::-moz-range-track { height: 4px; border-radius: var(--radius-full); background: var(--color-border); }
 .volume::-moz-range-progress { height: 4px; background: var(--color-accent); }
 .volume::-moz-range-thumb {
   width: 10px; height: 10px; border: 3px solid var(--color-surface);
-  border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent);
+  border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent), var(--shadow-raised);
 }
 .volume:disabled { opacity: 0.5; }
 .value { width: 3ch; text-align: right; font-size: var(--font-xs); color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
@@ -86,7 +87,7 @@
   position: relative;
 }
 .controls[data-orientation='vertical'] .name { font-size: 11px; white-space: nowrap; }
-.controls[data-orientation='vertical'] .actions { flex-direction: column; flex-wrap: nowrap; gap: 4px; }
+.controls[data-orientation='vertical'] .actions { flex-direction: column; flex-wrap: nowrap; gap: 8px; }
 .controls[data-orientation='vertical'] .toggle { width: 44px; height: 44px; }
 .controls[data-orientation='vertical'] .volume {
   writing-mode: vertical-lr;
@@ -107,10 +108,10 @@
   width: 20px;
   height: 12px;
   margin: 0 0 0 -8px;
-  border: 2px solid white;
+  border: 2px solid var(--color-surface);
   border-radius: 4px;
   background: var(--track-color);
-  box-shadow: 0 0 0 1px var(--track-color);
+  box-shadow: 0 0 0 1px var(--track-color), var(--shadow-raised);
 }
 .controls[data-orientation='vertical'] .volume::-moz-range-track { width: 4px; height: 100%; }
 .controls[data-orientation='vertical'] .volume::-moz-range-progress { background: var(--track-color); }
@@ -119,7 +120,7 @@
   height: 8px;
   border-radius: 4px;
   background: var(--track-color);
-  box-shadow: 0 0 0 1px var(--track-color);
+  box-shadow: 0 0 0 1px var(--track-color), var(--shadow-raised);
 }
 .controls[data-orientation='vertical'] .value { width: auto; text-align: center; }
 .controls[data-orientation='vertical'] .loading { position: absolute; top: -2px; right: -12px; }
@@ -130,10 +131,12 @@
     display: grid;
     grid-template-columns: 44px 44px;
     grid-template-rows: 44px 44px 16px;
-    gap: 2px 6px;
+    gap: 4px 6px;
   }
   .controls[data-orientation='vertical'] .solo { grid-column: 1; grid-row: 1; }
   .controls[data-orientation='vertical'] .mute { grid-column: 1; grid-row: 2; }
   .controls[data-orientation='vertical'] .volume { grid-column: 2; grid-row: 1 / 3; height: 90px; margin: 0; }
   .controls[data-orientation='vertical'] .value { grid-column: 2; grid-row: 3; }
 }
+
+.toggle[aria-pressed='true'], .toggle:active:enabled { box-shadow: var(--shadow-pressed); }
