@@ -1,3 +1,4 @@
+import { Message } from './components/ui/Message';
 import { useEffect, useState } from 'react';
 import { readPublic } from './api/public';
 import type { PublicSong } from './api/public';
@@ -16,11 +17,11 @@ export function PublicRoute({ token, songId, single }: { token: string; songId: 
     );
     return () => controller.abort();
   }, [token]);
-  if (!result) return <p role="status">Загрузка песни…</p>;
-  if (result.error) return <p role="alert">Не удалось открыть ссылку. Она может быть отозвана или сервер недоступен. Обновите страницу для повтора.</p>;
+  if (!result) return <Message tone="muted" role="status">Загрузка песни…</Message>;
+  if (result.error) return <Message tone="error" role="alert">Не удалось открыть ссылку. Она может быть отозвана или сервер недоступен. Обновите страницу для повтора.</Message>;
   if (single || songId) {
     const song = single ? result.songs[0] : result.songs.find((s) => s.id === songId);
-    if (!song) return <p role="alert">Песня недоступна по этой ссылке.</p>;
+    if (!song) return <Message tone="error" role="alert">Песня недоступна по этой ссылке.</Message>;
     return <><RehearsalPlayer key={song.id} song={song} publicAccess />
       {!single && <a href={appUrl(`?list=${encodeURIComponent(token)}`)}>Песни</a>}</>;
   }

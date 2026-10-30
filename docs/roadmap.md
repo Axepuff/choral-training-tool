@@ -7,6 +7,11 @@
 
 ## Backlog
 
+[Локальный UI-кит, #54](https://github.com/Axepuff/choral-training-tool/issues/54),
+реализован последовательно в [PR #55](https://github.com/Axepuff/choral-training-tool/pull/55).
+Контракты, владельцы оформления и проверка переноса — в [ui-kit.md](ui-kit.md).
+Статус ревью и CI перед слиянием смотрите в PR.
+
 | Issue | Задача | Начать после | Для завершения дополнительно |
 | --- | --- | --- | --- |
 | [#2](https://github.com/Axepuff/choral-training-tool/issues/2) | MVP-01: Контракты API, данных, аудио и прав доступа | — | — |

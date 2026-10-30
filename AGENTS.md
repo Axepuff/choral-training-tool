@@ -37,6 +37,10 @@ container readiness. Check live Issues for status.
 - Use CSS Modules and the shared tokens in `src/styles/tokens.css` for colors,
   typography, radii, spacing, and shadows. Keep these values centralized.
   The base is light `#F4F5F7`, with orange `#FD7202` accents and dark readable text.
+- For UI-kit extraction or migration, follow `docs/ui-kit.md`: one component at
+  a time in the same PR, including all consumers and removal of local appearance
+  overrides. The primitives in `src/components/ui/` are implemented; reuse their
+  native contracts and named variants.
 - Raised neutral controls use `--background-control` and `--color-control-border`:
   their face is lighter than the page. Buttons, slider thumbs, and raised surfaces
   use `--shadow-raised` (or `--shadow-card`): a tight contact shadow, upper-left

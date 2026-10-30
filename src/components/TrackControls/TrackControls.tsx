@@ -1,5 +1,7 @@
+import { Message } from '../ui/Message';
+import { RangeSlider } from '../ui/RangeSlider';
+import { Button } from '../ui/Button';
 import { useId } from 'react';
-import type { CSSProperties } from 'react';
 import styles from './TrackControls.module.css';
 
 export type TrackTone = 'soprano' | 'alto' | 'tenor' | 'bass' | 'backing';
@@ -32,32 +34,31 @@ export function TrackControls({
 }: TrackControlsProps) {
   const volumeId = useId();
   const safeVolume = Math.min(100, Math.max(0, volume));
-  const rangeStyle = { '--volume': `${safeVolume}%` } as CSSProperties;
 
   return (
     <div className={styles.controls} data-tone={tone} data-orientation={orientation} aria-busy={loading}>
       <div className={styles.heading}>
         <span className={styles.name}>{name}</span>
-        {loading && <span className={styles.loading} role="status" aria-label={`Загрузка: ${name}`} />}
+        {loading && <Message as="span" tone="muted" variant="spinner" className={styles.loading} role="status" aria-label={`Загрузка: ${name}`} />}
       </div>
       <div className={styles.actions}>
-        <button
-          type="button" className={`${styles.toggle} ${styles.solo}`}
+        <Button
+          type="button" variant="solo" size="icon" className={styles.solo}
           aria-label={`Solo: ${name}`} aria-pressed={solo}
           title={`Solo — слушать только выбранные партии (${name})`}
           disabled={loading || disabled} onClick={() => { if (!solo && muted) onMuteChange(false); onSoloChange(!solo); }}
-        >S</button>
-        <button
-          type="button" className={`${styles.toggle} ${styles.mute}`}
+        >S</Button>
+        <Button
+          type="button" variant="mute" size="icon" className={styles.mute}
           aria-label={`Mute: ${name}`} aria-pressed={muted}
           title={`Mute — выключить партию (${name})`}
           disabled={loading || disabled} onClick={() => { if (!muted && solo) onSoloChange(false); onMuteChange(!muted); }}
-        >M</button>
+        >M</Button>
         <label className="visually-hidden" htmlFor={volumeId}>Громкость: {name}</label>
-        <input
-          id={volumeId} className={styles.volume} type="range" min="0" max="100" step="1"
+        <RangeSlider
+          id={volumeId} className={styles.volume} min="0" max="100" step="1"
           value={safeVolume} aria-valuetext={`${safeVolume}%`} aria-orientation={orientation} disabled={loading || disabled}
-          style={rangeStyle} onChange={(event) => onVolumeChange(Number(event.currentTarget.value))}
+          orientation={orientation} tone={orientation === 'vertical' ? tone : 'accent'} onChange={(event) => onVolumeChange(Number(event.currentTarget.value))}
         />
         <output className={styles.value} htmlFor={volumeId}>{safeVolume}<span className="visually-hidden">%</span></output>
       </div>

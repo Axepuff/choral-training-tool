@@ -1,3 +1,8 @@
+import { Message } from '../ui/Message';
+import { Select } from '../ui/Select';
+import { Textarea } from '../ui/Textarea';
+import { Input } from '../ui/Input';
+import { Button } from '../ui/Button';
 import { useEffect, useId, useRef, useState } from 'react';
 import styles from './CreateSong.module.css';
 
@@ -40,17 +45,17 @@ function TrackRow({ track, index, onChange, state }: {
     <span className={styles.number} aria-hidden="true">{index + 1}</span>
     <label className={styles.trackName}>
       <span className="visually-hidden">Название трека {index + 1}</span>
-      <input id={`${id}-name`} name={`tracks[${index}].name`} required value={track.name} placeholder="Название партии"
+      <Input id={`${id}-name`} name={`tracks[${index}].name`} required value={track.name} placeholder="Название партии"
         onChange={(event) => onChange({ ...track, name: event.target.value })} />
     </label>
-    <button className={styles.upload} type="button" onClick={() => fileRef.current?.click()}
+    <Button size="icon" type="button" onClick={() => fileRef.current?.click()}
       aria-label={`${selectedName ? 'Заменить' : 'Выбрать'} файл трека ${index + 1}`} title={selectedName ? 'Заменить аудиофайл' : 'Выбрать аудиофайл'}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
         <path d="M9 3H4v18h11V9L9 3ZM9 3v6h6M10 12v5" />
         <ellipse cx="8" cy="17" rx="2" ry="1.5" />
         <path d="M20 14V4m-3 3 3-3 3 3" />
       </svg>
-    </button>
+    </Button>
     <input id={`${id}-file`} name={`tracks[${index}].file`} ref={fileRef} type="file" hidden aria-label={`Аудиофайл трека ${index + 1}`}
       onChange={(event) => {
         const file = event.target.files?.[0];
@@ -59,11 +64,11 @@ function TrackRow({ track, index, onChange, state }: {
       }} />
     <div className={styles.fileInfo}>
       <span title={selectedName}>{selectedName ?? 'Файл не выбран'}</span>
-      {selectedName && (track.file || !track.id) && <button type="button" aria-label={`Убрать файл трека ${index + 1}`}
-        onClick={() => { const { file: _file, ...rest } = track; void _file; onChange(track.id ? rest : { name: track.name }); }}>Убрать</button>}
+      {selectedName && (track.file || !track.id) && <Button variant="dangerText" size="small" className={styles.fileRemove} type="button" aria-label={`Убрать файл трека ${index + 1}`}
+        onClick={() => { const { file: _file, ...rest } = track; void _file; onChange(track.id ? rest : { name: track.name }); }}>Убрать</Button>}
     </div>
-    {track.file && track.existingFileName && <p className={styles.trackStatus}>Сохранённый файл: {track.existingFileName}</p>}
-    {state && <p className={styles.trackStatus} role="status">{state}</p>}
+    {track.file && track.existingFileName && <Message size="compact" className={styles.trackStatus}>Сохранённый файл: {track.existingFileName}</Message>}
+    {state && <Message tone="muted" size="compact" className={styles.trackStatus} role="status">{state}</Message>}
   </div>;
 }
 
@@ -115,25 +120,25 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
       <h1>{initialSong ? 'Редактировать песню' : 'Новая песня'}</h1>
       <p className={styles.intro}>{initialSong ? 'Измените данные песни и голосовые партии.' : 'Добавьте партии, чтобы подготовить репетицию.'}</p>
       <label className={styles.field}>Название песни
-        <input id={`${id}-title`} name="title" required placeholder="Например, Тихий вечер" value={title} onChange={(event) => setTitle(event.target.value)} />
+        <Input id={`${id}-title`} name="title" required placeholder="Например, Тихий вечер" value={title} onChange={(event) => setTitle(event.target.value)} />
       </label>
       <div className={styles.settings}>
         <label className={styles.field}>Темп, BPM
-          <input id={`${id}-bpm`} name="bpm" type="number" required min={20} max={300} step={1} inputMode="numeric" value={bpm} onChange={(event) => setBpm(event.target.value)} />
+          <Input id={`${id}-bpm`} name="bpm" type="number" required min={20} max={300} step={1} inputMode="numeric" value={bpm} onChange={(event) => setBpm(event.target.value)} />
         </label>
         <fieldset className={styles.meter}><legend>Размер</legend><div>
-          <input id={`${id}-beats`} name="beatsPerBar" aria-label="Долей в такте" type="number" required min={1} max={32} step={1} value={beats} onChange={(event) => setBeats(event.target.value)} />
+          <Input id={`${id}-beats`} name="beatsPerBar" aria-label="Долей в такте" type="number" required min={1} max={32} step={1} value={beats} onChange={(event) => setBeats(event.target.value)} />
           <span aria-hidden="true">/</span>
-          <select id={`${id}-unit`} name="beatUnit" aria-label="Длительность доли" value={unit} onChange={(event) => setUnit(event.target.value)}>
+          <Select id={`${id}-unit`} name="beatUnit" aria-label="Длительность доли" value={unit} onChange={(event) => setUnit(event.target.value)}>
             {[1, 2, 4, 8, 16, 32].map((value) => <option key={value}>{value}</option>)}
-          </select>
+          </Select>
         </div></fieldset>
       </div>
       <section className={styles.tracks} aria-labelledby={`${id}-tracks`}>
         <div className={styles.sectionHeader}><h2 id={`${id}-tracks`}>Треки</h2>
-          <label>Количество <select id={`${id}-count`} name="trackCount" aria-label="Количество треков" value={count} onChange={(event) => { setCount(Number(event.target.value)); setMessage(''); }}>
+          <label>Количество <Select className={styles.trackCount} id={`${id}-count`} name="trackCount" aria-label="Количество треков" value={count} onChange={(event) => { setCount(Number(event.target.value)); setMessage(''); }}>
             {Array.from({ length: 32 }, (_, index) => <option key={index}>{index + 1}</option>)}
-          </select></label>
+          </Select></label>
         </div>
         <p className={styles.help}>Один файл на партию. Можно добавить минус.{live && ' Черновик можно сохранить без файлов.'}</p>
         <div className={styles.trackList}>
@@ -148,19 +153,19 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
         </details>
       </section>
       <label className={styles.field}>Заметки <span className={styles.optional}>необязательно</span>
-        <textarea id={`${id}-notes`} name="notes" rows={4} value={notes} placeholder="Вступления, дыхание, сложные места…"
+        <Textarea id={`${id}-notes`} name="notes" rows={4} value={notes} placeholder="Вступления, дыхание, сложные места…"
           aria-describedby={`${id}-notes-count`} onChange={(event) => setNotes(event.target.value)} />
       </label>
       <div className={styles.counter} id={`${id}-notes-count`}>{[...notes.normalize('NFC')].length} / 1000</div>
-      {message && <p className={styles.message} role="status">{message}</p>}
-      {status && <p role="status">{status}</p>}
-      {error && <p role="alert">{error}</p>}
+      {message && <Message tone="info" variant="banner" className={styles.message} role="status">{message}</Message>}
+      {status && <Message tone="muted" role="status">{status}</Message>}
+      {error && <Message tone="error" role="alert">{error}</Message>}
       <div className={styles.actions}>
-      <button className={styles.submit} type="submit">{initialSong ? 'Сохранить изменения' : 'Создать песню'}</button>
-      {onCancel && <button className={styles.cancel} type="button" onClick={() => { if (!live || !dirty || window.confirm('Отменить несохранённые изменения? Сохранённый черновик останется на сервере.')) { leaving.current = true; onCancel(); } }}>Отмена</button>}
-      {onListen && <button className={styles.cancel} type="button" disabled={!canListen} onClick={onListen}>Слушать песню</button>}
+      <Button variant="primary" size="form" className={styles.submit} type="submit">{initialSong ? 'Сохранить изменения' : 'Создать песню'}</Button>
+      {onCancel && <Button className={styles.cancel} type="button" onClick={() => { if (!live || !dirty || window.confirm('Отменить несохранённые изменения? Сохранённый черновик останется на сервере.')) { leaving.current = true; onCancel(); } }}>Отмена</Button>}
+      {onListen && <Button className={styles.cancel} type="button" disabled={!canListen} onClick={onListen}>Слушать песню</Button>}
       {publication && <p className={styles.help}>Публикация: {publication === 'published' ? 'опубликована' : 'черновик'}. {audioReady ? 'Аудио готово.' : 'Есть неготовые дорожки.'}</p>}
-      {onPublish && <button className={styles.cancel} type="button" onClick={onPublish}>{publication === 'draft' ? 'Опубликовать сохранённую песню' : 'Снять публикацию'}</button>}
+      {onPublish && <Button className={styles.cancel} type="button" onClick={onPublish}>{publication === 'draft' ? 'Опубликовать сохранённую песню' : 'Снять публикацию'}</Button>}
       </div>
       </fieldset>
       {!live && <p className={styles.demo}>Демо: файлы остаются на устройстве и не загружаются на сервер.</p>}

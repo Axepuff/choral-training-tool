@@ -1,3 +1,6 @@
+import { Message } from '../components/ui/Message';
+import { Input } from '../components/ui/Input';
+import { Button } from '../components/ui/Button';
 import { useState } from 'react';
 import { changePassword } from './session';
 import { ApiError } from '../api/client';
@@ -19,11 +22,11 @@ export function ChangePassword() {
       finally { setBusy(false); }
     }}>
       <label htmlFor="currentPassword">Текущий пароль</label>
-      <input id="currentPassword" name="currentPassword" type="password" autoComplete="current-password" required readOnly={busy} />
+      <Input density="large" id="currentPassword" name="currentPassword" type="password" autoComplete="current-password" required readOnly={busy} />
       <label htmlFor="newPassword">Новый пароль (12–128 символов)</label>
-      <input id="newPassword" name="newPassword" type="password" autoComplete="new-password" required readOnly={busy} />
-      {error && <p className={styles.error} role="alert">{error}</p>}
-      <button className={styles.submit} disabled={busy}>{busy ? 'Сохраняем…' : 'Сменить пароль'}</button>
+      <Input density="large" id="newPassword" name="newPassword" type="password" autoComplete="new-password" required readOnly={busy} />
+      {error && <Message tone="error" variant="banner" className={styles.error} role="alert">{error}</Message>}
+      <Button variant="primary" size="form" className={styles.submit} type="submit" disabled={busy}>{busy ? 'Сохраняем…' : 'Сменить пароль'}</Button>
     </form>
   </div></main>;
 }

@@ -1,3 +1,5 @@
+import { Message } from '../ui/Message';
+import { Button } from '../ui/Button';
 import { useEffect, useRef, useState } from 'react';
 import type { User } from '../../api/client';
 import { ApiError } from '../../api/client';
@@ -33,19 +35,19 @@ function SharePanel({ owner, songId, close }: { owner: string; songId?: string; 
   }
   return <section className={styles.sharePanel} aria-label="Публичные ссылки">
     <h2>Публичные ссылки</h2>
-    {!shares && !error && <p role="status">Загрузка ссылок…</p>}
+    {!shares && !error && <Message tone="muted" role="status">Загрузка ссылок…</Message>}
     {shares?.map(s => <div key={s.id}><p>{s.disabledAt ? 'Ссылка отозвана' : 'Ссылка действует'} · {new Date(s.createdAt).toLocaleString('ru')}</p>
-      <button disabled={busy} onClick={() => void run(async () => { setUrl(''); const result = await rotateShare(s.id); urlShareId.current = result.share.id; setUrl(new URL(result.url, window.location.origin).href); })}>Заменить ссылку</button>
-      {!s.disabledAt && <button disabled={busy} onClick={() => void run(async () => { await revokeShare(s.id); if (urlShareId.current === s.id) setUrl(''); })}>Отозвать ссылку</button>}
+      <Button className={styles.shareAction} disabled={busy} onClick={() => void run(async () => { setUrl(''); const result = await rotateShare(s.id); urlShareId.current = result.share.id; setUrl(new URL(result.url, window.location.origin).href); })}>Заменить ссылку</Button>
+      {!s.disabledAt && <Button className={styles.shareAction} disabled={busy} onClick={() => void run(async () => { await revokeShare(s.id); if (urlShareId.current === s.id) setUrl(''); })}>Отозвать ссылку</Button>}
     </div>)}
     <p>Старый адрес сервер не раскрывает. Замена отключает старый адрес. В список попадают только опубликованные готовые песни.</p>
-    <button disabled={busy || !shares} onClick={() => void run(async () => {
+    <Button className={styles.shareAction} disabled={busy || !shares} onClick={() => void run(async () => {
       const result = await createShare(songId ? { kind: 'song', songId } : { kind: 'list', ownerId: owner }, key.current);
       urlShareId.current = result.share.id; setUrl(new URL(result.url, window.location.origin).href); key.current = crypto.randomUUID();
-    })}>Создать новую ссылку</button>
-    {url && <><a href={url} target="_blank" rel="noreferrer">{url}</a><button onClick={() => void navigator.clipboard.writeText(url).catch(() => setError('Не удалось скопировать. Скопируйте адрес вручную.'))}>Копировать</button></>}
-    {error && <p role="alert">{error}</p>}
-    <button disabled={busy} onClick={close}>Закрыть</button>
+    })}>Создать новую ссылку</Button>
+    {url && <><a href={url} target="_blank" rel="noreferrer">{url}</a><Button className={styles.shareAction} onClick={() => void navigator.clipboard.writeText(url).catch(() => setError('Не удалось скопировать. Скопируйте адрес вручную.'))}>Копировать</Button></>}
+    {error && <Message tone="error" role="alert">{error}</Message>}
+    <Button className={styles.shareAction} disabled={busy} onClick={close}>Закрыть</Button>
   </section>;
 }
 
@@ -153,9 +155,9 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
       if (current) { try { setSong(await getSong(current.id)); } catch { /* Keep original failure visible. */ } }
     } finally { setBusy(false); }
   }
-  if (!loaded) return <main className={styles.page}>{error ? <p role="alert">{error}</p> : <p role="status">Загрузка песни…</p>}<button onClick={close}>Песни</button></main>;
+  if (!loaded) return <main className={styles.page}>{error ? <Message tone="error" role="alert">{error}</Message> : <Message tone="muted" role="status">Загрузка песни…</Message>}<Button className={styles.shareAction} onClick={close}>Песни</Button></main>;
   if (song && (listen || (user.role !== 'admin' && song.ownerId !== user.id))) return <>
-    <RehearsalPlayer key={song.id} song={song} />{(user.role === "admin" || song.ownerId === user.id) && <button onClick={() => setListen(false)}>К редактированию</button>}<button onClick={close}>Песни</button>
+    <RehearsalPlayer key={song.id} song={song} />{(user.role === "admin" || song.ownerId === user.id) && <Button className={styles.shareAction} onClick={() => setListen(false)}>К редактированию</Button>}<Button className={styles.shareAction} onClick={close}>Песни</Button>
   </>;
   return <>
     <CreateSong key={epoch} live busy={busy} status={status} error={error} {...(song ? { initialSong: songForm(song) } : {})} onSave={save} onCancel={close}
@@ -200,7 +202,7 @@ export function LiveLibrary({ user, create, editId }: { user: User; create: bool
         onShare: id => { const song = songs.find(s => s.id === id); setSharing(song ? { owner: song.ownerId, songId: song.id } : { owner: user.id }); },
         onFilter: (q, sort) => setFilter({ q, sort: sort === 'title' ? 'title_asc' : 'updated_desc' }),
       }} />
-    {error && <button className="sessionAction" onClick={() => setRetry(r => r + 1)}>Повторить загрузку</button>}
+    {error && <Button onClick={() => setRetry(r => r + 1)}>Повторить загрузку</Button>}
     {sharing && <SharePanel {...sharing} close={() => setSharing(null)} />}
   </>;
 }

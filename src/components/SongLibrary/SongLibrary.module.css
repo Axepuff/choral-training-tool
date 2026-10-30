@@ -6,18 +6,10 @@
 .count { color: var(--color-text-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .headerActions, .actions { display: flex; align-items: center; gap: 0; }
 .headerActions { gap: 4px; }
-.iconButton { display: inline-flex; flex: 0 0 44px; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 8px; background: var(--background-control); box-shadow: var(--shadow-raised); color: var(--color-text-muted); text-decoration: none; }
-.iconButton:hover:not(:disabled) { background: var(--color-control); color: var(--color-accent-strong); }
-.create { background: var(--color-accent); color: var(--color-on-accent); }
-.create:hover:not(:disabled) { background: var(--color-accent-hover); color: var(--color-on-accent); }
-.iconButton:disabled { color: var(--color-text-muted); opacity: 0.5; }
 .filters { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 8px; margin-bottom: 8px; }
 .search, .sort { min-width: 0; }
 .search { position: relative; }
 .search > svg { position: absolute; left: 10px; top: 12px; pointer-events: none; color: var(--color-text-muted); }
-.search input, .sort select { width: 100%; min-width: 0; height: 44px; border: 1px solid var(--color-border); background-color: var(--color-surface); box-shadow: var(--shadow-inset); border-radius: 8px; padding: 8px 10px; color: var(--color-text); font: inherit; font-size: 16px; font-weight: 400; }
-.search input { padding-left: 36px; }
-.sort select { appearance: none; padding-right: 30px; font-size: 13px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2359657b' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
 .list { list-style: none; padding: 0; margin: 0; }
 .song { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; border-bottom: 1px solid var(--color-border); padding: 8px 0; }
 .songLink { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; min-height: 48px; color: var(--color-text); text-decoration: none; }
@@ -28,17 +20,14 @@
 .empty { padding: 24px 0; }
 .empty h2 { font-weight: 300; letter-spacing: 0.01em; margin: 0; font-size: 18px; }
 .empty p { color: var(--color-text-muted); font-size: 13px; }
-.empty button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--color-control-border); border-radius: 8px; background: var(--background-control); color: var(--color-accent-strong); box-shadow: var(--shadow-raised); font-size: 13px; }
-.notice { font-size: 12px; padding: 8px; margin: 8px 0; background: var(--color-accent-soft); border-radius: 8px; overflow-wrap: anywhere; }
-.page :is(a,select,input,button):focus-visible { outline: 2px solid var(--color-accent-strong); outline-offset: 2px; }
+.notice { margin: var(--space-2) 0; }
 @media (min-width: 640px) { .page { padding: 20px 24px; } .filters { grid-template-columns: minmax(0, 1fr) 160px; } }
 
 .sharePanel { max-width: 664px; margin: 0 auto; padding: 16px; overflow-wrap: anywhere; }
-.sharePanel button { min-height: 44px; min-width: 44px; margin: 4px; padding: 8px 12px; border: 1px solid var(--color-control-border); border-radius: 8px; background: var(--background-control); color: var(--color-text); box-shadow: var(--shadow-raised); }
+.shareAction { margin: var(--space-1); }
 .sharePanel a { display: block; }
 
 .sessionHeader { max-width: 696px; margin: auto; padding: 16px 16px 0; overflow-wrap: anywhere; }
 
-.iconButton:active:not(:disabled), .empty button:active:enabled, .sharePanel button:active:enabled { box-shadow: var(--shadow-pressed); }
 
 .sharePanel h2 { font-weight: 300; letter-spacing: 0.01em; }

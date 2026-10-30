@@ -1,3 +1,7 @@
+import { Message } from '../ui/Message';
+import { RangeSlider } from '../ui/RangeSlider';
+import { Input } from '../ui/Input';
+import { Button } from '../ui/Button';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { TrackControls } from '../TrackControls/TrackControls';
@@ -201,12 +205,12 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   const manualFields = (
     <div className={styles.manualFields}>
       <label htmlFor={`${rangeId}-start`}>Первый такт
-        <input id={`${rangeId}-start`} name="loopStart" type="number" inputMode="numeric" min={1} max={count} step={1}
+        <Input className={styles.barInput} id={`${rangeId}-start`} name="loopStart" type="number" inputMode="numeric" min={1} max={count} step={1}
           value={Number.isNaN(range[0]) ? '' : range[0]} aria-invalid={!validRange} aria-describedby={!validRange ? `${rangeId}-error` : undefined}
           onChange={event => setRange([event.currentTarget.valueAsNumber, range[1]])} />
       </label>
       <label htmlFor={`${rangeId}-end`}>Последний такт
-        <input id={`${rangeId}-end`} name="loopEnd" type="number" inputMode="numeric" min={1} max={count} step={1}
+        <Input className={styles.barInput} id={`${rangeId}-end`} name="loopEnd" type="number" inputMode="numeric" min={1} max={count} step={1}
           value={Number.isNaN(range[1]) ? '' : range[1]} aria-invalid={!validRange} aria-describedby={!validRange ? `${rangeId}-error` : undefined}
           onChange={event => setRange([range[0], event.currentTarget.valueAsNumber])} />
       </label>
@@ -229,23 +233,23 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
 
         <div className={styles.transport} aria-label="Управление воспроизведением">
           <div className={styles.playback}>
-            <button className={styles.iconButton} type="button" aria-label="Вернуться к началу" title="Вернуться к началу" onClick={() => seek(0)}>
+            <Button size="icon" type="button" aria-label="Вернуться к началу" title="Вернуться к началу" onClick={() => seek(0)}>
               <PlayerIcon name="restart" />
-            </button>
-            <button className={styles.playButton} disabled={audio.loading} type="button" aria-label={playbackLabel} aria-busy={playbackLoading} title={playbackLabel} onClick={togglePlayback}>
+            </Button>
+            <Button variant="play" disabled={audio.loading} type="button" aria-label={playbackLabel} aria-busy={playbackLoading} title={playbackLabel} onClick={togglePlayback}>
               <PlayerIcon name={canPause ? 'pause' : 'play'} />
-            </button>
+            </Button>
             <span className={styles.time} aria-label={`${formatTime(time)} из ${formatTime(duration)}`}>
               {formatTime(time)} <span>/ {formatTime(duration)}</span>
             </span>
           </div>
           <div className={styles.options}>
-            <button className={styles.optionButton} type="button" aria-label="Метроном" aria-pressed={metronome} title={song ? "Звуковой метроном" : "Визуальный метроном (демо без звука)"} onClick={() => setMetronome(!metronome)}>
+            <Button size="compact" className={styles.optionButton} type="button" aria-label="Метроном" aria-pressed={metronome} title={song ? "Звуковой метроном" : "Визуальный метроном (демо без звука)"} onClick={() => setMetronome(!metronome)}>
               <PlayerIcon name="metronome" /><span>Метроном</span>
-            </button>
+            </Button>
           </div>
           <div className={styles.transportStatus}>
-            <span role="status">{playbackLoading ? 'Загрузка аудио…' : activeLoop ? `Повтор: такты ${range[0]}–${range[1]}` : `Все партии · ${count} ${barLabel}`}</span>
+            <Message as="span" tone="muted" role="status">{playbackLoading ? 'Загрузка аудио…' : activeLoop ? `Повтор: такты ${range[0]}–${range[1]}` : `Все партии · ${count} ${barLabel}`}</Message>
             {metronome && <span className={styles.beats} aria-label="Визуальный метроном">
               {Array.from({ length: beatsPerBar }, (_, index) => <i key={index} data-active={isPlaying && index === currentBeat} />)}
             </span>}
@@ -255,10 +259,10 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
         <div className={styles.loopControls} role="group" aria-label="Такты повтора">
           <div className={styles.loopHeading}>
             <strong>Повтор по тактам</strong>
-            <button className={styles.loopToggle} type="button" aria-label="Повтор фрагмента" aria-pressed={activeLoop}
+            <Button size="compact" className={styles.loopToggle} type="button" aria-label="Повтор фрагмента" aria-pressed={activeLoop}
               disabled={!validRange || duration <= 0} onClick={() => setLoop(!loop)}>
               <PlayerIcon name="loop" />{activeLoop ? 'Включён' : 'Выключен'}
-            </button>
+            </Button>
           </div>
           {showWheels && <div className={styles.wheelRange}>
             <BarWheel label="С такта" value={range[0]} count={count}
@@ -272,7 +276,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
             <summary>Ввести номера</summary>
             {manualFields}
           </details> : manualFields}
-          {!validRange && <span id={`${rangeId}-error`} role="alert">Укажите целые такты: 1 ≤ начало ≤ конец ≤ {count}.</span>}
+          {!validRange && <Message as="span" tone="error" id={`${rangeId}-error`} role="alert">Укажите целые такты: 1 ≤ начало ≤ конец ≤ {count}.</Message>}
         </div>
         <section className={styles.timeline} style={gridStyle} aria-label="Общий таймлайн партий">
           <div className={styles.timelineViewport} ref={timelineRef} tabIndex={0} role="region" aria-label="Прокрутка тактов">
@@ -295,13 +299,13 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
           </div>
           </div>
           <label className="visually-hidden" htmlFor={positionId}>Позиция воспроизведения</label>
-          <input className={styles.seek} id={positionId} type="range" min="0" max={duration} step="0.01" value={time}
+          <RangeSlider variant="seek" id={positionId} min="0" max={duration} step="0.01" value={time}
             aria-valuetext={`${formatTime(time)} из ${formatTime(duration)}`}
             onChange={(event) => seek(Number(event.currentTarget.value))} />
         </section>
 
-        {loopError && <p role="alert">{loopError}</p>}
-        {audio.error && <p role="alert">{audio.error}</p>}
+        {loopError && <Message tone="error" role="alert">{loopError}</Message>}
+        {audio.error && <Message tone="error" role="alert">{audio.error}</Message>}
         {import.meta.env.DEV && Object.keys(audio.diagnostics).length > 0 && <details className={styles.diagnostics}>
           <summary>Диагностика воспроизведения</summary>
           <pre>{JSON.stringify(Object.values(audio.diagnostics), null, 2)}</pre>
@@ -319,7 +323,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
                   onMuteChange={(muted) => updateTrack(track.id, { muted })}
                   onSoloChange={(solo) => updateTrack(track.id, { solo })}
                 />
-                {song && <small role="status">{audio.states[track.id] ?? "Ожидание…"}</small>}
+                {song && <Message as="small" tone="muted" size="micro" className={styles.trackState} role="status">{audio.states[track.id] ?? "Ожидание…"}</Message>}
               </div>
             ))}
           </div>
