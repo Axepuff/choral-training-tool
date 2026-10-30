@@ -14,14 +14,14 @@
 .primary, .secondary, .textButton, .back, .danger, .dangerText, .iconButton, .linkButton { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; min-width: 44px; padding: 10px 14px; border: 1px solid transparent; border-radius: 8px; font-size: 13px; font-weight: 550; line-height: 1.35; text-decoration: none; }
 .primary { box-shadow: var(--shadow-raised); color: var(--color-on-accent); background: var(--color-accent); }
 .primary:hover:enabled { background: var(--color-accent-hover); }
-.secondary { background: var(--color-surface); border-color: var(--color-border); color: var(--color-text); }
-.secondary:hover:enabled, .iconButton:hover:enabled, .linkButton:hover:enabled { background: var(--color-surface-soft); }
+.secondary { background: var(--background-control); border-color: var(--color-control-border); color: var(--color-text); }
+.secondary:hover:enabled, .iconButton:hover:enabled, .linkButton:hover:enabled { background: var(--color-control); }
 .textButton, .back { background: transparent; color: var(--color-accent-strong); padding-left: 0; padding-right: 0; }
 .back { margin: -12px 0 14px; }
 .dangerText { background: transparent; color: var(--color-mute); }
 .danger { background: var(--color-mute); color: white; }
-.iconButton { padding: 10px; background: transparent; color: var(--color-text-muted); }
-.linkButton { padding: 10px; background: transparent; color: var(--color-accent-strong); }
+.iconButton { padding: 10px; background: var(--background-control); color: var(--color-text-muted); }
+.linkButton { padding: 10px; background: var(--background-control); color: var(--color-accent-strong); }
 .root button:disabled { opacity: .5; cursor: not-allowed; }
 .root :is(button,input,select,a):focus-visible { outline: 2px solid var(--color-accent-strong); outline-offset: 3px; }
 .filters { display: grid; grid-template-columns: minmax(0, 1fr) 155px; gap: 10px; margin-bottom: 8px; }

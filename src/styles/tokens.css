@@ -3,6 +3,9 @@
   --color-page: #f4f5f7;
   --color-surface: #f4f5f7;
   --color-surface-soft: #eceef2;
+  --color-control: #fdfefe;
+  --background-control: linear-gradient(145deg, #ffffff, #f8f9fb);
+  --color-control-border: #e2e6ec;
   --color-text: #292d35;
   --color-text-muted: #5c626d;
   --color-border: #c3c7cf;
@@ -41,7 +44,7 @@
   --radius-full: 999px;
   --touch-target: 44px;
   --focus-ring: 0 0 0 3px var(--color-accent-strong);
-  --shadow-raised: 4px 4px 10px #dce0e6, -4px -4px 10px #ffffff;
+  --shadow-raised: 5px 5px 10px #cbd1da, -5px -5px 10px #ffffff, inset 1px 1px 0 rgb(255 255 255 / 95%);
   --shadow-inset: inset 3px 3px 6px #dce0e6, inset -3px -3px 6px #ffffff;
   --shadow-pressed: inset 2px 2px 5px rgb(70 47 26 / 22%), inset -2px -2px 5px rgb(255 255 255 / 55%);
   --shadow-card: 6px 6px 16px #dce0e6, -6px -6px 16px #ffffff;

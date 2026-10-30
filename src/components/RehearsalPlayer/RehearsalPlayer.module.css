@@ -9,8 +9,8 @@
 .transport { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-block: 1px solid var(--color-border); }
 .playback, .options { display: flex; align-items: center; gap: 4px; }
 .playback { gap: 6px; }
-.iconButton, .optionButton, .playButton { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 44px; min-height: 44px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface); color: var(--color-text-muted); box-shadow: var(--shadow-raised); padding: 8px; }
-.iconButton:hover:enabled, .optionButton:hover:enabled { background: var(--color-surface-soft); }
+.iconButton, .optionButton, .playButton { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 44px; min-height: 44px; border: 1px solid var(--color-control-border); border-radius: 10px; background: var(--background-control); color: var(--color-text-muted); box-shadow: var(--shadow-raised); padding: 8px; }
+.iconButton:hover:enabled, .optionButton:not([aria-pressed='true']):hover:enabled { background: var(--color-control); }
 .playButton { width: 48px; height: 48px; border-radius: 50%; background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
 .playButton:hover:not(:disabled) { background: var(--color-accent-hover); }
 .playButton:disabled { opacity: 0.45; }
