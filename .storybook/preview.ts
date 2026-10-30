@@ -8,7 +8,7 @@ const preview: Preview = {
     layout: 'padded',
     backgrounds: {
       options: {
-        light: { name: 'Мягкий неоморфизм', value: '#ecedef' },
+        light: { name: 'Мягкий неоморфизм', value: '#f4f5f7' },
         white: { name: 'Белый', value: '#ffffff' },
       },
     },
