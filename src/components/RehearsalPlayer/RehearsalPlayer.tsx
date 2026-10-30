@@ -58,6 +58,11 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   const rangeId = useId();
   const [range, setRange] = useState(initialLoopRange);
   const validRange = range.every(Number.isInteger) && range[0] >= 1 && range[1] <= count && range[0] <= range[1];
+  const [rangeExpanded, setRangeExpanded] = useState(false);
+  const [manualRange, setManualRange] = useState(!showWheels || !validRange);
+  const rangeError = !range.every(Number.isInteger) || range.some(value => value < 1 || value > count)
+    ? `Введите целый номер такта от 1 до ${count}.`
+    : range[0] > range[1] ? 'Последний такт должен быть не раньше первого.' : '';
   const [loopError, setLoopError] = useState('');
   const [metronome, setMetronome] = useState(false);
   const isPlaying = playing && time < duration;
@@ -209,7 +214,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
           value={Number.isNaN(range[0]) ? '' : range[0]} aria-invalid={!validRange} aria-describedby={!validRange ? `${rangeId}-error` : undefined}
           onChange={event => setRange([event.currentTarget.valueAsNumber, range[1]])} />
       </label>
-      <label htmlFor={`${rangeId}-end`}>Последний такт
+      <label htmlFor={`${rangeId}-end`}>Последний такт включительно
         <Input className={styles.barInput} id={`${rangeId}-end`} name="loopEnd" type="number" inputMode="numeric" min={1} max={count} step={1}
           value={Number.isNaN(range[1]) ? '' : range[1]} aria-invalid={!validRange} aria-describedby={!validRange ? `${rangeId}-error` : undefined}
           onChange={event => setRange([range[0], event.currentTarget.valueAsNumber])} />
@@ -258,25 +263,33 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
 
         <div className={styles.loopControls} role="group" aria-label="Такты повтора">
           <div className={styles.loopHeading}>
-            <strong>Повтор по тактам</strong>
+            <div className={styles.loopSummary}>
+              <strong>Повтор по тактам</strong>
+              <span>{validRange ? `Такты ${range[0]}–${range[1]} включительно` : 'Проверьте номера тактов'}</span>
+            </div>
             <Button size="compact" className={styles.loopToggle} type="button" aria-label="Повтор фрагмента" aria-pressed={activeLoop}
               disabled={!validRange || duration <= 0} onClick={() => setLoop(!loop)}>
               <PlayerIcon name="loop" />{activeLoop ? 'Включён' : 'Выключен'}
             </Button>
+            <Button variant="text" size="compact" aria-expanded={rangeExpanded || !validRange} aria-controls={`${rangeId}-settings`}
+              onClick={() => setRangeExpanded(value => !value)} disabled={!validRange}>
+              {rangeExpanded || !validRange ? 'Свернуть' : 'Настроить'}
+            </Button>
           </div>
-          {showWheels && <div className={styles.wheelRange}>
-            <BarWheel label="С такта" value={range[0]} count={count}
-              onChange={value => setRange(current => [value, Number.isInteger(current[1]) ? Math.min(count, Math.max(value, current[1])) : value])} />
-            <span className={styles.rangeDash} aria-hidden="true">—</span>
-            <BarWheel label="По такт включительно" value={range[1]} count={count}
-              onChange={value => setRange(current => [Number.isInteger(current[0]) ? Math.max(1, Math.min(value, current[0])) : value, value])} />
+          {(rangeExpanded || !validRange) && <div id={`${rangeId}-settings`} className={styles.rangeSettings}>
+            {showWheels && <Button variant="text" size="compact" aria-pressed={manualRange} disabled={!validRange}
+              onClick={() => setManualRange(value => !value)}>
+              {manualRange ? 'Выбрать барабанами' : 'Ввести номера'}
+            </Button>}
+            {manualRange || !showWheels ? manualFields : <div className={styles.wheelRange}>
+              <BarWheel label="С такта" value={range[0]} count={count}
+                onChange={value => setRange(current => [value, Math.min(count, Math.max(value, current[1]))])} />
+              <span className={styles.rangeDash} aria-hidden="true">—</span>
+              <BarWheel label="По такт включительно" value={range[1]} count={count}
+                onChange={value => setRange(current => [Math.max(1, Math.min(value, current[0])), value])} />
+            </div>}
+            {!validRange && <Message as="span" tone="error" id={`${rangeId}-error`} role="alert">{rangeError}</Message>}
           </div>}
-          <p className="visually-hidden">{validRange ? range[0] === range[1] ? `Один такт: ${range[0]}` : `Такты ${range[0]}–${range[1]} включительно` : 'Проверьте введённые номера тактов'}</p>
-          {showWheels ? <details className={styles.manualRange}>
-            <summary>Ввести номера</summary>
-            {manualFields}
-          </details> : manualFields}
-          {!validRange && <Message as="span" tone="error" id={`${rangeId}-error`} role="alert">Укажите целые такты: 1 ≤ начало ≤ конец ≤ {count}.</Message>}
         </div>
         <section className={styles.timeline} style={gridStyle} aria-label="Общий таймлайн партий">
           <div className={styles.timelineViewport} ref={timelineRef} tabIndex={0} role="region" aria-label="Прокрутка тактов">
