@@ -81,6 +81,11 @@ container readiness. Check live Issues for status.
 
 ## Validation
 
+- During implementation, use focused checks only when needed to investigate or
+  validate the current change. Defer full frontend checks, including Storybook
+  builds and story tests, until the feature is ready for review or another final
+  handoff. Run the applicable required checks then; repeat them only if later
+  changes or failures make the previous results unreliable.
 - Read `docs/e2e.md` for commands, prerequisites, and coverage; required CI checks
   live in `.github/workflows/checks.yml`, scripts in `package.json`. Run frontend
   commands from the root and Go commands from `backend/`. Verify `go version`

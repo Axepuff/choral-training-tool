@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 type IconName = 'play' | 'pause' | 'restart' | 'loop' | 'metronome' | 'music';
 
 const paths: Record<IconName, string> = {
@@ -10,9 +12,19 @@ const paths: Record<IconName, string> = {
 };
 
 export function PlayerIcon({ name }: { name: IconName }) {
+  const gradientId = useId();
+  const isPlayback = name === 'play' || name === 'pause';
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={paths[name]} />
+      {isPlayback && (
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
+            <stop stopColor="var(--color-accent)" />
+            <stop offset="1" stopColor="color-mix(in srgb, var(--color-accent) 90%, white)" />
+          </linearGradient>
+        </defs>
+      )}
+      <path d={paths[name]} fill={name === 'play' ? `url(#${gradientId})` : 'none'} stroke={isPlayback ? `url(#${gradientId})` : 'currentColor'} />
     </svg>
   );
 }

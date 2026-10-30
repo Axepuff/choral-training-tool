@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { resolve, extname } from 'node:path';
+import { resolve, extname, sep } from 'node:path';
 
 export async function serveDirectory(directory) {
   const root = resolve(directory);
@@ -9,7 +9,7 @@ export async function serveDirectory(directory) {
     try {
       const url = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
       const path = resolve(root, '.' + url + (url.endsWith('/') ? 'index.html' : ''));
-      if (!path.startsWith(root + '/')) { res.writeHead(403).end(); return; }
+      if (!path.startsWith(root + sep)) { res.writeHead(403).end(); return; }
       const data = await readFile(path);
       res.writeHead(200, { 'Content-Type': types[extname(path)] ?? 'application/octet-stream' }).end(data);
     } catch { res.writeHead(404).end(); }

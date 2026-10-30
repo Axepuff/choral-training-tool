@@ -25,6 +25,7 @@
     "test:e2e": "npm run build:e2e && cd backend && CHORAL_BROWSER_TEST=true go test -p=1 -count=1 -timeout=6m ./internal/auth ./internal/songs -run FrontendBrowser -v"
   },
   "dependencies": {
+    "@ncdai/react-wheel-picker": "1.2.3",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
