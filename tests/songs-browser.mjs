@@ -219,7 +219,8 @@ try {
  assert.equal(await evaluate(`(async () => (await fetch(${JSON.stringify(publicRoot + '/songs/' + extra.body.id + '/tracks/' + recovered.tracks[0].id + '/media')})).status)()`),404);
  // Decode and play the actual worker output through the guest UI and media API.
  await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]')?.disabled === false`), 'Real public audio not ready');
-  await evaluate(`Array.from(document.querySelectorAll('summary')).find(e => e.textContent === 'Ввести номера').click()`);
+  await evaluate(`Array.from(document.querySelectorAll('button')).find(e => e.textContent === 'Настроить').click()`);
+  await evaluate(`Array.from(document.querySelectorAll('button')).find(e => e.textContent === 'Ввести номера').click()`);
  await input('loopStart', '1');await input('loopEnd', '1');
  await evaluate(`document.querySelector('[aria-label="Повтор фрагмента"]').click()`);
  const point = await evaluate(`(() => { const r=document.querySelector('[aria-label="Воспроизвести"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`);

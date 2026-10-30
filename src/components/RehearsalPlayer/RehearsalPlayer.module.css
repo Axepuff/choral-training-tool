@@ -83,11 +83,14 @@
 .diagnostics summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
 .diagnostics pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
-.loopControls { display: grid; grid-template-columns: 112px minmax(0, 1fr); column-gap: var(--space-3); max-width: 320px; padding-block: var(--space-2); font-size: var(--font-xs); }
-.loopHeading { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
-.loopHeading strong { font-size: var(--font-xs); font-weight: 500; }
+.loopControls { padding-block: var(--space-2); font-size: var(--font-xs); }
+.loopHeading { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.loopSummary { display: grid; margin-right: auto; }
+.loopSummary strong { font-size: var(--font-xs); font-weight: 500; }
+.loopSummary > span { color: var(--color-text-muted); }
 .loopToggle { min-width: 104px; }
-.wheelRange { grid-column: 2; grid-row: 1 / span 2; display: grid; grid-template-columns: minmax(44px, 1fr) 12px minmax(44px, 1fr); align-items: center; gap: var(--space-1); }
+.rangeSettings { max-width: 360px; padding-top: var(--space-2); }
+.wheelRange { display: grid; grid-template-columns: minmax(44px, 1fr) 12px minmax(44px, 1fr); align-items: center; gap: var(--space-1); max-width: 240px; }
 .barWheel { min-width: 0; text-align: center; }
 .wheelLabel { display: block; height: 20px; font-size: var(--font-xs); color: var(--color-text-muted); }
 .barWheel [data-rwp-wrapper] { border-radius: var(--radius-sm); background: var(--color-surface); box-shadow: var(--shadow-inset); }
@@ -96,15 +99,20 @@
 .barWheel .wheelSelected { font-size: var(--font-lg); font-weight: 400; color: var(--color-text); font-variant-numeric: tabular-nums; }
 .barWheel .wheelHighlight[data-rwp-focused] { outline: 2px solid var(--color-accent-strong); outline-offset: -2px; border-radius: var(--radius-sm); }
 .rangeDash { padding-top: 20px; text-align: center; color: var(--color-text-muted); }
-.manualRange { grid-column: 1; grid-row: 2; align-self: end; }
-.manualRange summary { min-height: var(--touch-target); display: flex; align-items: center; width: fit-content; cursor: pointer; color: var(--color-text-muted); text-decoration: underline; text-underline-offset: 3px; }
-.manualRange[open] { grid-column: 1 / -1; grid-row: 3; }
-.manualFields { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); padding-block: var(--space-1) var(--space-2); }
+.manualFields { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); padding-block: var(--space-1) var(--space-2); }
 .manualFields > p { flex-basis: 100%; margin: 0; color: var(--color-text-muted); }
 .loopControls [role='alert'] { grid-column: 1 / -1; }
-.loopControls label { display: flex; align-items: center; gap: 8px; }
+.loopControls label { display: grid; gap: var(--space-1); }
 .barInput { width: 76px; }
 .loopControls [role='alert'] { width: 100%; }
 
 
 .hint strong { font-weight: 500; }
+
+@media (max-width: 639px), (orientation: landscape) and (max-height: 500px) {
+  .transport { position: sticky; top: 4px; z-index: 2; background: var(--color-surface); }
+  .player :is(button, input, [tabindex], [role='alert']) { scroll-margin-block: 116px var(--space-4); }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .player :is(button, input, [tabindex], [role='alert']) { scroll-margin-top: 76px; }
+}
