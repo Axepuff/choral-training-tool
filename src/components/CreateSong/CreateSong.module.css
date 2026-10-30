@@ -2,14 +2,6 @@
 .card { min-width: 0; max-width: 664px; margin: 0 auto; }
 .card h1 { font-weight: 300; margin: 0; font-size: 26px; letter-spacing: 0.02em; }
 .intro { color: var(--color-text-muted); font-size: 13px; margin: 6px 0 24px; }
-.card select { min-width: 0; min-height: 44px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); color: var(--color-text); padding: 10px; box-shadow: var(--shadow-inset); font: inherit; font-size: 16px; font-weight: 400; }
-.card select {
-  appearance: none;
-  padding-right: 34px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2359657b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-}
 .field { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 500; }
 .settings { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; margin: 16px 0 24px; }
 .meter { min-width: 0; border: 0; margin: 0; padding: 0; }
@@ -48,3 +40,5 @@
 .actions .cancel { margin-top: 0; }
 
 .card [role="alert"], .card [role="status"] { overflow-wrap: anywhere; }
+
+.trackCount { width: auto; }

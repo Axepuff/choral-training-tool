@@ -1,3 +1,4 @@
+import { Select } from '../ui/Select';
 import { Textarea } from '../ui/Textarea';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
@@ -127,16 +128,16 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
         <fieldset className={styles.meter}><legend>Размер</legend><div>
           <Input id={`${id}-beats`} name="beatsPerBar" aria-label="Долей в такте" type="number" required min={1} max={32} step={1} value={beats} onChange={(event) => setBeats(event.target.value)} />
           <span aria-hidden="true">/</span>
-          <select id={`${id}-unit`} name="beatUnit" aria-label="Длительность доли" value={unit} onChange={(event) => setUnit(event.target.value)}>
+          <Select id={`${id}-unit`} name="beatUnit" aria-label="Длительность доли" value={unit} onChange={(event) => setUnit(event.target.value)}>
             {[1, 2, 4, 8, 16, 32].map((value) => <option key={value}>{value}</option>)}
-          </select>
+          </Select>
         </div></fieldset>
       </div>
       <section className={styles.tracks} aria-labelledby={`${id}-tracks`}>
         <div className={styles.sectionHeader}><h2 id={`${id}-tracks`}>Треки</h2>
-          <label>Количество <select id={`${id}-count`} name="trackCount" aria-label="Количество треков" value={count} onChange={(event) => { setCount(Number(event.target.value)); setMessage(''); }}>
+          <label>Количество <Select className={styles.trackCount} id={`${id}-count`} name="trackCount" aria-label="Количество треков" value={count} onChange={(event) => { setCount(Number(event.target.value)); setMessage(''); }}>
             {Array.from({ length: 32 }, (_, index) => <option key={index}>{index + 1}</option>)}
-          </select></label>
+          </Select></label>
         </div>
         <p className={styles.help}>Один файл на партию. Можно добавить минус.{live && ' Черновик можно сохранить без файлов.'}</p>
         <div className={styles.trackList}>

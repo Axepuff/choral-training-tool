@@ -1,3 +1,4 @@
+import { Select } from '../ui/Select';
 import { Input } from '../ui/Input';
 import { ActionLink } from '../ui/ActionLink';
 import { Button } from '../ui/Button';
@@ -86,9 +87,9 @@ export function SongLibrary({ role = 'guest', songs = [], initialQuery = '', son
             onChange={(event) => { setQuery(event.target.value); live?.onFilter(event.target.value, sort); }} />
         </label>
         <label className={styles.sort} htmlFor={`${id}-sort`}><span className="visually-hidden">Порядок песен</span>
-          <select id={`${id}-sort`} name="songSort" value={sort} onChange={(event) => { setSort(event.target.value); live?.onFilter(query, event.target.value); }}>
+          <Select textSize="small" id={`${id}-sort`} name="songSort" value={sort} onChange={(event) => { setSort(event.target.value); live?.onFilter(query, event.target.value); }}>
             <option value="recent">Новые</option><option value="title">По названию</option>
-          </select>
+          </Select>
         </label>
       </div>}
       {notice && <p className={styles.notice} role="status">{notice}</p>}

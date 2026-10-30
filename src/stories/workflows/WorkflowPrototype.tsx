@@ -1,3 +1,4 @@
+import { Select } from '../../components/ui/Select';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { useId, useState } from 'react';
@@ -132,7 +133,7 @@ export function WorkflowPrototype({ role = 'teacher', initialScreen = 'songs', s
       {(screen === 'songs' || screen === 'guest') && <>
         <div className={styles.filters}>
           <label className={styles.search}><LibraryIcon name="search" /><span className="visually-hidden">Найти песню</span><Input id={`${id}-search`} name="songSearch" type="search" decoration="leadingIcon" value={query} placeholder="Найти песню" onChange={e => setQuery(e.target.value)} /></label>
-          <label><span className="visually-hidden">Порядок песен</span><select id={`${id}-sort`} name="songSort" value={sort} onChange={e => setSort(e.target.value)}><option value="recent">По обновлению</option><option value="title">По названию</option></select></label>
+          <label><span className="visually-hidden">Порядок песен</span><Select textSize="small" id={`${id}-sort`} name="songSort" value={sort} onChange={e => setSort(e.target.value)}><option value="recent">По обновлению</option><option value="title">По названию</option></Select></label>
         </div>
         {screen === 'songs' && status === 'loading' ? <p className={styles.empty} role="status">Загружаем песни…</p> : screen === 'songs' && status === 'error' ? <div className={styles.empty} role="alert"><h2>Не удалось загрузить песни</h2><p>Проверьте подключение и попробуйте ещё раз.</p><Button size="small" className={styles.secondary} onClick={() => setStatus('ready')}>Повторить загрузку</Button></div> : <>
           <ul className={styles.list} aria-label="Песни">

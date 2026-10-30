@@ -19,3 +19,11 @@
 .leadingIcon { padding-left: 36px; }
 .trailingAction { padding-right: 56px; }
 .textarea { resize: vertical; }
+.select:not([multiple]) {
+  appearance: none;
+  padding-right: 34px;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right var(--space-control) center;
+}
+.smallText { font-size: var(--font-control); }
