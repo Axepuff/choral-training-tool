@@ -10,7 +10,7 @@
 .controls[data-tone='backing'] { --track-color: var(--color-backing); }
 .heading { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .name { font-size: var(--font-sm); font-weight: 500; overflow-wrap: anywhere; }
-.actions { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
+.actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .toggle {
   min-width: var(--touch-target);
   min-height: var(--touch-target);
@@ -21,12 +21,7 @@
   color: var(--color-text-muted);
   font-size: var(--font-sm);
   font-weight: 400;
-  box-shadow:
-    1px 1px 2px rgb(112 125 145 / 38%),
-    3px 3px 6px rgb(151 163 180 / 24%),
-    -3px -3px 6px #ffffff,
-    inset 1px 1px 1px #ffffff,
-    inset -1px -1px 2px rgb(164 175 192 / 20%);
+  box-shadow: var(--shadow-raised);
   transition: background 120ms, border-color 120ms;
 }
 .toggle:hover:enabled { background: var(--color-control); }
@@ -92,7 +87,7 @@
   position: relative;
 }
 .controls[data-orientation='vertical'] .name { font-size: 11px; white-space: nowrap; }
-.controls[data-orientation='vertical'] .actions { flex-direction: column; flex-wrap: nowrap; gap: 4px; }
+.controls[data-orientation='vertical'] .actions { flex-direction: column; flex-wrap: nowrap; gap: 8px; }
 .controls[data-orientation='vertical'] .toggle { width: 44px; height: 44px; }
 .controls[data-orientation='vertical'] .volume {
   writing-mode: vertical-lr;
@@ -136,7 +131,7 @@
     display: grid;
     grid-template-columns: 44px 44px;
     grid-template-rows: 44px 44px 16px;
-    gap: 2px 6px;
+    gap: 4px 6px;
   }
   .controls[data-orientation='vertical'] .solo { grid-column: 1; grid-row: 1; }
   .controls[data-orientation='vertical'] .mute { grid-column: 1; grid-row: 2; }

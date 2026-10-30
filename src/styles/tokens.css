@@ -71,8 +71,13 @@
   --radius-full: 999px;
   --touch-target: 44px;
   --focus-ring: 0 0 0 3px var(--color-accent-strong);
-  --shadow-raised: 5px 5px 10px #cbd1da, -5px -5px 10px #ffffff, inset 1px 1px 0 rgb(255 255 255 / 95%);
+  --shadow-raised:
+    1px 1px 2px rgb(112 125 145 / 38%),
+    3px 3px 6px rgb(151 163 180 / 24%),
+    -3px -3px 6px #ffffff,
+    inset 1px 1px 1px #ffffff,
+    inset -1px -1px 2px rgb(164 175 192 / 20%);
   --shadow-inset: inset 3px 3px 6px #dce0e6, inset -3px -3px 6px #ffffff;
   --shadow-pressed: inset 2px 2px 5px rgb(70 47 26 / 22%), inset -2px -2px 5px rgb(255 255 255 / 55%);
-  --shadow-card: 6px 6px 16px #dce0e6, -6px -6px 16px #ffffff;
+  --shadow-card: var(--shadow-raised);
 }
