@@ -9,7 +9,6 @@ import { LiveLibrary } from './components/SongLibrary/LiveLibrary';
 import { PublicRoute } from './PublicRoute';
 import { readRoute, safeReturn } from './navigation/routes';
 import styles from './components/SongLibrary/SongLibrary.module.css';
-import './auth/session.css';
 
 export function App() {
   const auth = useSyncExternalStore(subscribeAuth, getAuth);

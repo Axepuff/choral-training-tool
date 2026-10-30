@@ -3,7 +3,7 @@ import styles from './Button.module.css';
 
 export interface ButtonAppearance {
   variant?: 'neutral' | 'primary' | 'text' | 'danger' | 'dangerText' | 'solo' | 'mute' | 'play' | 'tab' | 'row' | 'title' | 'switch' | undefined;
-  size?: 'normal' | 'small' | 'form' | 'icon' | undefined;
+  size?: 'normal' | 'small' | 'compact' | 'form' | 'icon' | undefined;
   /** Layout only; appearance belongs to this module. */
   className?: string | undefined;
 }

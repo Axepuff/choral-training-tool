@@ -244,7 +244,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
             </span>
           </div>
           <div className={styles.options}>
-            <Button size="small" className={styles.optionButton} type="button" aria-label="Метроном" aria-pressed={metronome} title={song ? "Звуковой метроном" : "Визуальный метроном (демо без звука)"} onClick={() => setMetronome(!metronome)}>
+            <Button size="compact" className={styles.optionButton} type="button" aria-label="Метроном" aria-pressed={metronome} title={song ? "Звуковой метроном" : "Визуальный метроном (демо без звука)"} onClick={() => setMetronome(!metronome)}>
               <PlayerIcon name="metronome" /><span>Метроном</span>
             </Button>
           </div>
@@ -259,7 +259,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
         <div className={styles.loopControls} role="group" aria-label="Такты повтора">
           <div className={styles.loopHeading}>
             <strong>Повтор по тактам</strong>
-            <Button size="small" className={styles.loopToggle} type="button" aria-label="Повтор фрагмента" aria-pressed={activeLoop}
+            <Button size="compact" className={styles.loopToggle} type="button" aria-label="Повтор фрагмента" aria-pressed={activeLoop}
               disabled={!validRange || duration <= 0} onClick={() => setLoop(!loop)}>
               <PlayerIcon name="loop" />{activeLoop ? 'Включён' : 'Выключен'}
             </Button>

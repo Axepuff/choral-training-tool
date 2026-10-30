@@ -40,7 +40,6 @@ button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled, input:disabled { cursor: not-allowed; }
 button, input { -webkit-tap-highlight-color: transparent; }
-/* Native controls outside page components share the same visual language. */
 :where(a) { color: var(--color-accent-strong); }
 input::placeholder, textarea::placeholder { color: var(--color-text-muted); opacity: 1; }
 :is(button, input, select, textarea, a, summary):focus-visible {

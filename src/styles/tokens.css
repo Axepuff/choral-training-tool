@@ -61,6 +61,7 @@
   --font-micro: 0.625rem;
   --font-sm: 0.875rem;
   --font-control: 0.8125rem;
+  --font-song-title: 0.9375rem;
   --font-md: 1rem;
   --font-lg: 1.25rem;
   --font-xl: clamp(1.625rem, 4vw, 2.125rem);

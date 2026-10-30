@@ -46,7 +46,7 @@
 .hint > span { padding-inline: 3px; }
 @media (min-width: 640px) {
   .shell { padding: 24px; }
-  .optionButton > span { display: inline; font-size: 12px; }
+  .optionButton > span { display: inline; }
   .waveStack { height: 128px; }
   .mixer { gap: 12px; }
 }
