@@ -150,6 +150,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
       if (!engine) return;
       if (engine.playbackRequested || engine.playing) {
         engine.pause();
+        setTime(engine.position);
         setPendingPlayback(false);
         setPlaying(false);
       }
