@@ -1,3 +1,4 @@
+import { Checkbox } from '../../components/ui/Checkbox';
 import { Select } from '../../components/ui/Select';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
@@ -251,7 +252,7 @@ function AccountForm({ mode, email, existingEmails, onDone, onCancel }: { mode: 
   }}>
     {mode === 'create' ? <label className={styles.field}>Email преподавателя<Input id={`${id}-email`} name="email" type="email" maxLength={254} autoComplete="off" required placeholder="teacher@example.invalid" value={address} onChange={e => setAddress(e.target.value)} /></label> : <p className={styles.accountSummary}>{email}</p>}
     <label className={styles.field}>Временный пароль<Input id={`${id}-password`} name="temporaryPassword" type={show ? 'text' : 'password'} autoComplete="new-password" required value={password} aria-describedby={`${id}-help`} onChange={e => setPassword(e.target.value)} /></label>
-    <label className={styles.checkbox}><input id={`${id}-show`} name="showPassword" type="checkbox" checked={show} onChange={e => setShow(e.target.checked)} />Показать пароль</label>
+    <Checkbox id={`${id}-show`} name="showPassword" checked={show} onChange={e => setShow(e.target.checked)} >Показать пароль</Checkbox>
     <p className={styles.help} id={`${id}-help`}>От 12 до 128 символов. Передайте пароль лично. При первом входе преподаватель задаст свой пароль.</p>
     {mode === 'reset' && <p className={styles.warning}>Текущий пароль перестанет работать, все сессии завершатся. Блокировка аккаунта при этом не снимается.</p>}
     {error && <p className={styles.warning} role="alert">{error}</p>}

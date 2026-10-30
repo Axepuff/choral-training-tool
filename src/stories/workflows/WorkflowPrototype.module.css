@@ -59,8 +59,6 @@
 .settingRow p { margin: 0; color: var(--color-text-muted); font-size: 13px; max-width: 55ch; }
 .accountForm { max-width: 480px; }
 .field { display: flex; flex-direction: column; gap: 8px; font-size: 13px; margin-bottom: 18px; }
-.checkbox { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 13px; }
-.checkbox input { width: 18px; height: 18px; accent-color: var(--color-accent); }
 .warning { padding: 12px; background: var(--color-mute-soft); color: var(--color-mute); border-radius: 8px; font-size: 13px; }
 .accountForm .actions { margin-top: 26px; }
 .editorBack { max-width: 820px; margin: auto; padding: 8px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }

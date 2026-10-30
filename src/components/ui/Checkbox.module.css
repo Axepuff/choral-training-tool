@@ -1,0 +1,3 @@
+.label { display: inline-flex; align-items: center; gap: var(--space-control); min-height: var(--touch-target); font-size: var(--font-control); cursor: pointer; }
+.input { flex-shrink: 0; width: 18px; height: 18px; accent-color: var(--color-accent); }
+.label:has(:disabled) { color: var(--color-text-muted); cursor: not-allowed; }
