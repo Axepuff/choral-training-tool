@@ -2,9 +2,9 @@
 .player { max-width: 820px; margin: 0 auto; }
 .scoreHeader { padding: 0 0 8px; }
 .eyebrow { display: none; }
-.title { font-size: 24px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.2; margin: 0 0 8px; }
+.title { font-size: 24px; font-weight: 400; letter-spacing: 0.02em; line-height: 1.2; margin: 0 0 8px; }
 .metadata { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.pill { background: var(--color-surface-soft); border-radius: 6px; padding: 2px 6px; font-size: 11px; font-weight: 600; }
+.pill { background: var(--color-surface-soft); border-radius: 6px; padding: 2px 6px; font-size: 11px; font-weight: 500; }
 .subtitle { color: var(--color-text-muted); font-size: 11px; }
 .transport { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-block: 1px solid var(--color-border); }
 .playback, .options { display: flex; align-items: center; gap: 4px; }
@@ -14,7 +14,7 @@
 .playButton { width: 48px; height: 48px; border-radius: 50%; background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
 .playButton:hover:not(:disabled) { background: var(--color-accent-hover); }
 .playButton:disabled { opacity: 0.45; }
-.time { font-size: 12px; font-weight: 650; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.time { font-size: 12px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .time > span { color: var(--color-text-muted); font-weight: 400; }
 .optionButton > span { display: none; }
 .optionButton[aria-pressed='true'] { color: var(--color-accent-strong); background: var(--color-accent-soft); border-color: var(--color-accent); box-shadow: var(--shadow-pressed); }
@@ -97,7 +97,9 @@
 
 .loopControls { display: flex; flex-wrap: wrap; gap: 8px 16px; padding-top: 8px; font-size: 12px; }
 .loopControls label { display: flex; align-items: center; gap: 8px; }
-.loopControls input { width: 76px; min-width: 44px; min-height: 44px; padding: 8px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface); box-shadow: var(--shadow-inset); color: inherit; }
+.loopControls input { width: 76px; min-width: 44px; min-height: 44px; padding: 8px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface); box-shadow: var(--shadow-inset); color: inherit; font-weight: 400; }
 .loopControls [role='alert'] { width: 100%; color: var(--color-text-muted); }
 
 .iconButton:active:enabled, .optionButton:active:enabled, .playButton:active:enabled { box-shadow: var(--shadow-pressed); }
+
+.hint strong { font-weight: 500; }
