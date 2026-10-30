@@ -1,3 +1,4 @@
+import { ActionLink } from '../ui/ActionLink';
 import { Button } from '../ui/Button';
 import { useId, useState } from 'react';
 import { appUrl } from '../../navigation/appUrl';
@@ -72,9 +73,9 @@ export function SongLibrary({ role = 'guest', songs = [], initialQuery = '', son
             onClick={() => live ? live.onShare() : copyLink('?page=library&list=choir-demo', 'Демо-ссылка на список скопирована.')}>
             <LibraryIcon name="link" />
           </Button>
-          <a className={`${styles.iconButton} ${styles.create}`} href={appUrl('?page=create-song')} target="_top" aria-label="Создать песню" title="Создать песню">
+          <ActionLink variant="primary" size="icon" href={appUrl('?page=create-song')} target="_top" aria-label="Создать песню" title="Создать песню">
             <LibraryIcon name="add" />
-          </a>
+          </ActionLink>
         </div>}
       </header>
       {(live || available.length > 0) && <div className={styles.filters}>

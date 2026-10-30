@@ -6,11 +6,6 @@
 .count { color: var(--color-text-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .headerActions, .actions { display: flex; align-items: center; gap: 0; }
 .headerActions { gap: 4px; }
-.iconButton { display: inline-flex; flex: 0 0 44px; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 8px; background: var(--background-control); box-shadow: var(--shadow-raised); color: var(--color-text-muted); text-decoration: none; }
-.iconButton:hover:not(:disabled) { background: var(--color-control); color: var(--color-accent-strong); }
-.create { background: var(--color-accent); color: var(--color-on-accent); }
-.create:hover:not(:disabled) { background: var(--color-accent-hover); color: var(--color-on-accent); }
-.iconButton:disabled { color: var(--color-text-muted); opacity: 0.5; }
 .filters { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 8px; margin-bottom: 8px; }
 .search, .sort { min-width: 0; }
 .search { position: relative; }
