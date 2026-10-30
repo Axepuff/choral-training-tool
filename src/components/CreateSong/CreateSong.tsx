@@ -1,3 +1,4 @@
+import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { useEffect, useId, useRef, useState } from 'react';
 import styles from './CreateSong.module.css';
@@ -41,7 +42,7 @@ function TrackRow({ track, index, onChange, state }: {
     <span className={styles.number} aria-hidden="true">{index + 1}</span>
     <label className={styles.trackName}>
       <span className="visually-hidden">Название трека {index + 1}</span>
-      <input id={`${id}-name`} name={`tracks[${index}].name`} required value={track.name} placeholder="Название партии"
+      <Input id={`${id}-name`} name={`tracks[${index}].name`} required value={track.name} placeholder="Название партии"
         onChange={(event) => onChange({ ...track, name: event.target.value })} />
     </label>
     <Button size="icon" type="button" onClick={() => fileRef.current?.click()}
@@ -116,14 +117,14 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
       <h1>{initialSong ? 'Редактировать песню' : 'Новая песня'}</h1>
       <p className={styles.intro}>{initialSong ? 'Измените данные песни и голосовые партии.' : 'Добавьте партии, чтобы подготовить репетицию.'}</p>
       <label className={styles.field}>Название песни
-        <input id={`${id}-title`} name="title" required placeholder="Например, Тихий вечер" value={title} onChange={(event) => setTitle(event.target.value)} />
+        <Input id={`${id}-title`} name="title" required placeholder="Например, Тихий вечер" value={title} onChange={(event) => setTitle(event.target.value)} />
       </label>
       <div className={styles.settings}>
         <label className={styles.field}>Темп, BPM
-          <input id={`${id}-bpm`} name="bpm" type="number" required min={20} max={300} step={1} inputMode="numeric" value={bpm} onChange={(event) => setBpm(event.target.value)} />
+          <Input id={`${id}-bpm`} name="bpm" type="number" required min={20} max={300} step={1} inputMode="numeric" value={bpm} onChange={(event) => setBpm(event.target.value)} />
         </label>
         <fieldset className={styles.meter}><legend>Размер</legend><div>
-          <input id={`${id}-beats`} name="beatsPerBar" aria-label="Долей в такте" type="number" required min={1} max={32} step={1} value={beats} onChange={(event) => setBeats(event.target.value)} />
+          <Input id={`${id}-beats`} name="beatsPerBar" aria-label="Долей в такте" type="number" required min={1} max={32} step={1} value={beats} onChange={(event) => setBeats(event.target.value)} />
           <span aria-hidden="true">/</span>
           <select id={`${id}-unit`} name="beatUnit" aria-label="Длительность доли" value={unit} onChange={(event) => setUnit(event.target.value)}>
             {[1, 2, 4, 8, 16, 32].map((value) => <option key={value}>{value}</option>)}

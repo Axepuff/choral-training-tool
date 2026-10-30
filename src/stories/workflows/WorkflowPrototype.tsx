@@ -1,3 +1,4 @@
+import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { useId, useState } from 'react';
 import { CreateSong } from '../../components/CreateSong/CreateSong';
@@ -130,7 +131,7 @@ export function WorkflowPrototype({ role = 'teacher', initialScreen = 'songs', s
 
       {(screen === 'songs' || screen === 'guest') && <>
         <div className={styles.filters}>
-          <label className={styles.search}><LibraryIcon name="search" /><span className="visually-hidden">Найти песню</span><input id={`${id}-search`} name="songSearch" type="search" value={query} placeholder="Найти песню" onChange={e => setQuery(e.target.value)} /></label>
+          <label className={styles.search}><LibraryIcon name="search" /><span className="visually-hidden">Найти песню</span><Input id={`${id}-search`} name="songSearch" type="search" decoration="leadingIcon" value={query} placeholder="Найти песню" onChange={e => setQuery(e.target.value)} /></label>
           <label><span className="visually-hidden">Порядок песен</span><select id={`${id}-sort`} name="songSort" value={sort} onChange={e => setSort(e.target.value)}><option value="recent">По обновлению</option><option value="title">По названию</option></select></label>
         </div>
         {screen === 'songs' && status === 'loading' ? <p className={styles.empty} role="status">Загружаем песни…</p> : screen === 'songs' && status === 'error' ? <div className={styles.empty} role="alert"><h2>Не удалось загрузить песни</h2><p>Проверьте подключение и попробуйте ещё раз.</p><Button size="small" className={styles.secondary} onClick={() => setStatus('ready')}>Повторить загрузку</Button></div> : <>
@@ -177,7 +178,7 @@ export function WorkflowPrototype({ role = 'teacher', initialScreen = 'songs', s
         {publicPieces.length > 0 && <section className={styles.delivery} aria-label="Передать ссылку">
           <h2>{url ? 'Ссылка готова' : 'Передать ученикам'}</h2>
           <p>Любой, кому перешлют ссылку, сможет слушать песни. Редактирование недоступно.</p>
-          {url ? <><label className={styles.field}>Адрес для учеников<input id={`${id}-url`} name="shareUrl" readOnly value={url} onFocus={e => e.target.select()} /></label><Button variant="primary" size="small" className={styles.primary} onClick={() => void copy()}>Копировать ссылку</Button><p className={styles.help}>Сохраните адрес у себя: после перезагрузки он больше не отображается.</p></> :
+          {url ? <><label className={styles.field}>Адрес для учеников<Input id={`${id}-url`} name="shareUrl" readOnly value={url} onFocus={e => e.target.select()} /></label><Button variant="primary" size="small" className={styles.primary} onClick={() => void copy()}>Копировать ссылку</Button><p className={styles.help}>Сохраните адрес у себя: после перезагрузки он больше не отображается.</p></> :
             <Button variant="primary" size="small" className={styles.primary} onClick={() => issueLink()}><LibraryIcon name="link" />Создать ссылку</Button>}
         </section>}
         <section className={styles.history} aria-label="Выданные ссылки"><h2>Выданные ссылки <span className={styles.count}>{activeLinks.length}</span></h2>
@@ -199,7 +200,7 @@ export function WorkflowPrototype({ role = 'teacher', initialScreen = 'songs', s
       </>}
 
       {screen === 'accounts' && <>
-        <label className={styles.search}><LibraryIcon name="search" /><span className="visually-hidden">Найти аккаунт</span><input id={`${id}-account-search`} name="accountSearch" type="search" placeholder="Найти по email" value={query} onChange={e => setQuery(e.target.value)} /></label>
+        <label className={styles.search}><LibraryIcon name="search" /><span className="visually-hidden">Найти аккаунт</span><Input id={`${id}-account-search`} name="accountSearch" type="search" decoration="leadingIcon" placeholder="Найти по email" value={query} onChange={e => setQuery(e.target.value)} /></label>
         {status === 'loading' ? <p role="status" className={styles.empty}>Загружаем аккаунты…</p> : status === 'error' ? <div role="alert" className={styles.empty}><h2>Не удалось загрузить аккаунты</h2><p>Проверьте подключение и повторите запрос.</p><Button size="small" className={styles.secondary} onClick={() => setStatus('ready')}>Повторить загрузку</Button></div> : <>
           <ul className={styles.list} aria-label="Аккаунты">{accounts.filter(a => a.email.includes(query.trim().toLowerCase())).map(a => <li key={a.email}>
             <Button variant="row" className={styles.accountRow} onClick={() => { setAccountEmail(a.email); setAccountMode('detail'); go('account'); }}>
@@ -247,8 +248,8 @@ function AccountForm({ mode, email, existingEmails, onDone, onCancel }: { mode: 
     if ([...password].length < 12 || [...password].length > 128) { setError('Временный пароль должен содержать от 12 до 128 символов.'); return; }
     setPassword(''); onDone(normalized);
   }}>
-    {mode === 'create' ? <label className={styles.field}>Email преподавателя<input id={`${id}-email`} name="email" type="email" maxLength={254} autoComplete="off" required placeholder="teacher@example.invalid" value={address} onChange={e => setAddress(e.target.value)} /></label> : <p className={styles.accountSummary}>{email}</p>}
-    <label className={styles.field}>Временный пароль<input id={`${id}-password`} name="temporaryPassword" type={show ? 'text' : 'password'} autoComplete="new-password" required value={password} aria-describedby={`${id}-help`} onChange={e => setPassword(e.target.value)} /></label>
+    {mode === 'create' ? <label className={styles.field}>Email преподавателя<Input id={`${id}-email`} name="email" type="email" maxLength={254} autoComplete="off" required placeholder="teacher@example.invalid" value={address} onChange={e => setAddress(e.target.value)} /></label> : <p className={styles.accountSummary}>{email}</p>}
+    <label className={styles.field}>Временный пароль<Input id={`${id}-password`} name="temporaryPassword" type={show ? 'text' : 'password'} autoComplete="new-password" required value={password} aria-describedby={`${id}-help`} onChange={e => setPassword(e.target.value)} /></label>
     <label className={styles.checkbox}><input id={`${id}-show`} name="showPassword" type="checkbox" checked={show} onChange={e => setShow(e.target.checked)} />Показать пароль</label>
     <p className={styles.help} id={`${id}-help`}>От 12 до 128 символов. Передайте пароль лично. При первом входе преподаватель задаст свой пароль.</p>
     {mode === 'reset' && <p className={styles.warning}>Текущий пароль перестанет работать, все сессии завершатся. Блокировка аккаунта при этом не снимается.</p>}

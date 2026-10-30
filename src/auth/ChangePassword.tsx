@@ -1,3 +1,4 @@
+import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { useState } from 'react';
 import { changePassword } from './session';
@@ -20,9 +21,9 @@ export function ChangePassword() {
       finally { setBusy(false); }
     }}>
       <label htmlFor="currentPassword">Текущий пароль</label>
-      <input id="currentPassword" name="currentPassword" type="password" autoComplete="current-password" required readOnly={busy} />
+      <Input density="large" id="currentPassword" name="currentPassword" type="password" autoComplete="current-password" required readOnly={busy} />
       <label htmlFor="newPassword">Новый пароль (12–128 символов)</label>
-      <input id="newPassword" name="newPassword" type="password" autoComplete="new-password" required readOnly={busy} />
+      <Input density="large" id="newPassword" name="newPassword" type="password" autoComplete="new-password" required readOnly={busy} />
       {error && <p className={styles.error} role="alert">{error}</p>}
       <Button variant="primary" size="form" className={styles.submit} type="submit" disabled={busy}>{busy ? 'Сохраняем…' : 'Сменить пароль'}</Button>
     </form>

@@ -109,7 +109,7 @@
 .manualFields > p { flex-basis: 100%; margin: 0; color: var(--color-text-muted); }
 .loopControls [role='alert'] { grid-column: 1 / -1; }
 .loopControls label { display: flex; align-items: center; gap: 8px; }
-.loopControls input { width: 76px; min-width: 44px; min-height: 44px; padding: 8px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface); box-shadow: var(--shadow-inset); color: inherit; font-weight: 400; }
+.barInput { width: 76px; }
 .loopControls [role='alert'] { width: 100%; color: var(--color-text-muted); }
 
 

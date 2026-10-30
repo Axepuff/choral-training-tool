@@ -4,11 +4,8 @@
 .intro { margin: 10px 0 28px; color: var(--color-text-muted); font-size: 14px; }
 .content form { display: flex; flex-direction: column; min-width: 0; }
 .content label { font-size: 13px; font-weight: 500; margin-bottom: 8px; }
-.content input { width: 100%; min-width: 0; min-height: 48px; padding: 12px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; box-shadow: var(--shadow-inset); color: var(--color-text); font: inherit; font-size: 16px; font-weight: 400; }
-.content input:read-only { background: var(--color-surface-soft); }
 .content input[type='email'] { margin-bottom: 20px; }
 .password { position: relative; }
-.password input { padding-right: 56px; }
 .visibility { position: absolute; inset: 2px 2px 2px auto; }
 .submit { width: 100%; margin-top: var(--space-5); }
 .error { margin: 12px 0 0; padding: 12px; border-radius: 8px; background: var(--color-mute-soft); color: var(--color-mute); font-size: 13px; }

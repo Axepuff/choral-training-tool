@@ -1,3 +1,4 @@
+import { Input } from '../ui/Input';
 import { ActionLink } from '../ui/ActionLink';
 import { Button } from '../ui/Button';
 import { useId, useState } from 'react';
@@ -81,7 +82,7 @@ export function SongLibrary({ role = 'guest', songs = [], initialQuery = '', son
       {(live || available.length > 0) && <div className={styles.filters}>
         <label className={styles.search} htmlFor={`${id}-search`}><span className="visually-hidden">Найти песню</span>
           <LibraryIcon name="search" />
-          <input id={`${id}-search`} name="songSearch" type="search" placeholder="Поиск" value={query}
+          <Input id={`${id}-search`} name="songSearch" type="search" decoration="leadingIcon" placeholder="Поиск" value={query}
             onChange={(event) => { setQuery(event.target.value); live?.onFilter(event.target.value, sort); }} />
         </label>
         <label className={styles.sort} htmlFor={`${id}-sort`}><span className="visually-hidden">Порядок песен</span>

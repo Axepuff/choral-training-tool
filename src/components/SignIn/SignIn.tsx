@@ -1,3 +1,4 @@
+import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { useId, useState } from 'react';
 import styles from './SignIn.module.css';
@@ -43,14 +44,14 @@ export function SignIn({ onSignIn, initialEmail = '' }: SignInProps) {
         }
       }}>
         <label htmlFor={`${id}-email`}>Email</label>
-        <input id={`${id}-email`} name="email" type="email" inputMode="email" autoComplete="username"
+        <Input density="large" id={`${id}-email`} name="email" type="email" inputMode="email" autoComplete="username"
           autoCapitalize="none" spellCheck={false} required maxLength={254} readOnly={busy}
           placeholder="name@example.com" value={email}
           aria-describedby={error ? `${id}-feedback` : undefined}
           onChange={(event) => { setEmail(event.target.value); clearFeedback(); }} />
         <label htmlFor={`${id}-password`}>Пароль</label>
         <div className={styles.password}>
-          <input id={`${id}-password`} name="password" type={visible ? 'text' : 'password'} autoComplete="current-password"
+          <Input density="large" decoration="trailingAction" id={`${id}-password`} name="password" type={visible ? 'text' : 'password'} autoComplete="current-password"
             required readOnly={busy} value={password}
             aria-describedby={error ? `${id}-feedback` : undefined}
             onChange={(event) => { setPassword(event.target.value); clearFeedback(); }} />

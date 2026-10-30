@@ -1,3 +1,4 @@
+import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
@@ -202,12 +203,12 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   const manualFields = (
     <div className={styles.manualFields}>
       <label htmlFor={`${rangeId}-start`}>Первый такт
-        <input id={`${rangeId}-start`} name="loopStart" type="number" inputMode="numeric" min={1} max={count} step={1}
+        <Input className={styles.barInput} id={`${rangeId}-start`} name="loopStart" type="number" inputMode="numeric" min={1} max={count} step={1}
           value={Number.isNaN(range[0]) ? '' : range[0]} aria-invalid={!validRange} aria-describedby={!validRange ? `${rangeId}-error` : undefined}
           onChange={event => setRange([event.currentTarget.valueAsNumber, range[1]])} />
       </label>
       <label htmlFor={`${rangeId}-end`}>Последний такт
-        <input id={`${rangeId}-end`} name="loopEnd" type="number" inputMode="numeric" min={1} max={count} step={1}
+        <Input className={styles.barInput} id={`${rangeId}-end`} name="loopEnd" type="number" inputMode="numeric" min={1} max={count} step={1}
           value={Number.isNaN(range[1]) ? '' : range[1]} aria-invalid={!validRange} aria-describedby={!validRange ? `${rangeId}-error` : undefined}
           onChange={event => setRange([range[0], event.currentTarget.valueAsNumber])} />
       </label>
