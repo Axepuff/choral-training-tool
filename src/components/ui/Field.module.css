@@ -18,3 +18,4 @@
 .large { min-height: var(--control-large); padding: var(--space-3); }
 .leadingIcon { padding-left: 36px; }
 .trailingAction { padding-right: 56px; }
+.textarea { resize: vertical; }

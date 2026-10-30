@@ -1,3 +1,4 @@
+import { Textarea } from '../ui/Textarea';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { useEffect, useId, useRef, useState } from 'react';
@@ -150,7 +151,7 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
         </details>
       </section>
       <label className={styles.field}>Заметки <span className={styles.optional}>необязательно</span>
-        <textarea id={`${id}-notes`} name="notes" rows={4} value={notes} placeholder="Вступления, дыхание, сложные места…"
+        <Textarea id={`${id}-notes`} name="notes" rows={4} value={notes} placeholder="Вступления, дыхание, сложные места…"
           aria-describedby={`${id}-notes-count`} onChange={(event) => setNotes(event.target.value)} />
       </label>
       <div className={styles.counter} id={`${id}-notes-count`}>{[...notes.normalize('NFC')].length} / 1000</div>

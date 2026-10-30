@@ -2,7 +2,7 @@
 .card { min-width: 0; max-width: 664px; margin: 0 auto; }
 .card h1 { font-weight: 300; margin: 0; font-size: 26px; letter-spacing: 0.02em; }
 .intro { color: var(--color-text-muted); font-size: 13px; margin: 6px 0 24px; }
-.card select, .card textarea { min-width: 0; min-height: 44px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); color: var(--color-text); padding: 10px; box-shadow: var(--shadow-inset); font: inherit; font-size: 16px; font-weight: 400; }
+.card select { min-width: 0; min-height: 44px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); color: var(--color-text); padding: 10px; box-shadow: var(--shadow-inset); font: inherit; font-size: 16px; font-weight: 400; }
 .card select {
   appearance: none;
   padding-right: 34px;
@@ -10,8 +10,6 @@
   background-repeat: no-repeat;
   background-position: right 10px center;
 }
-.card textarea { width: 100%; }
-.card textarea { resize: vertical; }
 .field { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 500; }
 .settings { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; margin: 16px 0 24px; }
 .meter { min-width: 0; border: 0; margin: 0; padding: 0; }
