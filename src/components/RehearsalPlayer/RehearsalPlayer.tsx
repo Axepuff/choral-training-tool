@@ -268,7 +268,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
               <span>{validRange ? `Такты ${range[0]}–${range[1]} включительно` : 'Проверьте номера тактов'}</span>
             </div>
             <Button size="compact" className={styles.loopToggle} type="button" aria-label="Повтор фрагмента" aria-pressed={activeLoop}
-              disabled={(!validRange && !loop) || duration <= 0} onClick={() => setLoop(!loop)}>
+              disabled={!validRange || duration <= 0} onClick={() => setLoop(!loop)}>
               <PlayerIcon name="loop" />{activeLoop ? 'Включён' : 'Выключен'}
             </Button>
             <Button variant="text" size="compact" aria-expanded={rangeExpanded || !validRange} aria-controls={`${rangeId}-settings`}

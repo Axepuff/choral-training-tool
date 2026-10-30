@@ -103,6 +103,7 @@ export const SingleBar: Story = {
     await expect(canvas.getByRole('alert')).toBeVisible();
     await expect(canvas.getByRole('button', { name: 'Свернуть' })).toBeDisabled();
     await expect(canvas.getByRole('button', { name: 'Выбрать барабанами' })).toBeDisabled();
+    await expect(canvas.getByRole('button', { name: 'Повтор фрагмента' })).toBeDisabled();
     fireEvent.input(start, { target: { value: '1' } });
     fireEvent.input(end, { target: { value: '2' } });
     await expect(end).toHaveValue(2);
