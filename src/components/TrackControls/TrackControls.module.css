@@ -10,6 +10,7 @@
 .value { width: 3ch; text-align: right; font-size: var(--font-xs); color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
 
 .controls[data-orientation='vertical'] {
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr;
   justify-items: center;
   gap: var(--space-2);
@@ -19,15 +20,16 @@
   box-shadow: var(--shadow-inset);
 }
 .controls[data-orientation='vertical'] .heading {
-  flex-direction: column;
-  gap: 4px;
-  position: relative;
+  width: 100%;
+  max-width: 100%;
+  justify-content: center;
+  gap: var(--space-1);
 }
-.controls[data-orientation='vertical'] .name { font-size: 11px; white-space: nowrap; }
+.controls[data-orientation='vertical'] .name { min-width: 0; max-width: 100%; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .controls[data-orientation='vertical'] .actions { flex-direction: column; flex-wrap: nowrap; gap: var(--space-2); }
 .controls[data-orientation='vertical'] .volume { flex: 1 0 120px; height: auto; min-height: 120px; margin: var(--space-2) 0 var(--space-1); }
 .controls[data-orientation='vertical'] .value { width: auto; text-align: center; }
-.controls[data-orientation='vertical'] .loading { position: absolute; top: -2px; right: -12px; }
+.controls[data-orientation='vertical'] .loading { flex-shrink: 0; }
 
 @media (orientation: landscape) and (max-height: 500px) {
   .controls[data-orientation='vertical'] { gap: 2px; }

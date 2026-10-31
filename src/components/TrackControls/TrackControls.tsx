@@ -38,7 +38,7 @@ export function TrackControls({
   return (
     <div className={styles.controls} data-tone={tone} data-orientation={orientation} aria-busy={loading}>
       <div className={styles.heading}>
-        <span className={styles.name}>{name}</span>
+        <span className={styles.name} title={name}>{name}</span>
         {loading && <Message as="span" tone="muted" variant="spinner" className={styles.loading} role="status" aria-label={`Загрузка: ${name}`} />}
       </div>
       <div className={styles.actions}>

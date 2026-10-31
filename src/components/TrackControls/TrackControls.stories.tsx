@@ -115,3 +115,8 @@ export const Vertical: Story = {
     volume.blur();
   },
 };
+
+export const LongName: Story = {
+  name: 'Вертикальный фейдер · длинное название',
+  args: { orientation: 'vertical', name: 'Сопрано — первый голос концертного хора' },
+};
