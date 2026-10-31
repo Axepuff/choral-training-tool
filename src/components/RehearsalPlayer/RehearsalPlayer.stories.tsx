@@ -1,6 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test';
 import { RehearsalPlayer } from './RehearsalPlayer';
+import { mockTracks } from './mockScore';
+import type { MockTrack } from './mockScore';
 
 const meta = {
   id: 'layouts-rehearsal-player',
@@ -8,7 +10,7 @@ const meta = {
   component: RehearsalPlayer,
   parameters: {
     layout: 'fullscreen',
-    docs: { description: { component: 'Общий таймлайн с наложением пяти цветных волн, верхний транспорт и пять колонок микшера с вертикальными фейдерами. Курсор, Solo/Mute, громкость, выбор тактов повтора и визуальный метроном работают на локальных моках. Звук не воспроизводится.' } },
+    docs: { description: { component: 'Общий таймлайн с цветными волнами, верхний транспорт и микшер с вертикальными фейдерами. По умолчанию пять дорожек; demoTracks задаёт другой состав только в деморежиме без song. Курсор, Solo/Mute, громкость, выбор тактов повтора и визуальный метроном работают на локальных моках. Звук не воспроизводится.' } },
   },
   args: { initialTime: 0, initialPlaying: false, initialLoop: false },
 } satisfies Meta<typeof RehearsalPlayer>;
@@ -56,6 +58,27 @@ export const FragmentLoop: Story = { name: 'Повтор фрагмента', ar
 export const Mobile: Story = {
   name: 'Мобильный · 360 px',
   globals: { viewport: { value: 'mobile360', isRotated: false } },
+};
+
+const sevenTracks: MockTrack[] = ([
+  [0, 'Сопрано I'], [0, 'Сопрано II'], [1, 'Альт'], [2, 'Тенор I'],
+  [2, 'Тенор II'], [3, 'Бас'], [4, 'Минус'],
+] as const).map(([source, name], index) => ({
+  ...mockTracks[source]!, id: source === 4 ? 'backing' : `demo-track-${index + 1}`, name,
+}));
+
+export const ThreeTracks: Story = {
+  name: '3 дорожки',
+  args: { demoTracks: [sevenTracks[0]!, sevenTracks[2]!, sevenTracks[5]!] },
+  globals: { viewport: { value: 'mobile360', isRotated: false } },
+  render: args => <RehearsalPlayer key={JSON.stringify(args.demoTracks)} {...args} />,
+};
+
+export const SevenTracks: Story = {
+  name: '7 дорожек',
+  args: { demoTracks: sevenTracks },
+  globals: { viewport: { value: 'mobile360', isRotated: false } },
+  render: args => <RehearsalPlayer key={JSON.stringify(args.demoTracks)} {...args} />,
 };
 export const Desktop: Story = {
   name: 'Десктоп · 1280 px',

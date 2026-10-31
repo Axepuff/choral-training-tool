@@ -6,6 +6,7 @@ import type { CSSProperties } from 'react';
 import { TrackControls } from '../TrackControls/TrackControls';
 import type { TrackTone } from '../TrackControls/TrackControls';
 import { barDuration, formatTime, mockScore, mockTracks } from './mockScore';
+import type { MockTrack } from './mockScore';
 import { updateMix } from '../../audio/engine';
 import type { AudioSong, Mix } from '../../audio/engine';
 import { useAudio } from '../../audio/useAudio';
@@ -17,6 +18,8 @@ import styles from './RehearsalPlayer.module.css';
 export interface RehearsalPlayerProps {
   song?: AudioSong;
   publicAccess?: boolean;
+  /** Дорожки только для беззвучного деморежима; при наличии song игнорируются. */
+  demoTracks?: MockTrack[];
   /** Название выбранной песни в демонстрационной библиотеке. */
   pieceTitle?: string;
   /** Длина демонстрационного фрагмента. */
@@ -31,7 +34,7 @@ export interface RehearsalPlayerProps {
 }
 
 /** Мобильный макет репетиции. Приложение и Storybook используют этот же компонент. */
-export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initialLoop = false, initialLoopRange = [1, 1], bars = 4, pieceTitle = mockScore.title, song, publicAccess = false }: RehearsalPlayerProps) {
+export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initialLoop = false, initialLoopRange = [1, 1], bars = 4, pieceTitle = mockScore.title, song, publicAccess = false, demoTracks = mockTracks }: RehearsalPlayerProps) {
   const positionId = useId();
   const timelineRef = useRef<HTMLDivElement>(null);
   const bpm = song?.bpm ?? mockScore.bpm;
@@ -42,7 +45,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   const count = song ? Math.max(1, Math.ceil(duration / realBarDuration)) : bars;
   const barLabel = count % 100 >= 11 && count % 100 <= 14 ? 'тактов' : count % 10 === 1 ? 'такт' : count % 10 >= 2 && count % 10 <= 4 ? 'такта' : 'тактов';
   const audio = useAudio(song, publicAccess);
-  const [storedTracks, setTracks] = useState(() => song ? song.tracks.map((t, i) => ({ id: t.id, name: t.name, volume: t.gain * 100, muted: false, solo: false, waveform: [] as number[], tone: (['soprano', 'alto', 'tenor', 'bass', 'backing'] as TrackTone[])[i % 5]! })) : mockTracks.map(t => ({ ...t, tone: t.id })));
+  const [storedTracks, setTracks] = useState(() => song ? song.tracks.map((t, i) => ({ id: t.id, name: t.name, volume: t.gain * 100, muted: false, solo: false, waveform: [] as number[], tone: (['soprano', 'alto', 'tenor', 'bass', 'backing'] as TrackTone[])[i % 5]! })) : demoTracks.map(t => ({ ...t })));
   const tracks = useMemo(() => storedTracks.map(track => {
     const status = audio.states[track.id];
     return song && status && status !== 'Загрузка…' && !status.startsWith('Готово')
@@ -174,7 +177,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   // peaks response so loading another track does not rebuild all earlier paths.
   const waveCache = useMemo(() => ({ duration, paths: new WeakMap<Wave, string>() }), [duration]);
   const wavePaths = useMemo(() => Object.fromEntries((song
-    ? song.tracks.map(track => ({ id: track.id, waveform: [] as number[] })) : mockTracks).map(track => {
+    ? song.tracks.map(track => ({ id: track.id, waveform: [] as number[] })) : demoTracks).map(track => {
     const wave = audio.waves[track.id];
     if (wave) {
       const cached = waveCache.paths.get(wave);
@@ -190,7 +193,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
     const upper = waveform.map((height, i) => `${i / (waveform.length - 1) * 1000},${50 - height * 0.46}`).join(' ');
     const lower = waveform.map((height, i) => `${i / (waveform.length - 1) * 1000},${50 + height * 0.46}`).reverse().join(' ');
     return [track.id, `${upper} ${lower}`];
-  })), [audio.waves, duration, bars, song, waveCache]);
+  })), [audio.waves, duration, bars, song, demoTracks, waveCache]);
   const barNumbers = useMemo(() => Array.from({ length: count }, (_, index) =>
     <span key={index} style={song ? { flex: `0 0 ${realBarDuration / (duration || 1) * 100}%` } : undefined}>{index + 1}</span>
   ), [count, realBarDuration, duration, song]);
@@ -320,7 +323,6 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
 
       </section>
       {song?.notes && <p>{song.notes}</p>}
-      <p className={styles.hint}><strong>S</strong> — слушать выбранные партии <span>·</span> <strong>M</strong> — выключить партию</p>
     </main>
   );
 }
