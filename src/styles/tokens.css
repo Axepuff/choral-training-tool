@@ -44,6 +44,9 @@
   --color-fader-light: #ffbf8b;
   --color-fader-muted: #a9a4a0;
   --color-fader-muted-light: #e0ddda;
+  --color-fader-groove-shadow: #b8c0cc;
+  --background-fader-groove-horizontal: linear-gradient(to bottom, var(--color-fader-groove-shadow), var(--color-surface-soft) 60%, var(--color-control));
+  --background-fader-groove-vertical: linear-gradient(to right, var(--color-fader-groove-shadow), var(--color-surface-soft) 60%, var(--color-control));
   --background-fader-thumb:
     radial-gradient(ellipse at 30% 25%, rgb(255 255 255 / 38%), transparent 70%),
     linear-gradient(145deg, color-mix(in srgb, currentColor, white 30%), currentColor);
