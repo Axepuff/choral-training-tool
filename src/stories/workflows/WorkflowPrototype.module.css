@@ -72,7 +72,7 @@
   .song { grid-template-columns: minmax(0,1fr) auto; gap: 3px 8px; padding: 12px 8px; }
   .songInfo { grid-column: 1; }
   .song > .publication { grid-column: 1 / -1; grid-row: 2; }
-  .song > .rowActions { grid-column: 2; grid-row: 1; gap: 0; }
+  .song > .rowActions { grid-column: 2; grid-row: 1; }
   .linkButton > span { display: none; }
   .delivery { padding: 16px; }
   .delivery > .primary { width: 100%; }
