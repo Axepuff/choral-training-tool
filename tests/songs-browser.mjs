@@ -220,8 +220,7 @@ try {
  // Decode and play the actual worker output through the guest UI and media API.
  await poll(() => evaluate(`document.querySelector('[aria-label="Воспроизвести"]')?.disabled === false`), 'Real public audio not ready');
   await evaluate(`Array.from(document.querySelectorAll('button')).find(e => e.textContent === 'Настроить').click()`);
-  await evaluate(`Array.from(document.querySelectorAll('button')).find(e => e.textContent === 'Ввести номера').click()`);
- await input('loopStart', '1');await input('loopEnd', '1');
+ await evaluate(`document.querySelector('[role="spinbutton"][aria-label="По такт включительно"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true}))`);
  await evaluate(`document.querySelector('[aria-label="Повтор фрагмента"]').click()`);
  const point = await evaluate(`(() => { const r=document.querySelector('[aria-label="Воспроизвести"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`);
  await send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...point});

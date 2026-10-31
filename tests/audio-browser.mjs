@@ -265,12 +265,15 @@ try {
   assert.equal(loopPCM.clicks[1].before, 0, 'metronome waits for the audio epoch');
   assert.ok(loopPCM.clicks[1].peak > .1, 'enabled metronome produces real audio');
 
-  async function setLoopField(name, value) {
-    await evaluate(`(() => { const input=document.querySelector('[name="${name}"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'${value}'); input.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+  async function setLoopWheel(label, value) {
+    const current = await evaluate(`Number(document.querySelector('[role="spinbutton"][aria-label="${label}"]').getAttribute('aria-valuenow'))`);
+    const key = value > current ? 'ArrowUp' : 'ArrowDown';
+    for (let step=0;step<Math.abs(value-current);step++) {
+      await evaluate(`document.querySelector('[role="spinbutton"][aria-label="${label}"]').dispatchEvent(new KeyboardEvent('keydown',{key:'${key}',bubbles:true}))`);
+    }
   }
   await evaluate(`Array.from(document.querySelectorAll('button')).find(e => e.textContent === 'Настроить').click()`);
-  await evaluate(`Array.from(document.querySelectorAll('button')).find(e => e.textContent === 'Ввести номера').click()`);
-  await setLoopField('loopStart', 2); await setLoopField('loopEnd', 3);
+  await setLoopWheel('С такта', 2); await setLoopWheel('По такт включительно', 3);
   await clickPlayback('Повтор фрагмента');
   await poll(() => evaluate(`document.querySelector('[aria-label="Повтор фрагмента"]').getAttribute('aria-pressed')==='true'`));
   const highlight = await evaluate(`(() => {const el=document.querySelector('[class*="loopRegion"]'),parent=el.parentElement;return {left:parseFloat(getComputedStyle(el).left)/parent.clientWidth,width:el.clientWidth/parent.clientWidth};})()`);
@@ -278,23 +281,17 @@ try {
   for (const [width,height] of [[320,640],[360,740],[740,360],[1280,800]]) {
     await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<800});
     assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);
-    assert.equal(await evaluate(`Array.from(document.querySelectorAll('[name="loopStart"],[name="loopEnd"]')).every(e=>{const r=e.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.right<=innerWidth;})`),true);
+    assert.equal(await evaluate(`Array.from(document.querySelectorAll('[role="spinbutton"]')).every(e=>{const r=e.parentElement.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.right<=innerWidth;})`),true);
   }
   await send('Emulation.setDeviceMetricsOverride',{width:360,height:740,deviceScaleFactor:1,mobile:true});
-  const touch = await evaluate(`(() => { const r=document.querySelector('[name="loopStart"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
-  await send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[touch]});
-  await send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
-  assert.equal(await evaluate('document.activeElement.name'),'loopStart');
+  await evaluate(`document.querySelector('[role="spinbutton"][aria-label="С такта"]').focus()`);
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowUp',code:'ArrowUp',windowsVirtualKeyCode:38});
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowUp',code:'ArrowUp',windowsVirtualKeyCode:38});
-  assert.equal(await evaluate(`document.querySelector('[name="loopStart"]').value`),'3');
-  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Backspace',code:'Backspace',windowsVirtualKeyCode:8});
-  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Backspace',code:'Backspace',windowsVirtualKeyCode:8});
-  await send('Input.insertText',{text:'12'});
-  assert.equal(await evaluate(`document.querySelector('[name="loopStart"]').value`),'12');
-  await poll(() => evaluate(`document.querySelector('[aria-label="Повтор фрагмента"]').disabled`));
-  assert.equal(await evaluate(`document.querySelector('[class*="loopRegion"]')===null`),true);
-  await setLoopField('loopStart', 2);
+  assert.equal(await evaluate(`document.querySelector('[role="spinbutton"][aria-label="С такта"]').getAttribute('aria-valuenow')`),'3');
+  // End clamps both boundaries; returning to 2–3 restores the actual audio loop.
+  await setLoopWheel('По такт включительно', 2);
+  assert.equal(await evaluate(`document.querySelector('[role="spinbutton"][aria-label="С такта"]').getAttribute('aria-valuenow')`),'2');
+  await setLoopWheel('С такта', 2); await setLoopWheel('По такт включительно', 3);
   await clickPlayback('Метроном');
   await clickPlayback('Воспроизвести');
   await poll(() => evaluate(`document.querySelector('[aria-label="Пауза"]')!==null`));
@@ -318,7 +315,7 @@ try {
       finally { window.finishedDecodes++; }
     };
   })()`);
-  await setLoopField('loopEnd', 4); await setLoopField('loopStart', 4);
+  await setLoopWheel('По такт включительно', 4); await setLoopWheel('С такта', 4);
   await poll(() => evaluate(`window.deferredDecodes > 0 && document.querySelector('[aria-label="Пауза"]')?.getAttribute('aria-busy') === 'true'`));
   const startsBeforeCancel = await evaluate('window.transportSourceStarts');
   await clickPlayback('Пауза');
@@ -343,7 +340,7 @@ try {
   await clickPlayback('Пауза'); await clickPlayback('Метроном'); await clickPlayback('Повтор фрагмента');
   assert.equal(await evaluate(`document.querySelector('[role=alert]')===null`),true);
   await send('Page.captureScreenshot',{format:'png'}).then(async result=>writeFile('/tmp/choral-issue12-360.png',Buffer.from(result.data,'base64')));
-  console.log('PASS loop/metronome: actual PCM wrap and audible click; touch-size inputs, keyboard, validation, exact highlight, live range change, restart/resume; 320/360/landscape/desktop.');
+  console.log('PASS loop/metronome: actual PCM wrap and audible click; touch-size wheels, keyboard, boundary adjustment, exact highlight, live range change, restart/resume; 320/360/landscape/desktop.');
   await evaluate(`history.pushState(null,'','?song=meter-32-fixture');window.dispatchEvent(new PopStateEvent('popstate'));`);
   await poll(()=>evaluate(`document.querySelector('h1') && document.body.textContent.includes('300 BPM')`));
   await clickPlayback('Метроном');

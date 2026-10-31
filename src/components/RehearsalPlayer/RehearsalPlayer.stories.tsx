@@ -90,36 +90,21 @@ export const MobileLandscape: Story = {
 };
 
 export const SingleBar: Story = {
-  name: 'Повтор · один такт и неверные границы',
+  name: 'Повтор · один такт и сохранение границ',
   args: { initialLoop: true, initialLoopRange: [1, 1] },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole('button', { name: 'Настроить' }));
-    await userEvent.click(canvas.getByRole('button', { name: 'Ввести номера' }));
-    const start = canvas.getByRole('spinbutton', { name: 'Первый такт' });
-    const end = canvas.getByRole('spinbutton', { name: 'Последний такт включительно' });
+    await expect(canvas.queryByRole('button', { name: 'Ввести номера' })).not.toBeInTheDocument();
+    await expect(canvasElement.querySelector('input[type="number"]')).toBeNull();
     await expect(canvas.getByText('Повтор: такты 1–1')).toBeVisible();
-    fireEvent.input(start, { target: { value: '5' } });
-    await expect(canvas.getByRole('alert')).toBeVisible();
-    await expect(canvas.getByRole('button', { name: 'Свернуть' })).toBeDisabled();
-    await expect(canvas.getByRole('button', { name: 'Выбрать барабанами' })).toBeDisabled();
-    await expect(canvas.getByRole('button', { name: 'Повтор фрагмента' })).toBeDisabled();
-    fireEvent.input(start, { target: { value: '1' } });
-    fireEvent.input(end, { target: { value: '2' } });
-    await expect(end).toHaveValue(2);
-    await expect(canvas.getByText('Повтор: такты 1–2')).toBeVisible();
-    for (const value of ['', '1.5', '0', '5']) {
-      fireEvent.input(end, { target: { value } });
-      await expect(canvas.getByRole('alert')).toHaveTextContent('Введите целый номер такта от 1 до 4.');
-      await expect(canvas.getByRole('button', { name: 'Свернуть' })).toBeDisabled();
-    }
-    fireEvent.input(end, { target: { value: '1' } });
-    fireEvent.input(start, { target: { value: '2' } });
-    await expect(canvas.getByRole('alert')).toHaveTextContent('Последний такт должен быть не раньше первого.');
-    fireEvent.input(end, { target: { value: '3' } });
-    await userEvent.click(canvas.getByRole('button', { name: 'Выбрать барабанами' }));
-    await expect(canvas.queryByRole('spinbutton', { name: 'Первый такт' })).not.toBeInTheDocument();
-    await expect(canvas.getByRole('spinbutton', { name: 'С такта' })).toHaveAttribute('aria-valuenow', '2');
+    const start = canvas.getByRole('spinbutton', { name: 'С такта' });
+    const end = canvas.getByRole('spinbutton', { name: 'По такт включительно' });
+    start.focus();
+    await userEvent.keyboard('{ArrowUp}');
+    await expect(canvas.getByText('Повтор: такты 2–2')).toBeVisible();
+    end.focus();
+    await userEvent.keyboard('{ArrowUp}');
     const collapse = canvas.getByRole('button', { name: 'Свернуть' });
     collapse.focus();
     await userEvent.keyboard('{Enter}');
@@ -127,8 +112,7 @@ export const SingleBar: Story = {
     await expect(canvas.queryByRole('spinbutton')).not.toBeInTheDocument();
     await expect(canvas.getByText('Такты 2–3 включительно')).toBeVisible();
     await userEvent.keyboard('{Enter}');
-    await userEvent.click(canvas.getByRole('button', { name: 'Ввести номера' }));
-    await expect(canvas.getByRole('spinbutton', { name: 'Последний такт включительно' })).toHaveValue(3);
+    await expect(canvas.getByRole('spinbutton', { name: 'По такт включительно' })).toHaveAttribute('aria-valuenow', '3');
   },
 };
 export const FullSongLoop: Story = {
@@ -187,27 +171,31 @@ export const WheelRange: Story = {
 };
 
 export const LongScoreRange: Story = {
-  name: 'Длинная песня · ввод диапазона',
-  args: { song: { id: 'long-score-fixture', title: 'Длинная песня', notes: '', bpm: 60,
+  name: 'Длинная песня · барабаны диапазона',
+  args: { initialLoopRange: [199, 199], song: { id: 'long-score-fixture', title: 'Длинная песня', notes: '', bpm: 60,
     beatsPerBar: 1, beatUnit: 4, durationMs: 1001000, tracks: [] } },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole('button', { name: 'Настроить' }));
-    const start = canvas.getByRole('spinbutton', { name: 'Первый такт' });
-    const end = canvas.getByRole('spinbutton', { name: 'Последний такт включительно' });
-    const repeat = canvas.getByRole('button', { name: 'Повтор фрагмента' });
-    await expect(start).toBeVisible();
-    await expect(end).toBeVisible();
-    fireEvent.input(end, { target: { value: '1001' } });
-    fireEvent.input(start, { target: { value: '1001' } });
-    await userEvent.click(repeat);
+    await expect(canvasElement.querySelector('input[type="number"]')).toBeNull();
+    const start = canvas.getByRole('spinbutton', { name: 'С такта' });
+    const end = canvas.getByRole('spinbutton', { name: 'По такт включительно' });
+    // Scrolling across a window boundary must keep adjacent bars reachable.
+    for (const value of [200, 201, 202]) {
+      fireEvent.wheel(end, { deltaY: 100, cancelable: true });
+      await waitFor(() => expect(end).toHaveAttribute('aria-valuenow', String(value)), { timeout: 3000 });
+    }
+    end.focus();
+    await userEvent.keyboard('{End}');
+    start.focus();
+    await userEvent.keyboard('{End}');
+    await userEvent.click(canvas.getByRole('button', { name: 'Повтор фрагмента' }));
     await expect(canvas.getByText('Повтор: такты 1001–1001')).toBeVisible();
-    fireEvent.input(end, { target: { value: '1002' } });
-    await expect(canvas.getByRole('alert')).toBeVisible();
-    await expect(canvas.getByRole('button', { name: 'Свернуть' })).toBeDisabled();
-    fireEvent.input(start, { target: { value: '1' } });
-    fireEvent.input(end, { target: { value: '1001' } });
-    await expect(repeat).toBeEnabled();
+    start.focus();
+    await userEvent.keyboard('{Home}');
     await expect(canvas.getByText('Повтор: такты 1–1001')).toBeVisible();
+    end.focus();
+    await userEvent.keyboard('{Home}');
+    await expect(canvas.getByText('Повтор: такты 1–1')).toBeVisible();
   },
 };
