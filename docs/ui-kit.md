@@ -43,7 +43,7 @@
 | Вход | `src/components/SignIn/`: submit, показ пароля, email/password, сообщения |
 | Песни | `src/components/SongLibrary/`, включая `LiveLibrary.tsx`: действия, ссылки, поиск, сортировка, общие ссылки, ошибки |
 | Редактор | `src/components/CreateSong/`: действия, загрузка файлов, ввод, textarea и select |
-| Плеер | `src/components/RehearsalPlayer/`: Play/Pause, restart, метроном, повтор, ручные номера тактов, seek и сообщения |
+| Плеер | `src/components/RehearsalPlayer/`: Play/Pause, restart, метроном, повтор, seek и сообщения; числовые поля тактов убраны 31 октября |
 | Микшер | `src/components/TrackControls/`: Solo/Mute и горизонтальный/вертикальный фейдер |
 | Прототипы | `src/stories/workflows/WorkflowPrototype.*`: те же действия, поля, checkbox и сообщения; данные остаются вымышленными |
 

@@ -8,8 +8,12 @@ export function BarWheel({ label, value, count, onChange }: {
   label: string; value: number; count: number; onChange: (value: number) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
-  const options = useMemo(() => Array.from({ length: count }, (_, i) => ({ value: i + 1, label: String(i + 1) })), [count]);
   const safeValue = Number.isInteger(value) ? Math.min(count, Math.max(1, value)) : 1;
+  // Keep long scores light without taking any bar out of reach. Overlapping
+  // windows move only at block boundaries, preserving normal wheel inertia.
+  const first = count <= 1000 ? 1 : Math.max(1, Math.min(count - 299, Math.floor((safeValue - 1) / 100) * 100 - 99));
+  const optionCount = Math.min(count, count <= 1000 ? 1000 : 300);
+  const options = useMemo(() => Array.from({ length: optionCount }, (_, i) => ({ value: first + i, label: String(first + i) })), [first, optionCount]);
   useEffect(() => {
     // v1.2.3 does not forward ARIA props to its keyboard-focusable element.
     const wheel = root.current?.querySelector('[data-rwp]');

@@ -1,6 +1,5 @@
 import { Message } from '../ui/Message';
 import { RangeSlider } from '../ui/RangeSlider';
-import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
@@ -41,8 +40,6 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   const realBarDuration = 60 * beatsPerBar * 4 / (bpm * beatUnit);
   const duration = song ? (song.durationMs ?? 0) / 1000 : bars * barDuration;
   const count = song ? Math.max(1, Math.ceil(duration / realBarDuration)) : bars;
-  // The wheel library renders every option twice; long scores use direct input.
-  const showWheels = count <= 1000;
   const barLabel = count % 100 >= 11 && count % 100 <= 14 ? 'тактов' : count % 10 === 1 ? 'такт' : count % 10 >= 2 && count % 10 <= 4 ? 'такта' : 'тактов';
   const audio = useAudio(song, publicAccess);
   const [storedTracks, setTracks] = useState(() => song ? song.tracks.map((t, i) => ({ id: t.id, name: t.name, volume: t.gain * 100, muted: false, solo: false, waveform: [] as number[], tone: (['soprano', 'alto', 'tenor', 'bass', 'backing'] as TrackTone[])[i % 5]! })) : mockTracks.map(t => ({ ...t, tone: t.id })));
@@ -59,9 +56,8 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
   const [range, setRange] = useState(initialLoopRange);
   const validRange = range.every(Number.isInteger) && range[0] >= 1 && range[1] <= count && range[0] <= range[1];
   const [rangeExpanded, setRangeExpanded] = useState(false);
-  const [manualRange, setManualRange] = useState(!showWheels || !validRange);
   const rangeError = !range.every(Number.isInteger) || range.some(value => value < 1 || value > count)
-    ? `Введите целый номер такта от 1 до ${count}.`
+    ? `Выберите такты от 1 до ${count}.`
     : range[0] > range[1] ? 'Последний такт должен быть не раньше первого.' : '';
   const [loopError, setLoopError] = useState('');
   const [metronome, setMetronome] = useState(false);
@@ -207,22 +203,6 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
     '--beats': song ? duration / realBarDuration * beatsPerBar : count * beatsPerBar,
   } as CSSProperties;
 
-  const manualFields = (
-    <div className={styles.manualFields}>
-      <label htmlFor={`${rangeId}-start`}>Первый такт
-        <Input className={styles.barInput} id={`${rangeId}-start`} name="loopStart" type="number" inputMode="numeric" min={1} max={count} step={1}
-          value={Number.isNaN(range[0]) ? '' : range[0]} aria-invalid={!validRange} aria-describedby={!validRange ? `${rangeId}-error` : undefined}
-          onChange={event => setRange([event.currentTarget.valueAsNumber, range[1]])} />
-      </label>
-      <label htmlFor={`${rangeId}-end`}>Последний такт включительно
-        <Input className={styles.barInput} id={`${rangeId}-end`} name="loopEnd" type="number" inputMode="numeric" min={1} max={count} step={1}
-          value={Number.isNaN(range[1]) ? '' : range[1]} aria-invalid={!validRange} aria-describedby={!validRange ? `${rangeId}-error` : undefined}
-          onChange={event => setRange([range[0], event.currentTarget.valueAsNumber])} />
-      </label>
-      <p>Последний такт включён в повтор.</p>
-    </div>
-  );
-
   return (
     <main className={styles.shell}>
       <section className={styles.player} aria-label="Плеер репетиции">
@@ -277,17 +257,13 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
             </Button>
           </div>
           {(rangeExpanded || !validRange) && <div id={`${rangeId}-settings`} className={styles.rangeSettings}>
-            {showWheels && <Button variant="text" size="compact" aria-pressed={manualRange} disabled={!validRange}
-              onClick={() => setManualRange(value => !value)}>
-              {manualRange ? 'Выбрать барабанами' : 'Ввести номера'}
-            </Button>}
-            {manualRange || !showWheels ? manualFields : <div className={styles.wheelRange}>
+            <div className={styles.wheelRange}>
               <BarWheel label="С такта" value={range[0]} count={count}
                 onChange={value => setRange(current => [value, Math.min(count, Math.max(value, current[1]))])} />
               <span className={styles.rangeDash} aria-hidden="true">—</span>
               <BarWheel label="По такт включительно" value={range[1]} count={count}
                 onChange={value => setRange(current => [Math.max(1, Math.min(value, current[0])), value])} />
-            </div>}
+            </div>
             {!validRange && <Message as="span" tone="error" id={`${rangeId}-error`} role="alert">{rangeError}</Message>}
           </div>}
         </div>
