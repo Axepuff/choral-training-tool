@@ -22,7 +22,8 @@ export const Controlled: Story = {
 export const Faders: Story = {
   render: () => <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24 }}>
     <RangeSlider aria-label="Громкость" value={75} onChange={() => {}} />
-    <RangeSlider aria-label="Альт" orientation="vertical" tone="alto" value={60} onChange={() => {}} />
-    <RangeSlider aria-label="Бас" orientation="vertical" tone="bass" value={30} disabled />
+    <RangeSlider aria-label="Альт" orientation="vertical" value={60} onChange={() => {}} />
+    <RangeSlider aria-label="Тенор — Mute" orientation="vertical" value={60} muted onChange={() => {}} />
+    <RangeSlider aria-label="Бас" orientation="vertical" value={30} disabled />
   </div>,
 };

@@ -9,7 +9,8 @@ export const mockScore = {
 } as const;
 
 export interface MockTrack {
-  id: TrackTone;
+  id: string;
+  tone: TrackTone;
   name: string;
   volume: number;
   muted: boolean;
@@ -28,6 +29,7 @@ const voices = [
 /** Детерминированные визуальные заглушки; аудиоданных здесь нет. */
 export const mockTracks: MockTrack[] = voices.map((voice, trackIndex) => ({
   ...voice,
+  tone: voice.id,
   muted: false,
   solo: false,
   waveform: Array.from({ length: 96 }, (_, index) => {

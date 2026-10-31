@@ -18,7 +18,7 @@ export interface TrackControlsProps {
   /** Блокирует управление и показывает состояние загрузки. */
   loading?: boolean;
   disabled?: boolean;
-  /** Цвет фейдера партии. */
+  /** Идентификатор партии; фейдеры используют единый основной цвет. */
   tone?: TrackTone;
   /** Вертикальный фейдер для компактного микшера или горизонтальный ползунок. */
   orientation?: 'horizontal' | 'vertical';
@@ -38,7 +38,7 @@ export function TrackControls({
   return (
     <div className={styles.controls} data-tone={tone} data-orientation={orientation} aria-busy={loading}>
       <div className={styles.heading}>
-        <span className={styles.name}>{name}</span>
+        <span className={styles.name} title={name}>{name}</span>
         {loading && <Message as="span" tone="muted" variant="spinner" className={styles.loading} role="status" aria-label={`Загрузка: ${name}`} />}
       </div>
       <div className={styles.actions}>
@@ -58,7 +58,7 @@ export function TrackControls({
         <RangeSlider
           id={volumeId} className={styles.volume} min="0" max="100" step="1"
           value={safeVolume} aria-valuetext={`${safeVolume}%`} aria-orientation={orientation} disabled={loading || disabled}
-          orientation={orientation} tone={orientation === 'vertical' ? tone : 'accent'} onChange={(event) => onVolumeChange(Number(event.currentTarget.value))}
+          orientation={orientation} muted={muted} onChange={(event) => onVolumeChange(Number(event.currentTarget.value))}
         />
         <output className={styles.value} htmlFor={volumeId}>{safeVolume}<span className="visually-hidden">%</span></output>
       </div>

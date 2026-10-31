@@ -26,7 +26,7 @@
 .shareAction { margin: var(--space-1); }
 .sharePanel a { display: block; }
 
-.sessionHeader { max-width: 696px; margin: auto; padding: 16px 16px 0; overflow-wrap: anywhere; }
+.sessionHeader { width: 100%; max-width: 696px; margin: auto; padding: 16px 16px 0; overflow-wrap: anywhere; }
 
 
 .sharePanel h2 { font-weight: 300; letter-spacing: 0.01em; }
