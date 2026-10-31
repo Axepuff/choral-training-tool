@@ -4,8 +4,7 @@
 .heading { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .header h1 { font-weight: 300; margin: 0; font-size: 22px; letter-spacing: 0.02em; line-height: 1.2; }
 .count { color: var(--color-text-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-.headerActions, .actions { display: flex; align-items: center; gap: 0; }
-.headerActions { gap: 4px; }
+.headerActions, .actions { display: flex; align-items: center; gap: var(--space-2); }
 .filters { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 8px; margin-bottom: 8px; }
 .search, .sort { min-width: 0; }
 .search { position: relative; }
