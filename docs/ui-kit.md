@@ -61,7 +61,7 @@
 | `Textarea` | Нативный textarea: rows, resize по вертикали, value/defaultValue, ограничения и aria-связи. Общая основа с Input и Select — `Field.module.css`. |
 | `Select` | Нативный select с options/optgroup, multiple/size и клавиатурой; `textSize="small"` — сортировка. Стрелка и оформление принадлежат общей основе полей. |
 | `Checkbox` | Нативный checkbox внутри label с целью от 44 px; children — подпись, ref и атрибуты относятся к input. checked/defaultChecked и изменения остаются у потребителя. |
-| `RangeSlider` | Управляемый нативный range с числовым value; min/max/step и события не заменяются. `variant` volume/seek, `orientation` horizontal/vertical, `tone` accent или цвет партии. Наполнение дорожки рассчитывается в пределах min/max, CSS дорожки/ручки и disabled общие. |
+| `RangeSlider` | Управляемый нативный range с числовым value; min/max/step и события не заменяются. `variant` volume/seek, `orientation` horizontal/vertical, `tone` accent или цвет партии. `muted` приглушает volume без блокировки ввода; микшер использует единый accent. Наполнение дорожки рассчитывается в пределах min/max, градиент фейдера, выпуклая ручка и disabled принадлежат компоненту. |
 | `Message` | `as` p/span/div/section/small сохраняет существующую разметку. tone muted/info/error, variant plain/banner/confirmation/spinner, size normal/small/compact/micro. role, aria-live, aria-atomic и id задаёт потребитель; компонент не создаёт автоматических объявлений. |
 
 Классы потребителей задают только компоновку. Шрифты названий/строк и выбранной

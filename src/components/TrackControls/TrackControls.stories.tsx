@@ -26,7 +26,7 @@ const meta = {
   render: function Render(args) {
     const [, updateArgs] = useArgs<TrackControlsProps>();
     return (
-      <div style={{ width: '100%', maxWidth: args.orientation === 'vertical' ? 88 : 360, padding: 16, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
+      <div style={{ width: '100%', maxWidth: args.orientation === 'vertical' ? 112 : 360 }}>
         <TrackControls {...args}
           onVolumeChange={(volume) => { args.onVolumeChange(volume); updateArgs({ volume }); }}
           onMuteChange={(muted) => { args.onMuteChange(muted); updateArgs({ muted }); }}

@@ -320,7 +320,6 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
 
       </section>
       {song?.notes && <p>{song.notes}</p>}
-      <p className={styles.hint}><strong>S</strong> — слушать выбранные партии <span>·</span> <strong>M</strong> — выключить партию</p>
     </main>
   );
 }

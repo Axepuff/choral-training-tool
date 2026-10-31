@@ -41,6 +41,9 @@
   --color-accent-hover: #f56c00;
   --color-on-accent: #292d35;
   --color-accent-soft: #fbe5d5;
+  --color-fader-light: #ffbf8b;
+  --color-fader-muted: #a9a4a0;
+  --color-fader-muted-light: #e0ddda;
   --color-accent-strong: #9b4000;
   --color-loop: rgb(253 114 2 / 12%);
   --color-solo: #facc15;
