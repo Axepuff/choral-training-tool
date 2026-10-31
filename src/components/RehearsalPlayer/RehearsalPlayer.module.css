@@ -1,6 +1,7 @@
 .shell { display: flex; flex-direction: column; flex: 1; width: 100%; min-height: 100dvh; padding: 20px 16px; background: var(--color-surface); overflow-wrap: anywhere; }
 /* Share the viewport with the runtime session header, notes and navigation. */
 :global(#root):has(> .shell), :global(.sb-main-fullscreen #storybook-root):has(> .shell) { display: flex; flex-direction: column; }
+:global(#root):has(> .shell) > :is(a, button) { align-self: flex-start; }
 :global(#root) > .shell, :global(.sb-main-fullscreen #storybook-root) > .shell { min-height: 0; }
 .player { display: flex; flex-direction: column; flex: 1; width: 100%; max-width: 820px; margin: 0 auto; }
 .scoreHeader { padding: 0 0 8px; }
