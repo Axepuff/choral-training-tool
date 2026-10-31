@@ -302,7 +302,8 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
           <summary>Диагностика воспроизведения</summary>
           <pre>{JSON.stringify(Object.values(audio.diagnostics), null, 2)}</pre>
         </details>}
-        <section className={styles.mixerSection} aria-label="Микшер партий">
+        <section className={styles.mixerSection} aria-label="Микшер партий"
+          style={{ '--mixer-columns': Math.min(5, Math.max(1, tracks.length)) } as CSSProperties}>
           <div className={styles.mixer}>
             {tracks.map((track) => (
               <div className={styles.channel} key={track.id} role="group" aria-label={`Партия: ${track.name}`}>
