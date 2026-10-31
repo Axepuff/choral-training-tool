@@ -85,11 +85,28 @@ container readiness. Check live Issues for status.
 
 ## Validation
 
-- During implementation, use focused checks only when needed to investigate or
-  validate the current change. Defer full frontend checks, including Storybook
-  builds and story tests, until the feature is ready for review or another final
-  handoff. Run the applicable required checks then; repeat them only if later
-  changes or failures make the previous results unreliable.
+- Select checks by changed behavior, including at review/final handoff; reaching
+  that stage does not by itself require a full test suite.
+- **Visual-only changes** (spacing, sizes, colors, typography, shadows, layout,
+  with runtime behavior and contracts unchanged): inspect affected stories and
+  interaction/focus states at 320/360 px, landscape, and desktop; check overflow
+  and touch targets, then run `git diff --check`. Use targeted lint/type checks
+  when code changes warrant them. Do not run full Storybook builds/all-story
+  tests, audio tests, backend tests, e2e, or the full frontend suite for these
+  changes unless explicitly requested or a concrete regression warrants them.
+- **Behavior changes** (event handlers, state, validation, range selection,
+  playback, API/data/auth): run focused checks for the affected behavior, even
+  when the task is described as a design change. A player UI change alone does
+  not justify the full audio/backend/e2e suite. Broaden checks only for a specific
+  affected contract or failure; explain that reason before running them.
+- **CI:** for visual-only changes, do not manually trigger/rerun full CI or
+  duplicate its suites locally. Automatic GitHub Actions are controlled by the
+  workflow, not this file; do not wait for unrelated jobs at a local handoff.
+  When merging, honor checks actually required by branch protection. Changing
+  workflow triggers or required checks is a separate task.
+- During implementation, keep checks focused. Run broader applicable checks
+  once the change is ready for review; repeat only if subsequent edits or failures
+  invalidate the earlier results.
 - Read `docs/e2e.md` for commands, prerequisites, and coverage; required CI checks
   live in `.github/workflows/checks.yml`, scripts in `package.json`. Run frontend
   commands from the root and Go commands from `backend/`. Verify `go version`
