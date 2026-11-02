@@ -34,6 +34,16 @@ with tempfile.TemporaryDirectory() as a,tempfile.TemporaryDirectory(dir='/dev/sh
  assert run(True)==1 and not (root/old).exists() and not (mirror/old).exists()
  for name in (newest,keep,manual):assert (root/name).exists() and (mirror/name).exists()
  assert run(True)==0
+ # A new-format pair must protect and verify its frontend as well as private data.
+ for base in (root,mirror):
+  p=base/newest
+  (p/'frontend.tar').write_bytes(b'fictional frontend')
+  (p/'FRONTEND.json').write_bytes(b'{"commit":"fictional"}')
+  (p/'SHA256SUMS').write_text(''.join(hashlib.sha256((p/n).read_bytes()).hexdigest()+'  '+n+'\n' for n in ('data.tar','frontend.tar','FRONTEND.json')))
+ assert run()==0
+ (mirror/newest/'frontend.tar').write_bytes(b'corrupt frontend')
+ try:run(True);raise AssertionError('corrupt frontend accepted')
+ except ValueError:pass
  try:m.prune(root,mirror,Path('/dev/shm'),now=now+dt.timedelta(days=2));raise AssertionError('stale accepted')
  except ValueError:pass
 print('PASS: dry-run, 31-day boundary, fresh verified pair required, unexpected files and manual backups preserved, repeated apply safe')

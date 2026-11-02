@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """Test maintenance failure recovery at the shell/Docker boundary, without a daemon."""
 import os
+import importlib.util
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
+sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parent.parent
+spec = importlib.util.spec_from_file_location('frontend', ROOT / 'scripts/frontend-release.py')
+frontend = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(frontend)
 DOCKER = '''#!/usr/bin/env python3
 import os, sys
 from pathlib import Path
@@ -14,14 +20,17 @@ args = sys.argv[1:]
 mode = os.environ['CASE']
 running = root / 'running'
 if args[:2] == ['compose', 'ps']:
-    if running.exists(): print('container')
+    if running.exists() or '-aq' in args: print('container')
 elif args[:2] == ['compose', 'stop']:
     running.unlink()
 elif args[:2] == ['compose', 'up']:
     if mode == 'restart-fails': sys.exit(1)
     running.touch()
 elif args[0] == 'inspect':
-    print(('137' if mode == 'killed' else '0') if 'ExitCode' in args[2] else 'sha256:fixture')
+    if 'Mounts' in args[2]:
+        print(os.environ.get('FRONTEND_ROOT', ''))
+    else:
+        print(('137' if mode == 'killed' else '0') if 'ExitCode' in args[2] else 'sha256:fixture')
 elif args[:2] == ['compose', 'run']:
     assert not running.exists(), 'archive requested while app writes'
     print('synthetic archive')
@@ -30,7 +39,7 @@ else:
     raise SystemExit('unexpected Docker operation')
 '''
 
-for case in ('success', 'archive-fails', 'killed', 'stopped', 'restart-fails', 'mirror-fails'):
+for case in ('success', 'archive-fails', 'killed', 'stopped', 'restart-fails', 'mirror-fails', 'frontend-success', 'frontend-fails'):
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         binary = root / 'docker'
@@ -44,20 +53,37 @@ for case in ('success', 'archive-fails', 'killed', 'stopped', 'restart-fails', '
         env.pop('CHORAL_BACKUP_MIRROR_ROOT', None)
         env.pop('CHORAL_BACKUP_MIRROR_MOUNT', None)
         env.pop('CHORAL_BACKUP_RETENTION_DAYS', None)
+        env.pop('FRONTEND_ROOT', None)
+        if case.startswith('frontend-'):
+            static = root / 'frontend'
+            static.mkdir()
+            env['FRONTEND_ROOT'] = str(static)
+            if case == 'frontend-success':
+                files = {'index.html': b'<script src="/assets/app-12345678.js"></script>',
+                         'assets/app-12345678.js': b'synthetic frontend'}
+                manifest = {'format': 1, 'commit': 'a'*40, 'api': frontend.API, 'demo': False,
+                            'base': '/', 'files': {n: frontend.digest(d) for n,d in files.items()}}
+                archive = root / 'frontend.tar'
+                checksum = frontend.write_artifact(archive, manifest, files)
+                frontend.publish(static, archive, checksum, 'a'*40, frontend.API)
         if case == 'mirror-fails':
             env.update(CHORAL_BACKUP_MIRROR_ROOT=str(root / 'absent-disk' / 'backups'),
                        CHORAL_BACKUP_MIRROR_MOUNT=str(root / 'absent-disk'))
         result = subprocess.run(['sh', 'scripts/scheduled-backup.sh', str(backups)],
                                 cwd=ROOT, env=env, capture_output=True)
-        assert (result.returncode == 0) == (case == 'success'), case
+        assert (result.returncode == 0) == (case in ('success', 'frontend-success')), case
         assert (root / 'running').exists() == (case not in ('stopped', 'restart-fails')), case
         archives = list(backups.glob('*/data.tar'))
-        assert bool(archives) == (case in ('success', 'restart-fails', 'mirror-fails')), case
+        assert bool(archives) == (case in ('success', 'restart-fails', 'mirror-fails', 'frontend-success', 'frontend-fails')), case
         if case == 'archive-fails':
             assert list(backups.glob('*/data.tar.partial'))
             assert not list(backups.glob('*/SHA256SUMS'))
-        if case == 'success':
+        if case in ('success', 'frontend-success'):
             subprocess.run(['sha256sum', '-c', 'SHA256SUMS'], cwd=archives[0].parent,
                            check=True, capture_output=True)
             assert (archives[0].parent / 'IMAGE_ID').read_text().strip() == 'sha256:fixture'
+        if case == 'frontend-success':
+            assert (archives[0].parent / 'frontend.tar').read_bytes() == archive.read_bytes()
+        if case == 'frontend-fails':
+            assert not (archives[0].parent / 'SHA256SUMS').exists()
         print(f'PASS: {case}')

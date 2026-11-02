@@ -17,4 +17,12 @@ with tempfile.TemporaryDirectory(prefix='choral-copy-test-') as a, tempfile.Temp
  other=mirror/'other';other.mkdir(mode=0o700)
  assert run(other,'/dev/shm')!=0
  assert not list(other.iterdir())
+ # External frontend metadata/artifact travel with the same completed copy.
+ (source/'data.tar').write_bytes(b'fictional backup fixture')
+ (source/'frontend.tar').write_bytes(b'fictional frontend artifact')
+ (source/'FRONTEND.json').write_bytes(b'{"commit":"fictional"}')
+ (source/'SHA256SUMS').write_text(''.join(hashlib.sha256((source/n).read_bytes()).hexdigest()+'  '+n+'\n' for n in ('data.tar','frontend.tar','FRONTEND.json')))
+ assert run(other,'/dev/shm')==0
+ assert (other/'fixture/frontend.tar').read_bytes()==(source/'frontend.tar').read_bytes()
+ assert (other/'fixture/FRONTEND.json').read_bytes()==(source/'FRONTEND.json').read_bytes()
  print('PASS: second filesystem copy, checksum, private modes, overwrite refusal, absent mount refusal, corrupted source refusal')

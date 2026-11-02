@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Integration test on a disposable Docker volume with fictional content only.
 
-Usage: python3 scripts/check-restore-acceptance.py sha256:<existing-runtime-image>
+Usage: python3 scripts/check-restore-acceptance.py sha256:<existing-runtime-image> [--frontend]
 No production volumes, passwords, shares or audio are read.
 """
 import datetime as dt
@@ -50,9 +50,18 @@ INSERT INTO shares VALUES('{share2}','list','{owner}',NULL,X'{hashlib.sha256(lis
    subprocess.run(cmd+['run','--rm','--no-deps','-T','--entrypoint','choral-data','app','backup'],stdout=output,stderr=subprocess.PIPE,check=True,timeout=60)
   (backup/'SHA256SUMS').write_text(hashlib.sha256((backup/'data.tar').read_bytes()).hexdigest()+'  data.tar\n')
   (backup/'IMAGE_ID').write_text(image);(backup/'COMMIT').write_text('fictional')
+  if '--frontend' in sys.argv[2:]:
+   fspec=importlib.util.spec_from_file_location('frontend',Path(__file__).with_name('frontend-release.py'))
+   frontend=importlib.util.module_from_spec(fspec);fspec.loader.exec_module(frontend)
+   files={'index.html':b'<script src="/assets/app-12345678.js"></script>', 'assets/app-12345678.js':b'fictional frontend'}
+   manifest={'format':1,'commit':'a'*40,'api':frontend.API,'demo':False,'base':'/','files':{n:frontend.digest(d) for n,d in files.items()}}
+   checksum=frontend.write_artifact(backup/'frontend.tar',manifest,files)
+   (backup/'FRONTEND.json').write_bytes(frontend.encode({'commit':'a'*40,'api':frontend.API,'sha256':checksum}))
+   (backup/'SHA256SUMS').write_text(''.join(hashlib.sha256((backup/n).read_bytes()).hexdigest()+'  '+n+'\n' for n in ('data.tar','frontend.tar','FRONTEND.json')))
   fixture=root/'fixture.json';fixture.write_text(json.dumps({'checkedAt':(now-dt.timedelta(minutes=1)).isoformat(),'songId':song,'songShare':{'token':songtoken},'listShare':{'token':listtoken},'mediaSha256':hashlib.sha256(media).hexdigest()}))
   report=m.verify(backups,fixture)
   assert report['status']=='passed'
+  if '--frontend' in sys.argv[2:]:assert 'frontend_snapshot' in report['checks']
   print('PASS: isolated real Docker backup/restore, original synthetic song/list tokens, media hash, peaks and Range; production untouched')
  finally:
   run(['down','-v'])

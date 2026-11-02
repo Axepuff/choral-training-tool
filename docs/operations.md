@@ -44,8 +44,11 @@ Go использует go.sum и go mod verify, npm — lockfile/npm ci. GOTOOL
 запрещает скрытую замену компилятора. Для сравнения результатов используйте одну
 архитектуру и те же digest; обновляйте digest/snapshot отдельным проверенным изменением.
 
-Frontend собирается с VITE_APP_DEMO=false и base=/; Go раздаёт только /app из
-image. Query URLs и вложенные HTML routes получают index; /assets/missing.js и
+Frontend собирается с VITE_APP_DEMO=false и base=/; базовый запуск раздаёт /app из
+image. Опциональный внешний read-only frontend root и независимые deploy/rollback
+без перезапуска backend описаны в [frontend-deployment.md](frontend-deployment.md).
+Это отдельный однократный переход Compose; обычный deploy не работает с private data.
+Query URLs и вложенные HTML routes получают index; /assets/missing.js и
 неизвестный /api возвращают 404. Каталоги не листятся, dotfiles закрыты.
 CHORAL_STATIC_DIR для запуска без Docker указывает на production dist; при
 отсутствующем index сервер отказывает до listen. Не указывайте data как static dir.
@@ -145,6 +148,11 @@ COMMIT и Compose относятся к действующему релизу п
 обновить операционные скрипты без изменения app image или production checkout.
 Установить вместе scheduled-backup.sh, backup-restore.sh и copy-backup.sh;
 helper-скрипты разрешаются относительно самого scheduled-backup.sh.
+При внешнем frontend установить также `frontend-release.py` и актуальные
+copy/health/retention/restore helpers из #65: backup сохраняет текущий frontend
+артефакт и FRONTEND.json рядом с data.tar, включая их в checksum/вторую копию.
+До запуска восстановленного app сначала восстановить внешний frontend root,
+как описано в [runbook](frontend-deployment.md#backup-и-точное-восстановление).
 
 Пример для согласованного HDD velette (выполнять после выбора защиты копии):
 
@@ -233,6 +241,10 @@ headers 16 KiB/5s, HTTP read/write 30s, idle 60s. Медленный upload мо
 FFmpeg. Для media сохранять Range/HEAD и не кешировать приватные ответы в proxy.
 
 ## Обновление, rollback и диск
+
+Раздел ниже относится к backend image/схеме. Регулярный frontend-only выпуск
+использует [отдельные команды](frontend-deployment.md#регулярная-публикация-и-откат)
+и не запускает stop, backup/restore или миграции.
 
 До обновления проверить свободное место **и inode** на Docker storage/volume и
 backup destination: нужны одновременно старые данные, новые uploads/артефакты,

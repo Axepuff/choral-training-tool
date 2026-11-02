@@ -1,0 +1,12 @@
+# Optional, one-time migration. Mount the parent, never the current symlink.
+services:
+  app:
+    environment:
+      CHORAL_STATIC_DIR: /frontend/current
+    volumes:
+      - type: bind
+        source: ${CHORAL_FRONTEND_ROOT:?Set an absolute frontend release directory}
+        target: /frontend
+        read_only: true
+        bind:
+          create_host_path: false

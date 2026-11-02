@@ -25,7 +25,7 @@ stage=$(mktemp -d "$mirror/.partial-$name.XXXXXX")
 # On error leave an explicitly incomplete directory for private investigation.
 cp -p "$source/data.tar" "$source/SHA256SUMS" "$source/IMAGE_ID" "$source/COMMIT" "$stage/"
 # Operator backups may additionally carry the original release configuration.
-for file in IMAGE_TAG env.before; do
+for file in IMAGE_TAG env.before frontend.tar FRONTEND.json; do
  if test -f "$source/$file"; then
   test ! -L "$source/$file"
   cp -p "$source/$file" "$stage/"

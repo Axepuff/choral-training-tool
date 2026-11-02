@@ -39,11 +39,22 @@ def verify(root, fixture_path):
     project = 'choral-acceptance-' + uuid.uuid4().hex[:12]
     with tempfile.TemporaryDirectory(prefix='restore-', dir=fixture_path.parent) as work:
         compose = Path(work) / 'compose.json'
-        compose.write_text(json.dumps({'services': {'app': {
+        app = {
             'image': image, 'network_mode': 'none', 'environment': {'CHORAL_ORIGIN': 'https://choral-train.ru'},
             'volumes': ['data:/data'], 'read_only': True, 'tmpfs': ['/tmp:size=128m,mode=1777'],
             'cap_drop': ['ALL'], 'security_opt': ['no-new-privileges:true'],
-            'mem_limit': '768m', 'cpus': 0.5, 'pids_limit': 64, 'restart': 'no', 'stop_grace_period': '30s'}}, 'volumes': {'data': {}}}))
+            'mem_limit': '768m', 'cpus': 0.5, 'pids_limit': 64, 'restart': 'no', 'stop_grace_period': '30s'}
+        if (backup / 'FRONTEND.json').exists():
+            frontend = json.loads((backup / 'FRONTEND.json').read_text())
+            static = Path(work) / 'frontend'
+            helper = str(Path(__file__).with_name('frontend-release.py'))
+            run(['python3', helper, 'publish', str(backup / 'frontend.tar'), '--root', str(static),
+                 '--sha256', frontend['sha256'], '--approved-commit', frontend['commit'],
+                 '--backend-api', frontend['api']])
+            os.chmod(work, 0o755)
+            app['environment']['CHORAL_STATIC_DIR'] = '/frontend/current'
+            app['volumes'].append(str(static) + ':/frontend:ro')
+        compose.write_text(json.dumps({'services': {'app': app}, 'volumes': {'data': {}}}))
         cmd = ['docker', 'compose', '-p', project, '-f', str(compose)]
         try:
             with (backup / 'data.tar').open('rb') as archive:
@@ -71,9 +82,15 @@ def verify(root, fixture_path):
                     raise ValueError('Restored test media differs from production smoke')
                 if get(track['mediaUrl'], True) != media[:32] or not json.loads(get(track['peaksUrl'])):
                     raise ValueError('Restored Range or peaks failed')
+            checks = ['checksum', 'sqlite_integrity_foreign_keys', 'original_song_list_links', 'media_hash', 'peaks', 'range']
+            if (backup / 'FRONTEND.json').exists():
+                html = run(['nsenter', '-t', pid, '-n', 'curl', '--silent', '--fail', '--max-time', '15', 'http://127.0.0.1:8080/'])
+                if html != (static / 'current/index.html').read_bytes():
+                    raise ValueError('Restored frontend differs from snapshot')
+                checks.append('frontend_snapshot')
             return {'status': 'passed', 'backup': backup.name, 'image': image,
                     'checkedAt': dt.datetime.now(dt.timezone.utc).isoformat(),
-                    'checks': ['checksum', 'sqlite_integrity_foreign_keys', 'original_song_list_links', 'media_hash', 'peaks', 'range']}
+                    'checks': checks}
         finally:
             # Only our freshly generated project/volume is removed, never choral.
             run(cmd + ['down', '-v'])

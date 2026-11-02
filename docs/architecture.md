@@ -195,3 +195,19 @@ Go обслуживает /api и frontend на одном origin; отдель�
 содержит SQLite, ключи и файлы. Backup копирует весь volume при остановленных
 writers; restore допускается только в пустой volume. HTTPS proxy находится перед
 loopback listener хоста. Конфигурация, проверки и ограничения: [operations.md](operations.md).
+
+## Независимые frontend-релизы (Issue #65)
+
+Базовый image сохраняет встроенный `/app` для автономного запуска и отката перехода.
+После однократного подключения `compose.frontend.yaml` production dist находится
+во внешнем каталоге, вне private `/data`, смонтированном родителем read-only.
+Go раздаёт `CHORAL_STATIC_DIR=/frontend/current` на прежнем origin; atomic symlink
+switch виден без перезапуска процесса. HTML перепроверяется по content ETag,
+хешированные assets неизменяемы и сохраняются минимум 7 суток после снятия релиза.
+Frontend deploy/rollback не используют БД, migrations, Docker или backup.
+Backend и frontend имеют отдельные commit/checksum; совместимость с установленным
+`choral-api-v1` подтверждается при допуске конкретного артефакта. Требующий нового
+API frontend выпускается согласованно с backend. Backup сохраняет текущий внешний
+frontend-артефакт рядом с private archive для точного восстановления обеих версий.
+Контракт артефакта, ручной допуск для будущей #66, переход/rollback и команды:
+[frontend-deployment.md](frontend-deployment.md). CI-доставка здесь не включается.

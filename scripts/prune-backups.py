@@ -14,7 +14,7 @@ import stat
 import subprocess
 
 REQUIRED = {'data.tar', 'SHA256SUMS', 'IMAGE_ID', 'COMMIT'}
-ALLOWED = REQUIRED | {'IMAGE_TAG', 'env.before'}
+ALLOWED = REQUIRED | {'IMAGE_TAG', 'env.before', 'frontend.tar', 'FRONTEND.json'}
 DAILY = re.compile(r'\d{8}T\d{6}Z')
 
 
@@ -41,14 +41,18 @@ def verify_pair(source, target):
     if not eligible(source) or not eligible(target):
         raise ValueError('pair_incomplete_or_unsafe')
     manifest = source.joinpath('SHA256SUMS').read_text()
-    if not re.fullmatch(r'[0-9a-f]{64}  data\.tar\n', manifest):
+    external = (source / 'FRONTEND.json').exists()
+    names = ['data.tar', 'frontend.tar', 'FRONTEND.json'] if external else ['data.tar']
+    pattern = ''.join(r'[0-9a-f]{64}  ' + re.escape(name) + r'\n' for name in names)
+    if not re.fullmatch(pattern, manifest):
         raise ValueError('invalid_checksum_manifest')
     for name in ('SHA256SUMS', 'IMAGE_ID', 'COMMIT'):
         if (source / name).read_bytes() != (target / name).read_bytes():
             raise ValueError('pair_metadata_mismatch')
-    expected = manifest[:64]
-    if digest(source / 'data.tar') != expected or digest(target / 'data.tar') != expected:
-        raise ValueError('pair_checksum_mismatch')
+    for line, name in zip(manifest.splitlines(), names):
+        expected = line[:64]
+        if digest(source / name) != expected or digest(target / name) != expected:
+            raise ValueError('pair_checksum_mismatch')
 
 
 def prune(root, mirror, mount, days=31, apply=False, now=None):

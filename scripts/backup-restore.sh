@@ -2,6 +2,7 @@
 # Run from repository root. Never starts/stops the application implicitly.
 set -eu
 umask 077
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 case "${1:-}" in backup|restore) ;; *) echo 'usage: sh scripts/backup-restore.sh backup|restore DIRECTORY' >&2; exit 2;; esac
 test "$#" -eq 2
 if test -n "$(docker compose ps --status running -q app)"; then
@@ -16,7 +17,19 @@ case "$1" in
    echo 'Backup failed; partial archive is unusable.' >&2; exit 1
   fi
   mv "$2/data.tar.partial" "$2/data.tar"
-  (cd "$2" && sha256sum data.tar > SHA256SUMS)
+  # Optional external frontend: record the release actually mounted in the
+  # stopped container, not an operator's possibly newer Compose environment.
+  container=$(docker compose ps -aq app)
+  frontend_root=''
+  if test -n "$container"; then
+   frontend_root=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/frontend"}}{{.Source}}{{end}}{{end}}' "$container")
+  fi
+  if test -n "$frontend_root"; then
+   python3 "$script_dir/frontend-release.py" snapshot --root "$frontend_root" --output "$2/frontend.tar"
+   (cd "$2" && sha256sum data.tar frontend.tar FRONTEND.json > SHA256SUMS)
+  else
+   (cd "$2" && sha256sum data.tar > SHA256SUMS)
+  fi
   ;;
  restore)
   (cd "$2" && sha256sum -c SHA256SUMS >/dev/null)
