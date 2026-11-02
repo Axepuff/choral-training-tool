@@ -1,5 +1,8 @@
 # Первый запуск на Debian 13 — Issue #16
 
+Последующие независимые frontend-релизы и однократный переход с image dist:
+[runbook #65](frontend-deployment.md). Он не меняет разрешения на production.
+
 Статус: запуск и ночная backup/restore-приёмка velette выполнены 30 октября 2026.
 Результаты оформлены в PR #49; DHCP reservation и внешний HTTP→HTTPS
 по согласованию владельца вынесены в отдельную сетевую задачу [#51](https://github.com/Axepuff/choral-training-tool/issues/51).

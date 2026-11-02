@@ -47,9 +47,13 @@ def backup_status(root=ROOT, mirror=MIRROR, mount=MOUNT, now=None, service=True)
         p = target / name
         if p.is_symlink() or p.read_bytes() != (source / name).read_bytes():
             raise ValueError('second_copy_metadata_mismatch')
-    p = target / 'data.tar'
-    if p.is_symlink() or p.stat().st_size != (source / 'data.tar').stat().st_size:
-        raise ValueError('second_copy_size_mismatch')
+    names = ['data.tar']
+    if (source / 'FRONTEND.json').exists():
+        names += ['frontend.tar', 'FRONTEND.json']
+    for name in names:
+        p = target / name
+        if p.is_symlink() or p.stat().st_size != (source / name).stat().st_size:
+            raise ValueError('second_copy_size_mismatch')
     # Checksums are verified at copy time, not rehashing large archives every probe.
     if service:
         services = ['choral-backup.service']

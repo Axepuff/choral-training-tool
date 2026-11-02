@@ -44,6 +44,13 @@ with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory(dir='/dev/s
     (src / 'data.tar.partial').touch()
     assert result() == 'no_completed_backup'
     (src / 'data.tar.partial').unlink()
+    for p in (src,dst):
+        (p/'frontend.tar').write_text('fictional frontend')
+        (p/'FRONTEND.json').write_text('{"commit":"fictional"}')
+    assert result() == 'backup_ready'
+    (dst/'frontend.tar').write_text('short')
+    assert result() == 'second_copy_size_mismatch'
+    (dst/'frontend.tar').write_text('fictional frontend')
     original_run = subprocess.run
     original_is_file = Path.is_file
     results = {'choral-backup.service':'success', 'choral-acceptance-restore.service':'success'}
