@@ -27,8 +27,9 @@
 
 :root {
   color-scheme: light;
-  --color-page: #f4f5f7;
-  --color-surface: #f4f5f7;
+  --color-page: #f8f9fb;
+  --color-frame: #ffffff;
+  --color-surface: var(--color-page);
   --color-surface-soft: #eceef2;
   --color-control: #fdfefe;
   --background-control: linear-gradient(145deg, #ffffff, #f8f9fb);
