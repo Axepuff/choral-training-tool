@@ -1,4 +1,4 @@
-.page { min-height: 100dvh; background: var(--color-surface); padding: 28px 16px; }
+.page { min-height: var(--app-viewport-height, 100dvh); background: var(--color-surface); padding: 28px 16px; }
 .content { width: 100%; max-width: 400px; margin: 0 auto; }
 .content h1 { font-weight: 300; margin: 0; font-size: 28px; line-height: 1.25; letter-spacing: 0.02em; }
 .intro { margin: 10px 0 28px; color: var(--color-text-muted); font-size: 14px; }

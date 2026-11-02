@@ -1,4 +1,4 @@
-.root { min-height: 100dvh; background: var(--color-surface); color: var(--color-text); }
+.root { min-height: var(--app-viewport-height, 100dvh); background: var(--color-surface); color: var(--color-text); }
 .shell { max-width: 868px; margin: auto; padding: 0 24px 40px; overflow-wrap: anywhere; }
 .nav { display: flex; justify-content: space-between; align-items: center; gap: 16px; border-bottom: 1px solid var(--color-border); margin-bottom: 26px; min-height: 60px; }
 .nav > div { display: flex; gap: 20px; }

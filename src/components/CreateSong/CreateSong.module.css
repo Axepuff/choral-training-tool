@@ -1,4 +1,4 @@
-.shell { min-height: 100dvh; background: var(--color-surface); padding: 20px 16px 32px; }
+.shell { min-height: var(--app-viewport-height, 100dvh); background: var(--color-surface); padding: 20px 16px 32px; }
 .card { min-width: 0; max-width: 664px; margin: 0 auto; }
 .card h1 { font-weight: 300; margin: 0; font-size: 26px; letter-spacing: 0.02em; }
 .intro { color: var(--color-text-muted); font-size: 13px; margin: 6px 0 24px; }

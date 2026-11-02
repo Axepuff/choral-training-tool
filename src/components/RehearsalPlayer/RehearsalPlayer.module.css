@@ -1,4 +1,4 @@
-.shell { display: flex; flex-direction: column; flex: 1; width: 100%; min-height: 100dvh; padding: 20px 16px; background: var(--color-surface); overflow-wrap: anywhere; }
+.shell { display: flex; flex-direction: column; flex: 1; width: 100%; min-height: var(--app-viewport-height, 100dvh); padding: 20px 16px; background: var(--color-surface); overflow-wrap: anywhere; }
 /* Share the viewport with the runtime session header, notes and navigation. */
 :global(#root):has(> .shell), :global(.sb-main-fullscreen #storybook-root):has(> .shell) { display: flex; flex-direction: column; }
 :global(#root):has(> .shell) > :is(a, button) { align-self: flex-start; }
@@ -57,7 +57,7 @@
 .timelineContent { min-width: var(--timeline-width); padding-top: 4px; }
 
 @media (orientation: landscape) and (max-height: 500px) {
-  .shell { padding: 8px max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left)); }
+  .shell { padding: 8px 12px; }
   .player { max-width: none; }
   .scoreHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 4px; }
   .title { font-size: 20px; margin: 0; }
@@ -107,7 +107,7 @@
 
 
 @media (max-width: 639px), (orientation: landscape) and (max-height: 500px) {
-  .transport { position: sticky; top: 4px; z-index: 2; background: var(--color-surface); }
+  .transport { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 4px); z-index: 2; background: var(--color-surface); }
   .player :is(button, input, [tabindex], [role='alert']) { scroll-margin-block: 116px var(--space-4); }
 }
 @media (orientation: landscape) and (max-height: 500px) {

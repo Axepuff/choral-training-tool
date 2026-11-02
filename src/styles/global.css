@@ -1,7 +1,7 @@
 * { box-sizing: border-box; }
 
 html {
-  background: var(--color-page);
+  background: var(--color-frame);
   color: var(--color-text);
   font: 400 var(--font-md) / var(--line-height) var(--font-family);
   -webkit-text-size-adjust: 100%;
@@ -9,12 +9,29 @@ html {
 
 body { margin: 0; }
 
+/* Safe areas belong to the white outer rim, not the recessed page. */
+:is(body:has(> #root), body.sb-main-fullscreen) {
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+:is(body:has(> #root), body.sb-main-fullscreen)::before {
+  content: '';
+  position: fixed;
+  z-index: 3;
+  inset: 0;
+  border-style: solid;
+  border-color: var(--color-frame);
+  border-width: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  pointer-events: none;
+}
+html { scroll-padding-block: calc(env(safe-area-inset-top, 0px) + 8px) calc(env(safe-area-inset-bottom, 0px) + 8px); }
+
 /* One recessed app surface, including session/status content. Component stories stay unframed. */
 :is(#root, .sb-main-fullscreen #storybook-root) {
+  --app-viewport-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   position: relative;
   isolation: isolate;
   display: flow-root;
-  min-height: 100dvh;
+  min-height: var(--app-viewport-height);
   background: var(--color-surface);
 }
 :is(#root, .sb-main-fullscreen #storybook-root)::after {
@@ -22,9 +39,9 @@ body { margin: 0; }
   position: absolute;
   z-index: 1;
   inset: 0;
-  border: 4px solid #ffffff;
+  border: 4px solid var(--color-frame);
   border-radius: 20px;
-  box-shadow: 0 0 0 26px #ffffff, inset 5px 5px 9px rgb(122 134 153 / 27%), inset -3px -3px 7px #ffffff;
+  box-shadow: 0 0 0 26px var(--color-frame), inset 5px 5px 9px rgb(122 134 153 / 27%), inset -3px -3px 7px #ffffff;
   pointer-events: none;
 }
 #root > p { margin-inline: 16px; overflow-wrap: anywhere; }
