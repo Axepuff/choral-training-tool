@@ -44,9 +44,14 @@ Go/Node загружены в `/tmp` с проверкой SHA-256; production t
 - `check-backup-copy.py`, `check-backup-health.py`, `check-backup-retention.py`: **pass**,
   включая перенос/контроль frontend и отказ при его повреждении. Старый формат
   backup также сохранён. `sh -n`, Python compile, lint и `git diff --check`: **pass**.
-- Production dist с `VITE_APP_DEMO=false`, `CHORAL_BUILD_BASE=/`, Vite manifest
-  и typecheck собран успешно; команда упаковки проверяется на чистом commit перед
-  публикацией PR. Артефакт не добавляется в Git.
+- `frontend-release.py build` на чистом `f8de2b686ec157a7953b51cd4c0bbda2b4c41845`
+  прошёл: production dist с `VITE_APP_DEMO=false`, `CHORAL_BUILD_BASE=/`,
+  Vite manifest, typecheck и tar. SHA-256 артефакта:
+  `36481dee1700655a8a6fff0d7f7787be4fa6c1953901133e3144758fb7c407c3`.
+  Готовый tar опубликован в ещё один временный root; проверены байты **всех**
+  файлов, immutable cache JS/CSS/worker/fonts и настоящий экран входа React в
+  Chrome. Существующие license/source файлы Jost включены. Артефакт остаётся
+  вне Git; следующий commit обновляет только этот QA-отчёт.
 
 Все случайные Compose projects/volumes удаляются в `finally`. Production checkout,
 app, private volume, БД, Caddy, systemd/timers и размещённый frontend не менялись.
