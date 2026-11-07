@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, fireEvent, userEvent, within } from 'storybook/test';
+import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test';
 import { WorkflowPrototype } from './WorkflowPrototype';
 
 const meta = {
@@ -11,7 +11,15 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Teacher: Story = { name: 'Преподаватель · рабочий флоу' };
-export const Sharing: Story = { name: 'Ссылка на список · выдача и отзыв', args: { initialScreen: 'share' } };
+async function listSettings(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement);
+  await userEvent.click(canvas.getByRole('button', { name: 'Действия со ссылкой: elena@example.invalid' }));
+  await userEvent.click(canvas.getByRole('button', { name: 'Настройки ссылки' }));
+  const dialog = within(await canvas.findByRole('dialog'));
+  await dialog.findByRole('textbox', { name: 'Адрес для учеников' });
+  return dialog;
+}
+export const Sharing: Story = { name: 'Ссылка на репертуар · настройки', play: async ({ canvasElement }) => { await listSettings(canvasElement); } };
 export const Administrator: Story = { name: 'Администратор · аккаунты', args: { role: 'admin', initialScreen: 'accounts' } };
 export const Mobile: Story = { name: 'Преподаватель · 360 px', globals: { viewport: { value: 'mobile360', isRotated: false } } };
 export const MobileAccounts: Story = { name: 'Аккаунты · 360 px', args: { role: 'admin', initialScreen: 'accounts' }, globals: { viewport: { value: 'mobile360', isRotated: false } } };
@@ -25,16 +33,28 @@ export const AccountsError: Story = { name: 'Ошибка загрузки ак�
 // Existing runtime tests own server authorization, revocation and persistence.
 export const ShareFlow: Story = { name: 'Проверка · состав списка и отмена отзыва', play: async ({ canvasElement }) => {
   const canvas = within(canvasElement);
-  await userEvent.click(canvas.getByRole('button', { name: 'Ссылка на список' }));
-  await userEvent.click(canvas.getByRole('button', { name: 'Посмотреть как ученик' }));
+  let dialog = await listSettings(canvasElement);
+  await userEvent.click(dialog.getByRole('button', { name: 'Посмотреть как ученик' }));
   const list = within(canvas.getByRole('list', { name: 'Песни' }));
   await expect(list.getByRole('button', { name: /Тихий вечер/ })).toBeVisible();
   await expect(list.queryByRole('button', { name: /Утро/ })).not.toBeInTheDocument();
   await expect(list.queryByRole('button', { name: /Весенняя песня/ })).not.toBeInTheDocument();
   await userEvent.click(canvas.getByRole('button', { name: /Завершить предпросмотр/ }));
-  await userEvent.click(canvas.getByRole('button', { name: 'Отключить' }));
-  await userEvent.click(canvas.getByRole('button', { name: 'Отмена' }));
-  await expect(canvas.getByText('Действует', { exact: true })).toBeVisible();
+  dialog = await listSettings(canvasElement);
+  const before = (dialog.getByRole('textbox', { name: 'Адрес для учеников' }) as HTMLInputElement).value;
+  await userEvent.click(dialog.getByRole('button', { name: 'Отключить ссылку' }));
+  await expect(dialog.getByRole('button', { name: 'Отмена' })).toHaveFocus();
+  await userEvent.tab();
+  await expect(dialog.getByRole('button', { name: 'Закрыть настройки ссылки' })).toHaveFocus();
+  await userEvent.tab({ shift: true });
+  await expect(dialog.getByRole('button', { name: 'Отмена' })).toHaveFocus();
+  await expect(dialog.getByText('elena@example.invalid')).toBeVisible();
+  await userEvent.click(dialog.getByRole('button', { name: 'Отмена' }));
+  await expect(dialog.getByRole('textbox', { name: 'Адрес для учеников' })).toHaveValue(before);
+  // Synthetic keyboard events cannot invoke the browser's native dialog default.
+  fireEvent(canvas.getByRole('dialog'), new Event('cancel', { cancelable: true }));
+  await waitFor(() => expect(canvas.queryByRole('dialog')).not.toBeInTheDocument());
+  await waitFor(() => expect(canvas.getByRole('button', { name: 'Действия со ссылкой: elena@example.invalid' })).toHaveFocus());
 } };
 // UI boundary: the confirmation must name the target; cancelling must leave access unchanged.
 export const AccountFlow: Story = { name: 'Проверка · блокировка и восстановление', args: { role: 'admin', initialScreen: 'accounts' }, play: async ({ canvasElement }) => {
@@ -85,16 +105,16 @@ export const PublishFlow: Story = { name: 'Проверка · переключ�
   await expect(morning).toBeChecked();
   await expect(canvas.getByRole('heading', { name: /^Песни/ })).toBeVisible();
   await expect(canvas.getByRole('status')).toHaveTextContent('«Утро» опубликована');
-  await userEvent.click(canvas.getByRole('button', { name: 'Ссылка на список' }));
+  const dialog = await listSettings(canvasElement);
+  await userEvent.click(dialog.getByRole('button', { name: 'Посмотреть как ученик' }));
   await expect(canvas.getByRole('list')).toHaveTextContent('Утро');
   await expect(canvas.getByRole('list')).not.toHaveTextContent('Весенняя песня');
-  await userEvent.click(canvas.getByRole('button', { name: 'Посмотреть как ученик' }));
   await expect(canvas.queryByRole('switch')).not.toBeInTheDocument();
   await userEvent.click(canvas.getByRole('button', { name: /Завершить предпросмотр/ }));
-  await userEvent.click(canvas.getByRole('button', { name: /К песням/ }));
   await userEvent.click(canvas.getByRole('switch', { name: 'Публикация: Утро' }));
   await expect(canvas.getByRole('switch', { name: 'Публикация: Утро' })).not.toBeChecked();
-  await userEvent.click(canvas.getByRole('button', { name: 'Ссылка на список' }));
+  await listSettings(canvasElement);
+  await userEvent.click(canvas.getByRole('button', { name: 'Посмотреть как ученик' }));
   await expect(canvas.getByRole('list')).not.toHaveTextContent('Утро');
 } };
 
@@ -105,10 +125,10 @@ export const PublishedEditFlow: Story = { name: 'Проверка · негот�
   await userEvent.selectOptions(canvas.getByRole('combobox', { name: 'Количество треков' }), '6');
   await expect(canvas.getByText('Выбрано файлов: 5 из 6')).toBeVisible();
   await userEvent.click(canvas.getByRole('button', { name: 'Сохранить изменения' }));
-  await userEvent.click(canvas.getByRole('button', { name: 'Ссылка на список' }));
+  const dialog = await listSettings(canvasElement);
+  await userEvent.click(dialog.getByRole('button', { name: 'Посмотреть как ученик' }));
   await expect(canvas.getByRole('list')).not.toHaveTextContent('Тихий вечер');
   await expect(canvas.getByRole('list')).toHaveTextContent('Дорога домой');
-  await userEvent.click(canvas.getByRole('button', { name: 'Посмотреть как ученик' }));
   await expect(canvas.queryByRole('button', { name: 'Тихий вечер' })).not.toBeInTheDocument();
   await expect(canvas.getByRole('button', { name: 'Дорога домой' })).toBeVisible();
 } };

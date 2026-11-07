@@ -194,20 +194,33 @@ try {
  await poll(()=>evaluate(`document.querySelector('ul[aria-label="Песни"] li h2')?.textContent === 'Аа первая'`),'API title sort failed');
  await input('songSearch' ,'несуществующая');await expectText('Песня не найдена');
  await input('songSearch','Мои изменения');await expectText('Мои изменения');
- await evaluate(`document.querySelector('[aria-label="Скопировать ссылку: Мои изменения"]').click()`);await expectText('Публичные ссылки');
- await click('Создать новую ссылку');await poll(()=>evaluate(`!!document.querySelector('section[aria-label="Публичные ссылки"] a')`),'No public URL');
- const publicUrl=await evaluate(`document.querySelector('section[aria-label="Публичные ссылки"] a').href`);assert.ok(/\?song=/.test(publicUrl), 'Public song URL missing');
- await send('Browser.grantPermissions',{origin,permissions:['clipboardReadWrite','clipboardSanitizedWrite']});await send('Page.bringToFront');await click('Копировать');assert.ok(await evaluate('navigator.clipboard.readText()') === publicUrl, 'Clipboard must contain the generated URL');
- await click('Заменить ссылку');await poll(()=>evaluate(`!!document.querySelector('section[aria-label="Публичные ссылки"] a') && document.querySelector('section[aria-label="Публичные ссылки"] a').href !== ${JSON.stringify(publicUrl)}`),'Rotation failed');
- const rotated=await evaluate(`document.querySelector('section[aria-label="Публичные ссылки"] a').href`);
+ // Direct copy retrieves the permanent URL. Settings open in a contextual dialog.
+ await send('Browser.grantPermissions',{origin,permissions:['clipboardReadWrite','clipboardSanitizedWrite']});await send('Page.bringToFront');
+ await evaluate(`document.querySelector('[aria-label="Скопировать ссылку: Мои изменения"]').click()`);await expectText('Ссылка на «Мои изменения» скопирована');
+ const publicUrl=await evaluate('navigator.clipboard.readText()');assert.ok(/\?song=/.test(publicUrl),'Public song URL missing');
+ await evaluate(`document.querySelector('[aria-label="Действия со ссылкой: Мои изменения"]').click()`);await click('Настройки ссылки');
+ await poll(()=>evaluate(`!!document.querySelector('dialog[open] [name=shareUrl]')`),'No sharing dialog');
+ assert.equal(await evaluate(`document.querySelector('[name=shareUrl]').value`),publicUrl);
+ await click('Заменить адрес');await expectText('Заменить адрес?');
+ assert.equal(await evaluate('document.activeElement.textContent'),'Отмена','Destructive confirmation must focus Cancel');
+ await click('Отмена');assert.equal(await evaluate(`document.querySelector('[name=shareUrl]').value`),publicUrl);
+ await click('Заменить адрес');await expectText('Заменить адрес?');await click('Заменить адрес');
+ await poll(()=>evaluate(`document.querySelector('[name=shareUrl]')?.value !== undefined && document.querySelector('[name=shareUrl]').value !== ${JSON.stringify(publicUrl)}`),'Rotation failed');
+ const rotated=await evaluate(`document.querySelector('[name=shareUrl]').value`);
  assert.equal((await evaluate(`(async()=> (await fetch('/api/v1/public/shares/'+new URL(${JSON.stringify(publicUrl)}).searchParams.get('song'))).status)()`)),404);
- await click('Отозвать ссылку');await expectText('Ссылка отозвана');assert.equal(await evaluate(`!!document.querySelector('section[aria-label="Публичные ссылки"] a')`),false);
+ await click('Отключить ссылку');await expectText('Отключить ссылку?');await click('Отключить ссылку');await expectText('Ссылка отключена');assert.equal(await evaluate(`!!document.querySelector('[name=shareUrl]')`),false);
  assert.equal((await evaluate(`(async()=> (await fetch('/api/v1/public/shares/'+new URL(${JSON.stringify(rotated)}).searchParams.get('song'))).status)()`)),404);
- await click('Создать новую ссылку');await poll(()=>evaluate(`!!document.querySelector('section[aria-label="Публичные ссылки"] a')`),'No replacement URL');
- const guest=await evaluate(`document.querySelector('section[aria-label="Публичные ссылки"] a').search`);
- await click('Закрыть');await evaluate(`document.querySelector('[aria-label="Ссылка на список"]').click()`);await expectText('Публичные ссылки');await click('Создать новую ссылку');await poll(()=>evaluate(`!!document.querySelector('section[aria-label="Публичные ссылки"] a')`),'No list URL');
- const guestList=await evaluate(`document.querySelector('section[aria-label="Публичные ссылки"] a').search`);
- await click('Закрыть');await click('Выйти');await expectText('Вход');
+ await evaluate(`document.querySelector('[aria-label="Закрыть настройки ссылки"]').click()`);
+ await evaluate(`document.querySelector('[aria-label="Скопировать ссылку: Мои изменения"]').click()`);await expectText('Ссылка отключена');
+ assert.equal(await evaluate(`!!document.querySelector('[name=shareUrl]')`),false,'Copy must not re-enable a disabled link');
+ await click('Создать новый адрес');await poll(()=>evaluate(`!!document.querySelector('[name=shareUrl]')`),'No replacement URL');
+ const guest=await evaluate(`new URL(document.querySelector('[name=shareUrl]').value).search`);
+ await evaluate(`document.querySelector('[aria-label="Закрыть настройки ссылки"]').click()`);
+ await click('Копировать ссылку для учеников');await expectText('Ссылка на репертуар скопирована');
+ const guestList=await evaluate(`(async()=>new URL(await navigator.clipboard.readText()).search)()`);assert.ok(guestList.startsWith('?list='));
+ await navigate('?page=library');await expectText('Мои изменения');await click('Копировать ссылку для учеников');await expectText('Ссылка на репертуар скопирована');
+ assert.equal(await evaluate(`(async()=>new URL(await navigator.clipboard.readText()).search)()`),guestList,'Reload must retain the same repertoire URL');
+ await click('Выйти');await expectText('Вход');
  await navigate(guest);await expectText('Офлайн заметка');assert.equal(await bodyIncludes('Вход'),false);
  // The public grant cannot authorize writes or extend to another song/track ID.
  const token = new URLSearchParams(guest).get('song');
@@ -237,6 +250,11 @@ try {
  // Admin can edit all; another teacher can read published but cannot write.
  await navigate('?page=library');await expectText('Вход');await submit('admin@example.test','fictional password 123');await expectText('Администратор');await expectText('Мои изменения');
  assert.equal(await evaluate(`!!document.querySelector('[aria-label="Редактировать: Мои изменения"]')`),true);
+ assert.equal(await evaluate(`[...document.querySelectorAll('button')].find(button=>button.textContent==='Копировать ссылку для учеников').disabled`),true,'Admin must choose the repertoire owner');
+ await poll(()=>evaluate(`!![...document.querySelector('[name=shareOwner]').options].find(option=>option.textContent==='teacher@example.test')`),'Readable owner options missing');
+ await evaluate(`(()=>{const select=document.querySelector('[name=shareOwner]');select.value=[...select.options].find(option=>option.textContent==='teacher@example.test').value;select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+ await click('Копировать ссылку для учеников');await expectText('Ссылка на репертуар скопирована');
+ assert.equal(await evaluate(`(async()=>new URL(await navigator.clipboard.readText()).search)()`),guestList,'Admin and owner must copy the same repertoire URL');
  await click('Выйти');await expectText('Вход');await submit('outsider@example.test','fictional password 123');await expectText('Преподаватель');await expectText('Мои изменения');
  assert.equal(await evaluate(`!!document.querySelector('[aria-label="Редактировать: Мои изменения"]')`),false);
  song=(await api('/songs/'+id)).body;

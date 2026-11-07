@@ -98,7 +98,7 @@ func (f *fixture) open() {
 	if e != nil {
 		f.t.Fatal(e)
 	}
-	a, e := auth.New(f.db, origin, false)
+	a, e := auth.New(f.db, origin, false, f.dir)
 	if e != nil {
 		f.t.Fatal(e)
 	}

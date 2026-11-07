@@ -47,7 +47,7 @@ func setup(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.s, err = New(f.db, "https://choir.example.test", false)
+	f.s, err = New(f.db, "https://choir.example.test", false, f.dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestInvalidCredentialsAndPersistentLimiter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	restarted, err := New(f.db, f.s.Origin, false)
+	restarted, err := New(f.db, f.s.Origin, false, f.dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,14 +353,14 @@ func TestInputAndLocalBoundary(t *testing.T) {
 	f.handler.ServeHTTP(w, r)
 	expect(t, w, 422)
 	for _, origin := range []string{"http://choir.example.test", "https://choir.example.test/", "https://user@choir.example.test", "https://choir.example.test?x=1"} {
-		if _, err := New(f.db, origin, false); err == nil {
+		if _, err := New(f.db, origin, false, f.dir); err == nil {
 			t.Fatal("unsafe origin accepted")
 		}
 	}
-	if _, err := New(f.db, "http://0.0.0.0:8080", true); err == nil {
+	if _, err := New(f.db, "http://0.0.0.0:8080", true, f.dir); err == nil {
 		t.Fatal("nonlocal HTTP accepted")
 	}
-	local, err := New(f.db, "http://127.0.0.1:8080", true)
+	local, err := New(f.db, "http://127.0.0.1:8080", true, f.dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +395,7 @@ func TestIdentityBoundaryAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.s, err = New(f.db, f.s.Origin, false)
+	f.s, err = New(f.db, f.s.Origin, false, f.dir)
 	if err != nil {
 		t.Fatal(err)
 	}

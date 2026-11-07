@@ -36,7 +36,7 @@ func TestLoginGlobalBudget(t *testing.T) {
 	}
 	expect(t, loginRequest(f.s, "teacher@example.test", sample), 200)
 	// Recreating the service must not reset the persistent budget.
-	restarted, err := New(f.db, f.s.Origin, false)
+	restarted, err := New(f.db, f.s.Origin, false, f.dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestLoginCooldownAndLegacyLocks(t *testing.T) {
 			if w.Header().Get("Retry-After") != "30" {
 				t.Fatal("lock not capped at 30 seconds")
 			}
-			restarted, err := New(f.db, f.s.Origin, false)
+			restarted, err := New(f.db, f.s.Origin, false, f.dir)
 			if err != nil {
 				t.Fatal(err)
 			}

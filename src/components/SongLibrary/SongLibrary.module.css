@@ -4,15 +4,16 @@
 .heading { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .header h1 { font-weight: 300; margin: 0; font-size: 22px; letter-spacing: 0.02em; line-height: 1.2; }
 .count { color: var(--color-text-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-.headerActions, .actions { display: flex; align-items: center; gap: var(--space-2); }
+.headerActions { display: flex; align-items: center; gap: var(--space-2); }
 .filters { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 8px; margin-bottom: 8px; }
 .search, .sort { min-width: 0; }
 .search { position: relative; }
 .search > svg { position: absolute; left: 10px; top: 12px; pointer-events: none; color: var(--color-text-muted); }
 .list { list-style: none; padding: 0; margin: 0; }
-.song { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; border-bottom: 1px solid var(--color-border); padding: 8px 0; }
+.song { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); align-items: center; border-bottom: 1px solid var(--color-border); padding: 8px 0; }
+.editableSong { grid-template-columns: minmax(0, 1fr) auto auto; }
 .songLink { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; min-height: 48px; color: var(--color-text); text-decoration: none; }
-.song h2 { font-size: 15px; font-weight: 500; line-height: 1.35; margin: 0; overflow-wrap: anywhere; }
+.songLink h2 { font-size: 15px; font-weight: 500; line-height: 1.35; margin: 0; overflow-wrap: anywhere; }
 .songLink:hover h2 { color: var(--color-accent-strong); text-decoration: underline; }
 .metadata, .owner { font-size: 11px; line-height: 1.5; margin: 0; color: var(--color-text-muted); }
 .metadata span { padding: 0 2px; }
@@ -22,11 +23,13 @@
 .notice { margin: var(--space-2) 0; }
 @media (min-width: 640px) { .page { padding: 20px 24px; } .filters { grid-template-columns: minmax(0, 1fr) 160px; } }
 
-.sharePanel { max-width: 664px; margin: 0 auto; padding: 16px; overflow-wrap: anywhere; }
 .shareAction { margin: var(--space-1); }
-.sharePanel a { display: block; }
+.sharing { display: grid; gap: var(--space-3); margin: var(--space-3) 0 var(--space-5); }
+.shareOwner { display: grid; gap: var(--space-2); min-width: 0; font-size: var(--font-sm); }
+.shareOwner select { width: 100%; min-width: 0; }
+/* Let the copy receipt span the song without taking width from its title. */
+.actions { display: contents; }
+.actions > button { grid-column: 2; }
+@media (max-width: 479px) { .songLink { grid-column: 1 / -1; } }
 
 .sessionHeader { width: 100%; max-width: 696px; margin: auto; padding: 16px 16px 0; overflow-wrap: anywhere; }
-
-
-.sharePanel h2 { font-weight: 300; letter-spacing: 0.01em; }

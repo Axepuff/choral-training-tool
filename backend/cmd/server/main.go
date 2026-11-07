@@ -72,7 +72,7 @@ func run() int {
 			return 1
 		}
 	}
-	identity, err := auth.New(db, origin, local == "true")
+	identity, err := auth.New(db, origin, local == "true", c.DataDir)
 	if err != nil {
 		log.Error("invalid_auth_configuration")
 		return 1

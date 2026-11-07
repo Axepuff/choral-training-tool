@@ -48,7 +48,7 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { f.db.Close() })
-	a, e := auth.New(f.db, origin, false)
+	a, e := auth.New(f.db, origin, false, f.dir)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -691,7 +691,7 @@ func TestReplayAfterRestart(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	a, e := auth.New(f.db, origin, false)
+	a, e := auth.New(f.db, origin, false, f.dir)
 	if e != nil {
 		t.Fatal(e)
 	}

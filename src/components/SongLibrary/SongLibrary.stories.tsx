@@ -2,10 +2,27 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test';
 import { mockSongs } from './mockSongs';
 import { SongLibrary } from './SongLibrary';
+import type { SongLibraryProps } from './SongLibrary';
+import { useState } from 'react';
+import { ShareActions } from '../Sharing/ShareActions';
+import { Select } from '../ui/Select';
+import { sharingFixture } from '../../stories/workflows/sharingFixture';
+import styles from './SongLibrary.module.css';
+
+function LibraryFixture(args: SongLibraryProps) {
+  const [service] = useState(() => sharingFixture());
+  const [selected, setSelected] = useState('');
+  const owner = args.role === 'admin' ? selected : 'elena@example.invalid';
+  return <SongLibrary {...args} shareActions={<>
+    {args.role === 'admin' && <label className={styles.shareOwner}>Чей репертуар передать<Select value={selected} onChange={event => setSelected(event.target.value)}><option value="">Выберите преподавателя</option><option>elena@example.invalid</option><option>admin@example.invalid</option></Select></label>}
+    <ShareActions kind="list" service={service} target={owner ? { scope: { kind: 'list', ownerId: owner }, ownerLabel: owner, empty: !args.songs?.some(song => song.shared) } : null} />
+  </>} songActions={song => <ShareActions kind="song" service={service} target={{ scope: { kind: 'song', songId: song.id }, title: song.title, ownerLabel: song.owner === 'Администратор' ? 'admin@example.invalid' : 'elena@example.invalid', unavailable: song.shared ? undefined : 'Сначала опубликуйте её в редакторе.' }} />} />;
+}
 
 const meta = {
   args: { role: 'teacher', songs: mockSongs },
   id: 'pages-song-library', title: 'Страницы/Список песен', component: SongLibrary,
+  render: args => <LibraryFixture {...args} />,
   parameters: { layout: 'fullscreen', docs: { description: { component: 'Библиотека на явных fixtures. Роли в stories демонстрируют видимость; сервер проверяет права независимо. Ссылки stories открывают макет плеера, а runtime использует публичные токены.' } } },
 } satisfies Meta<typeof SongLibrary>;
 export default meta;
@@ -50,7 +67,8 @@ export const SharedReadOnly: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.queryByRole('link', { name: 'Создать песню' })).not.toBeInTheDocument();
     await expect(canvas.queryByRole('button', { name: /^Редактировать:/ })).not.toBeInTheDocument();
-    await expect(canvas.queryByRole('button', { name: 'Ссылка на список' })).not.toBeInTheDocument();
+    await expect(canvas.queryByRole('button', { name: 'Копировать ссылку для учеников' })).not.toBeInTheDocument();
+    await expect(canvas.queryByRole('button', { name: /^Скопировать ссылку:/ })).not.toBeInTheDocument();
     await expect(canvas.getAllByRole('listitem')).toHaveLength(2);
     await expect(canvas.getByRole('link', { name: 'Открыть: Тихий вечер' })).toBeVisible();
   },

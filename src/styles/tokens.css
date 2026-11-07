@@ -36,6 +36,7 @@
   --color-control-border: #e2e6ec;
   --color-text: #292d35;
   --color-text-muted: #5c626d;
+  --color-dialog-backdrop: rgb(41 45 53 / 25%);
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235c626d' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   --color-border: #c3c7cf;
   --color-accent: #fd7202;

@@ -6,8 +6,9 @@ import { ApiError } from '../../api/client';
 import { getSong, listSongs, songForm, writeSong } from '../../api/songs';
 import type { Song } from '../../api/songs';
 import { getJob, uploadFile } from '../../api/uploads';
-import { createShare, listShares, revokeShare, rotateShare } from '../../api/shares';
-import type { Share } from '../../api/shares';
+import { listShareOwners, sharingService } from '../../api/shares';
+import { ShareActions } from '../Sharing/ShareActions';
+import { Select } from '../ui/Select';
 import { CreateSong } from '../CreateSong/CreateSong';
 import type { SongFormValue } from '../CreateSong/CreateSong';
 import { RehearsalPlayer } from '../RehearsalPlayer/RehearsalPlayer';
@@ -16,40 +17,6 @@ import styles from './SongLibrary.module.css';
 const message = (e: unknown) => e instanceof ApiError && ['version_conflict', 'precondition_failed'].includes(e.problem.code)
   ? 'Песня изменена на сервере. Ваши поля сохранены в форме. Сверьте данные и повторите сохранение.'
   : e instanceof Error ? e.message : 'Не удалось выполнить запрос.';
-
-function SharePanel({ owner, songId, close }: { owner: string; songId?: string; close: () => void }) {
-  const [shares, setShares] = useState<Share[] | null>(null);
-  const [url, setUrl] = useState('');
-  const urlShareId = useRef('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const key = useRef(crypto.randomUUID());
-  async function refresh() {
-    const result = await listShares(owner);
-    setShares(result.items.filter(s => songId ? s.songId === songId : s.kind === 'list'));
-  }
-  useEffect(() => { let active = true; void listShares(owner).then(r => { if (active) setShares(r.items.filter(s => songId ? s.songId === songId : s.kind === 'list')); }, e => { if (active) setError(message(e)); }); return () => { active = false; }; }, [owner, songId]);
-  async function run(action: () => Promise<void>) {
-    setBusy(true); setError('');
-    try { await action(); await refresh(); } catch (e) { setError(message(e)); } finally { setBusy(false); }
-  }
-  return <section className={styles.sharePanel} aria-label="Публичные ссылки">
-    <h2>Публичные ссылки</h2>
-    {!shares && !error && <Message tone="muted" role="status">Загрузка ссылок…</Message>}
-    {shares?.map(s => <div key={s.id}><p>{s.disabledAt ? 'Ссылка отозвана' : 'Ссылка действует'} · {new Date(s.createdAt).toLocaleString('ru')}</p>
-      <Button className={styles.shareAction} disabled={busy} onClick={() => void run(async () => { setUrl(''); const result = await rotateShare(s.id); urlShareId.current = result.share.id; setUrl(new URL(result.url, window.location.origin).href); })}>Заменить ссылку</Button>
-      {!s.disabledAt && <Button className={styles.shareAction} disabled={busy} onClick={() => void run(async () => { await revokeShare(s.id); if (urlShareId.current === s.id) setUrl(''); })}>Отозвать ссылку</Button>}
-    </div>)}
-    <p>Старый адрес сервер не раскрывает. Замена отключает старый адрес. В список попадают только опубликованные готовые песни.</p>
-    <Button className={styles.shareAction} disabled={busy || !shares} onClick={() => void run(async () => {
-      const result = await createShare(songId ? { kind: 'song', songId } : { kind: 'list', ownerId: owner }, key.current);
-      urlShareId.current = result.share.id; setUrl(new URL(result.url, window.location.origin).href); key.current = crypto.randomUUID();
-    })}>Создать новую ссылку</Button>
-    {url && <><a href={url} target="_blank" rel="noreferrer">{url}</a><Button className={styles.shareAction} onClick={() => void navigator.clipboard.writeText(url).catch(() => setError('Не удалось скопировать. Скопируйте адрес вручную.'))}>Копировать</Button></>}
-    {error && <Message tone="error" role="alert">{error}</Message>}
-    <Button className={styles.shareAction} disabled={busy} onClick={close}>Закрыть</Button>
-  </section>;
-}
 
 function SongEditor({ id, close, user }: { id: string | null; close: () => void; user: User }) {
   const [listen, setListen] = useState(() => new URLSearchParams(window.location.search).get("play") === "1");
@@ -183,8 +150,19 @@ export function LiveLibrary({ user, create, editId }: { user: User; create: bool
   const [filter, setFilter] = useState({ q: '', sort: 'updated_desc' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [sharing, setSharing] = useState<{ owner: string; songId?: string } | null>(null);
+  const [owners, setOwners] = useState<User[]>([]);
+  const [ownerId, setOwnerId] = useState('');
+  const [ownersError, setOwnersError] = useState('');
+  const [ownersRetry, setOwnersRetry] = useState(0);
   const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    if (user.role !== 'admin') return;
+    const abort = new AbortController();
+    void listShareOwners(abort.signal).then(result => {
+      if (!abort.signal.aborted) { setOwners(result); setOwnersError(''); }
+    }, failure => { if (!abort.signal.aborted) setOwnersError(message(failure)); });
+    return () => abort.abort();
+  }, [user.role, ownersRetry]);
   useEffect(() => {
     const abort = new AbortController();
     const timer = window.setTimeout(() => {
@@ -194,15 +172,34 @@ export function LiveLibrary({ user, create, editId }: { user: User; create: bool
     return () => { window.clearTimeout(timer); abort.abort(); };
   }, [filter, retry]);
   if (create || editId) return <SongEditor user={user} id={editId} close={() => { window.location.href = '?page=library'; }} />;
+  const owner = user.role === 'teacher' ? user : owners.find(account => account.id === ownerId);
+  const ownerLabel = (id: string) => id === user.id ? user.email : owners.find(account => account.id === id)?.email;
+  const edit = (id: string) => { window.location.href = `?page=edit-song&id=${id}`; };
   return <>
-    <SongLibrary role={user.role} songs={songs.map(s => ({ id: s.id, title: s.title, bpm: s.bpm, meter: `${s.beatsPerBar}/${s.beatUnit}`, tracks: s.tracks.length, bars: 4, owner: s.ownerId, updatedAt: s.updatedAt, shared: s.publication === 'published' && s.ready }))}
+    <SongLibrary role={user.role} songs={songs.map(s => ({ id: s.id, title: s.title, bpm: s.bpm, meter: `${s.beatsPerBar}/${s.beatUnit}`, tracks: s.tracks.length, bars: 4, owner: ownerLabel(s.ownerId) ?? 'Загрузка владельца…', updatedAt: s.updatedAt, shared: s.publication === 'published' && s.ready }))}
+      shareActions={<>
+        {user.role === 'admin' && <label className={styles.shareOwner}>Чей репертуар передать
+          <Select name="shareOwner" value={ownerId} disabled={!owners.length} onChange={event => setOwnerId(event.target.value)}>
+            <option value="">{ownersError ? 'Не удалось загрузить преподавателей' : owners.length ? 'Выберите преподавателя' : 'Загрузка преподавателей…'}</option>
+            {owners.map(account => <option key={account.id} value={account.id}>{account.email}{account.id === user.id ? ' · ваш репертуар' : ''}{account.blocked ? ' · вход заблокирован' : ''}</option>)}
+          </Select>
+        </label>}
+        {ownersError && <><Message tone="error" role="alert">{ownersError}</Message><Button onClick={() => setOwnersRetry(value => value + 1)}>Повторить загрузку преподавателей</Button></>}
+        <ShareActions key={owner?.id ?? 'unselected'} kind="list" service={sharingService} target={owner ? { scope: { kind: 'list', ownerId: owner.id }, ownerLabel: owner.email, empty: !loading && !error && !filter.q.trim() && !songs.some(song => song.ownerId === owner.id && song.publication === 'published' && song.ready) } : null} />
+      </>}
+      songActions={librarySong => {
+        const song = songs.find(item => item.id === librarySong.id)!;
+        const label = ownerLabel(song.ownerId);
+        return <ShareActions key={song.id} kind="song" service={sharingService} disabled={!label} target={{ scope: { kind: 'song', songId: song.id }, ownerLabel: label ?? '', title: song.title,
+          unavailable: !song.ready ? 'Дождитесь обработки всех партий или исправьте ошибки в редакторе.' : song.publication !== 'published' ? 'Сначала опубликуйте её в редакторе.' : undefined,
+          onEdit: () => edit(song.id),
+        }} />;
+      }}
       loading={loading} error={error} songHref={id => `?page=edit-song&id=${id}&play=1`} live={{
-        canEdit: s => user.role === 'admin' || s.owner === user.id,
-        onEdit: id => { window.location.href = `?page=edit-song&id=${id}`; },
-        onShare: id => { const song = songs.find(s => s.id === id); setSharing(song ? { owner: song.ownerId, songId: song.id } : { owner: user.id }); },
+        canEdit: s => user.role === 'admin' || songs.find(song => song.id === s.id)?.ownerId === user.id,
+        onEdit: edit,
         onFilter: (q, sort) => setFilter({ q, sort: sort === 'title' ? 'title_asc' : 'updated_desc' }),
       }} />
     {error && <Button onClick={() => setRetry(r => r + 1)}>Повторить загрузку</Button>}
-    {sharing && <SharePanel {...sharing} close={() => setSharing(null)} />}
   </>;
 }

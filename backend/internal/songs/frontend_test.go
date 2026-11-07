@@ -73,7 +73,7 @@ func TestSongsFrontendBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	identity, err := auth.New(db, origin, true)
+	identity, err := auth.New(db, origin, true, dir)
 	if err != nil {
 		t.Fatal(err)
 	}

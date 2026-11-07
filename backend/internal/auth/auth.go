@@ -3,6 +3,7 @@ package auth
 
 import (
 	"context"
+	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -32,18 +33,19 @@ var ErrCSRF = errors.New("csrf_failed")
 var ErrPasswordChange = errors.New("password_change_required")
 
 type Service struct {
-	DB        *sql.DB
-	Origin    string
-	Local     bool
-	now       func() time.Time
-	dummy     string
-	loginSlot chan struct{}
-	verify    func(string, string) bool
+	DB         *sql.DB
+	Origin     string
+	Local      bool
+	now        func() time.Time
+	dummy      string
+	loginSlot  chan struct{}
+	verify     func(string, string) bool
+	accountKey cipher.AEAD
 }
 
 // New requires a fixed external origin; proxy headers and request Host are untrusted.
 // HTTP/cookie exceptions are restricted to an explicit loopback origin.
-func New(db *sql.DB, origin string, local bool) (*Service, error) {
+func New(db *sql.DB, origin string, local bool, dir string) (*Service, error) {
 	u, err := url.Parse(origin)
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" || u.Opaque != "" {
 		return nil, errors.New("invalid auth origin")
@@ -60,7 +62,11 @@ func New(db *sql.DB, origin string, local bool) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{DB: db, Origin: origin, Local: local, now: time.Now, dummy: dummy, loginSlot: make(chan struct{}, 1), verify: users.Verify}, nil
+	key, _, err := platform.ResponseKey(dir, "share-responses.key")
+	if err != nil {
+		return nil, err
+	}
+	return &Service{DB: db, Origin: origin, Local: local, now: time.Now, dummy: dummy, loginSlot: make(chan struct{}, 1), verify: users.Verify, accountKey: key}, nil
 }
 func (s *Service) cookieName() string {
 	if s.Local {
@@ -238,6 +244,7 @@ func (s *Service) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/logout", s.logout)
 	mux.HandleFunc("PUT /api/v1/auth/password", s.password)
 	mux.HandleFunc("PUT /api/v1/admin/users/{userId}/password", s.reset)
+	mux.HandleFunc("GET /api/v1/admin/users", s.accounts)
 }
 func (s *Service) me(w http.ResponseWriter, r *http.Request) {
 	a, err := s.session(r.Context(), s.DB, r)

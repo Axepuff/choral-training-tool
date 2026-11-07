@@ -4,6 +4,7 @@ import { Input } from '../ui/Input';
 import { ActionLink } from '../ui/ActionLink';
 import { Button } from '../ui/Button';
 import { useId, useState } from 'react';
+import type { ReactNode } from 'react';
 import { appUrl } from '../../navigation/appUrl';
 import { CreateSong } from '../CreateSong/CreateSong';
 import type { SongFormValue } from '../CreateSong/CreateSong';
@@ -12,7 +13,9 @@ import { LibraryIcon } from './LibraryIcon';
 import styles from './SongLibrary.module.css';
 
 export interface SongLibraryProps {
-  live?: { canEdit: (song: LibrarySong) => boolean; onEdit: (id: string) => void; onShare: (id?: string) => void; onFilter: (query: string, sort: string) => void };
+  live?: { canEdit: (song: LibrarySong) => boolean; onEdit: (id: string) => void; onFilter: (query: string, sort: string) => void };
+  shareActions?: ReactNode;
+  songActions?: (song: LibrarySong) => ReactNode;
   loading?: boolean;
   error?: string;
   songHref?: (id: string) => string;
@@ -22,7 +25,7 @@ export interface SongLibraryProps {
   initialQuery?: string;
 }
 
-export function SongLibrary({ role = 'guest', songs = [], initialQuery = '', songHref, live, loading, error }: SongLibraryProps) {
+export function SongLibrary({ role = 'guest', songs = [], initialQuery = '', songHref, live, loading, error, shareActions, songActions }: SongLibraryProps) {
   const id = useId();
   const [query, setQuery] = useState(initialQuery);
   const [sort, setSort] = useState('recent');
@@ -34,13 +37,6 @@ export function SongLibrary({ role = 'guest', songs = [], initialQuery = '', son
   const canCreate = role !== 'guest';
   const available = live ? songs : librarySongs.filter((song) => song.shared || canEdit(song));
   const editingSong = librarySongs.find((song) => song.id === editingId && canEdit(song));
-
-  async function copyLink(query: string, success: string) {
-    try {
-      await navigator.clipboard.writeText(appUrl(query));
-      setNotice(success);
-    } catch { setNotice('Не удалось скопировать ссылку. Попробуйте ещё раз.'); }
-  }
 
   if (editingSong) {
     const [beats, unit] = editingSong.meter.split('/').map(Number);
@@ -72,15 +68,12 @@ export function SongLibrary({ role = 'guest', songs = [], initialQuery = '', son
       <header className={styles.header}>
         <div className={styles.heading}><h1>Песни</h1><span className={styles.count} aria-label={`Песен: ${available.length}`}>{available.length}</span></div>
         {canCreate && <div className={styles.headerActions}>
-          <Button size="icon" type="button" aria-label="Ссылка на список" title="Скопировать ссылку на список"
-            onClick={() => live ? live.onShare() : copyLink('?page=library&list=choir-demo', 'Демо-ссылка на список скопирована.')}>
-            <LibraryIcon name="link" />
-          </Button>
-          <ActionLink variant="primary" size="icon" href={appUrl('?page=create-song')} target="_top" aria-label="Создать песню" title="Создать песню">
+          <ActionLink size="icon" href={appUrl('?page=create-song')} target="_top" aria-label="Создать песню" title="Создать песню">
             <LibraryIcon name="add" />
           </ActionLink>
         </div>}
       </header>
+      {canCreate && shareActions && <div className={styles.sharing}>{shareActions}</div>}
       {(live || available.length > 0) && <div className={styles.filters}>
         <label className={styles.search} htmlFor={`${id}-search`}><span className="visually-hidden">Найти песню</span>
           <LibraryIcon name="search" />
@@ -95,20 +88,17 @@ export function SongLibrary({ role = 'guest', songs = [], initialQuery = '', son
       </div>}
       {notice && <Message tone="info" variant="banner" className={styles.notice} role="status">{notice}</Message>}
       {loading ? <Message tone="muted" role="status">Загрузка песен…</Message> : error ? <Message tone="error" role="alert">{error}</Message> : matches.length > 0 ? <ul className={styles.list} aria-label="Песни">
-        {matches.map((song) => <li className={styles.song} key={song.id}>
+        {matches.map((song) => <li className={`${styles.song} ${canEdit(song) ? styles.editableSong : ''}`} key={song.id}>
           <a className={styles.songLink} href={songHref ? songHref(song.id) : appUrl(`?song=${song.id}`)} target="_top" aria-label={`Открыть: ${song.title}`}>
             <h2>{song.title}</h2>
             <p className={styles.metadata}>{song.bpm} BPM <span>·</span> {song.meter} <span>·</span> {song.tracks} треков</p>
             {role === 'admin' && <p className={styles.owner}>{song.owner}</p>}
+            {canEdit(song) && <p className={styles.owner}>{song.shared ? 'Доступна ученикам' : 'Недоступна ученикам'}</p>}
           </a>
           <div className={styles.actions}>
             {canEdit(song) && <Button size="icon" type="button" aria-label={`Редактировать: ${song.title}`} title="Редактировать песню"
               onClick={() => { if (live) { live.onEdit(song.id); return; } setEditingId(song.id); setNotice(''); window.scrollTo(0, 0); }}><LibraryIcon name="edit" /></Button>}
-            <Button size="icon" type="button" disabled={live ? !canEdit(song) : !song.shared} aria-label={`Скопировать ссылку: ${song.title}`}
-              title={song.shared ? 'Скопировать ссылку на песню' : 'Песня не опубликована'}
-              onClick={() => live ? live.onShare(song.id) : copyLink(songHref ? new URL(songHref(song.id)).search : `?song=${song.id}`, `${songHref ? 'Ссылка' : 'Демо-ссылка'} на «${song.title}» скопирована.`)}>
-              <LibraryIcon name={song.shared ? 'link' : 'private'} />
-            </Button>
+            {canEdit(song) && songActions?.(song)}
           </div>
         </li>)}
       </ul> : <section className={styles.empty} aria-label={hasSearch ? 'Ничего не найдено' : 'Нет песен'}>
