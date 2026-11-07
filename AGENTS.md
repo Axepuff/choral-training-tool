@@ -107,6 +107,8 @@ container readiness. Check live Issues for status.
 - During implementation, keep checks focused. Run broader applicable checks
   once the change is ready for review; repeat only if subsequent edits or failures
   invalidate the earlier results.
+- For CI selection, required-check changes, or frontend artifact delivery, read
+  `docs/ci.md`. Visual PRs record affected stories, viewport/state checks and results.
 - Read `docs/e2e.md` for commands, prerequisites, and coverage; required CI checks
   live in `.github/workflows/checks.yml`, scripts in `package.json`. Run frontend
   commands from the root and Go commands from `backend/`. Verify `go version`

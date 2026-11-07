@@ -6,8 +6,27 @@ on:
 permissions:
   contents: read
 jobs:
-  frontend:
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      plan: ${{ steps.select.outputs.plan }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - id: select
+        run: python3 scripts/ci.py plan
+      - run: python3 scripts/check-ci.py
+      - name: Whitespace in the tested commit
+        run: git show --format= --check HEAD
+
+  frontend:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.plan).frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      sha256: ${{ steps.artifact.outputs.sha256 }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -15,72 +34,66 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - name: Build production artifact once (includes typecheck)
+        id: artifact
+        run: |
+          python3 scripts/frontend-release.py build --output "$RUNNER_TEMP/frontend/frontend.tar"
+          echo "sha256=$(cut -d ' ' -f 1 "$RUNNER_TEMP/frontend/frontend.tar.sha256")" >> "$GITHUB_OUTPUT"
+      - if: fromJSON(needs.changes.outputs.plan).auth
+        run: npm run test:auth
       - name: Install FFmpeg for audio regressions
+        if: fromJSON(needs.changes.outputs.plan).audio
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends ffmpeg
-      - run: npm run test:auth
-      - run: npm run test:audio
+      - if: fromJSON(needs.changes.outputs.plan).audio
+        run: npm run test:audio
       - name: Browser audio regressions
+        if: fromJSON(needs.changes.outputs.plan).audio
         timeout-minutes: 5
-        run: |
-          google-chrome --version
-          npm run test:audio:browser
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm run test:agent-queue
-      - run: npm run build
-      - run: npm run build-storybook
-      - run: node scripts/assemble-pages.mjs
-      - name: Execute every Storybook story and play
+        run: npm run test:audio:browser
+      - name: Build affected stories
+        if: toJSON(fromJSON(needs.changes.outputs.plan).stories) != '[]'
+        env:
+          CHORAL_STORIES: ${{ toJSON(fromJSON(needs.changes.outputs.plan).stories) }}
+        run: npm run build-storybook
+      - name: Execute affected stories and play
+        if: toJSON(fromJSON(needs.changes.outputs.plan).stories) != '[]'
         timeout-minutes: 8
         run: npm run test:stories
+      - name: Store candidate bytes (admission requires the aggregate check)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frontend-${{ github.sha }}
+          path: ${{ runner.temp }}/frontend/
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true # Explicit reruns replace this run's candidate/admission together.
+
   backend:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.plan).backend
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Install FFmpeg and FFprobe
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends ffmpeg sqlite3 nginx
-          sqlite3 --version
-          ffmpeg -version
-          ffprobe -version
+      - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends ffmpeg sqlite3
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
-      - run: go version && go env GOVERSION GOOS GOARCH
-      - run: go mod download
-      - run: go mod verify
+      - run: go version && go mod verify
       - run: go test -count=1 ./...
       - run: go vet ./...
-      - name: Proxy logs never contain public tokens
-        run: |
-          python3 ../scripts/check-proxy-logs.py
-          python3 ../scripts/check-proxy-logs.py --deployment
-      - name: Scheduled backup failure recovery
-        run: python3 ../scripts/check-scheduled-backup.py
-      - name: Second filesystem backup copy
-        run: python3 ../scripts/check-backup-copy.py
-      - name: Backup freshness and second copy health
-        run: python3 ../scripts/check-backup-health.py
-      - name: Backup retention preserves recoverable pairs
-        run: python3 ../scripts/check-backup-retention.py
-      - name: Caddy shared-host TLS and privacy regressions
-        timeout-minutes: 3
-        run: |
-          mkdir -p "$RUNNER_TEMP/choral-caddy"
-          curl --fail --location --retry 3 --output "$RUNNER_TEMP/choral-caddy/caddy.tar.gz" https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_amd64.tar.gz
-          echo "727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b  $RUNNER_TEMP/choral-caddy/caddy.tar.gz" | sha256sum --check
-          tar -xzf "$RUNNER_TEMP/choral-caddy/caddy.tar.gz" -C "$RUNNER_TEMP/choral-caddy" caddy
-          PATH="$RUNNER_TEMP/choral-caddy:$PATH" python3 ../scripts/check-caddy.py
       - run: go build -o /tmp/choral-server ./cmd/server
 
   e2e:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.plan).e2e
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -94,12 +107,99 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
       - run: npm ci --no-audit --no-fund
-      - name: Install real audio tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends ffmpeg
-          google-chrome --version
-          ffmpeg -version
-          ffprobe -version
+      - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends ffmpeg
+      - run: npm run build:e2e
       - name: Real HTTP SQLite FFmpeg and browser flows
-        run: npm run test:e2e
+        working-directory: backend
+        env:
+          PACKAGES: ${{ join(fromJSON(needs.changes.outputs.plan).e2e_packages, ' ') }}
+          CHORAL_BROWSER_TEST: 'true'
+        run: go test -p=1 -count=1 -timeout=6m $PACKAGES -run FrontendBrowser -v
+
+  infrastructure:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.plan).infrastructure
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends ffmpeg sqlite3 nginx
+      - name: Backup failure, copy, health and retention
+        if: fromJSON(needs.changes.outputs.plan).backup
+        run: |
+          python3 scripts/check-scheduled-backup.py
+          python3 scripts/check-backup-copy.py
+          python3 scripts/check-backup-health.py
+          python3 scripts/check-backup-retention.py
+      - name: Proxy privacy
+        if: fromJSON(needs.changes.outputs.plan).proxy
+        run: |
+          python3 scripts/check-proxy-logs.py
+          python3 scripts/check-proxy-logs.py --deployment
+      - name: Caddy TLS and privacy
+        if: fromJSON(needs.changes.outputs.plan).proxy
+        timeout-minutes: 3
+        run: |
+          mkdir -p "$RUNNER_TEMP/choral-caddy"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/choral-caddy/caddy.tar.gz" https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_amd64.tar.gz
+          echo "727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b  $RUNNER_TEMP/choral-caddy/caddy.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/choral-caddy/caddy.tar.gz" -C "$RUNNER_TEMP/choral-caddy" caddy
+          PATH="$RUNNER_TEMP/choral-caddy:$PATH" python3 scripts/check-caddy.py
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: fromJSON(needs.changes.outputs.plan).release || fromJSON(needs.changes.outputs.plan).container
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Build isolated server
+        if: fromJSON(needs.changes.outputs.plan).release || fromJSON(needs.changes.outputs.plan).container
+        run: cd backend && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/choral-server" ./cmd/server
+      - name: Frontend publication with real Go server
+        if: fromJSON(needs.changes.outputs.plan).release
+        run: python3 scripts/check-frontend-release.py --server "$RUNNER_TEMP/choral-server"
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: fromJSON(needs.changes.outputs.plan).container
+        with:
+          node-version: '24'
+      - name: Container persistence, backup and clean restore
+        if: fromJSON(needs.changes.outputs.plan).container
+        run: sh scripts/check-container.sh
+      - name: External frontend mount and restore
+        if: fromJSON(needs.changes.outputs.plan).container
+        run: |
+          docker build -t choral:ci-frontend .
+          python3 scripts/check-frontend-container.py --image choral:ci-frontend --server "$RUNNER_TEMP/choral-server"
+          image=$(docker image inspect choral:ci-frontend --format '{{.Id}}')
+          # nsenter reads the network-isolated disposable container; it requires root.
+          sudo python3 scripts/check-restore-acceptance.py "$image" --frontend
+
+  queue:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.plan).queue
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - run: npm run test:agent-queue
+
+  required:
+    name: Required checks
+    if: always()
+    needs: [changes, frontend, backend, e2e, infrastructure, queue]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Require every selected job to succeed
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci.py gate
+      - name: Admit exact frontend bytes after all checks (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && fromJSON(needs.changes.outputs.plan).frontend
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frontend-admission-${{ github.sha }}
+          path: ${{ runner.temp }}/admission.json
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true # Explicit reruns replace this run's candidate/admission together.
