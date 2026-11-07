@@ -76,5 +76,6 @@ try {
   for (const item of pending.values()) clearTimeout(item.timer);
   chrome.kill();
   await new Promise(resolve => { chrome.once('exit', resolve); if (chrome.exitCode !== null) resolve(); });
-  await rm(profile, { recursive: true, force: true });
+  // Chrome helper processes can finish profile writes after the main process exits.
+  await rm(profile, { recursive: true, force: true, maxRetries: 5 });
 }

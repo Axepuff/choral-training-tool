@@ -85,7 +85,10 @@ production, base=/, Vite manifest, точный SHA checkout и checksum tar. Ca
 run, `Required checks`, актуальный attempt и admission. Затем сверяет архив
 существующим валидатором #65. Недостающий/истёкший артефакт или checksum mismatch
 не заменяются локальной пересборкой. Повторно запустить исходный CI можно явно;
-это новый допуск, а не скрытая часть deploy. CI не имеет production secrets.
+это новый допуск, а не скрытая часть deploy. Upload при явном rerun заменяет
+артефакт того же run; старый admission от другой attempt отвергается. Уже
+опубликованные байты того же commit по-прежнему защищает immutable publish #65.
+CI не имеет production secrets.
 
 Оператор указывает фактические backend commit/image и явно подтверждает
 совместимость API. Скрипт требует доступной полной Git-истории и backend commit
@@ -134,3 +137,26 @@ container/restore проверки. Его длительность нельзя
 визуального PR. Локально полные frontend/audio/Go/e2e suites не дублируются:
 проверяются новая маршрутизация, workflow syntax, выбранные stories и release smoke;
 полный интеграционный прогон выполняет автоматический CI этого PR.
+
+
+### Локальная проверка реализации
+
+7 ноября: `check-ci.py` прошёл в Windows и WSL; actionlint 1.7.12, TypeScript,
+точечный ESLint и whitespace check прошли. Ограниченная сборка SignIn содержит
+7 stories. Первый Chrome/WSL прогон завис на InvalidCredentials; отдельный
+запуск этой story и повтор всего выбранного набора прошли (7/7). Причина первого
+таймаута не установлена; retry/skip в runner не добавлены. В GitHub frontend
+job первого прогона #69 также прошёл с полным набором stories.
+
+`check-frontend-release.py --server …` прошёл 8 проверок с Go 1.27.3, включая
+HTTP smoke нового архива, старые assets и отказ smoke при другом релизе. Полные
+локальные suites, физические устройства и production не проверялись. Успешное
+получение main admission через GitHub станет доступно после merge; отрицательные
+условия его проверки исполнены локально, PR upload проверен в Actions.
+
+Первый Actions run #69 подтвердил отрицательный путь: frontend/backend/e2e
+прошли, но после успешных browser assertions контейнерный runner получил
+ENOTEMPTY при удалении профиля Chrome. Infrastructure и Required checks стали
+failure, admission не появился. Очистка профиля теперь использует тот же
+ограниченный `fs.rm maxRetries: 5`, что существующий Storybook runner; assertions
+не повторяются. Это исправление lifecycle тестового браузера, не пропуск проверки.

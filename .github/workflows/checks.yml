@@ -69,6 +69,7 @@ jobs:
           path: ${{ runner.temp }}/frontend/
           if-no-files-found: error
           retention-days: 30
+          overwrite: true # Explicit reruns replace this run's candidate/admission together.
 
   backend:
     needs: changes
@@ -200,3 +201,4 @@ jobs:
           path: ${{ runner.temp }}/admission.json
           if-no-files-found: error
           retention-days: 30
+          overwrite: true # Explicit reruns replace this run's candidate/admission together.
