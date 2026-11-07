@@ -4,6 +4,8 @@ import { Select } from '../../components/ui/Select';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { useId, useState } from 'react';
+import { ShareActions } from '../../components/Sharing/ShareActions';
+import { sharingFixture } from './sharingFixture';
 import { CreateSong } from '../../components/CreateSong/CreateSong';
 import type { SongFormValue } from '../../components/CreateSong/CreateSong';
 import { LibraryIcon } from '../../components/SongLibrary/LibraryIcon';
@@ -13,11 +15,11 @@ import styles from './WorkflowPrototype.module.css';
 type SongState = 'published' | 'draft' | 'processing';
 interface Piece { id: string; title: string; state: SongState; parts: number; bpm: number; form?: SongFormValue }
 interface Account { email: string; role: 'admin' | 'teacher'; blocked: boolean; temporary: boolean }
-type Screen = 'songs' | 'share' | 'guest' | 'player' | 'editor' | 'accounts' | 'account';
+type Screen = 'songs' | 'guest' | 'player' | 'editor' | 'accounts' | 'account';
 type Scenario = 'ready' | 'empty' | 'loading' | 'error';
 export interface WorkflowPrototypeProps {
   role?: 'teacher' | 'admin';
-  initialScreen?: 'songs' | 'share' | 'accounts';
+  initialScreen?: 'songs' | 'accounts';
   scenario?: Scenario;
 }
 const initialPieces: Piece[] = [
@@ -57,36 +59,21 @@ export function WorkflowPrototype({ role = 'teacher', initialScreen = 'songs', s
   const [accountMode, setAccountMode] = useState<'detail' | 'create' | 'reset'>('detail');
   const [status, setStatus] = useState(scenario);
   const [notice, setNotice] = useState('');
-  const [shareURLs, setShareURLs] = useState<Record<string, string>>({});
-  const [links, setLinks] = useState([{ id: 1, scope: 'list', active: true }]);
-  const [confirm, setConfirm] = useState<{ kind: 'rotate' | 'revoke' | 'block'; link?: number } | null>(null);
+  const [sharing] = useState(() => sharingFixture());
+  const [owner, setOwner] = useState(role === 'teacher' ? 'elena@example.invalid' : '');
+  const [guestOwner, setGuestOwner] = useState('elena@example.invalid');
+  const [confirm, setConfirm] = useState<{ kind: 'block' } | null>(null);
   const piece = pieces.find(p => p.id === selected);
   const account = accounts.find(a => a.email === accountEmail);
-  const scope = selected ?? 'list';
-  const url = shareURLs[scope];
-  const publicPieces = pieces.filter(p => p.state === 'published' && readyToPublish(p) && (!selected || p.id === selected));
-  const activeLinks = links.filter(l => l.scope === scope && l.active);
-  const go = (next: Screen) => { setScreen(next); setNotice(''); setConfirm(null); setQuery(''); window.scrollTo(0, 0); };
-  function openShare(songId: string | null) { setSelected(songId); go('share'); }
-  function changePublication(target: Piece) {
+  const publicPieces = pieces.filter(p => p.state === 'published' && readyToPublish(p) && (selected ? p.id === selected : guestOwner === 'elena@example.invalid'));
+  const go = (next: Screen) => { setScreen(next); setNotice(''); setConfirm(null); setQuery(''); window.scrollTo(0, 0); };  function changePublication(target: Piece) {
     if (target.state !== 'published' && !readyToPublish(target)) return;
     setPieces(current => current.map(p => p.id === target.id ? { ...p, state: p.state === 'published' ? 'draft' : 'published' } : p));
     setNotice(target.state === 'published'
       ? `«${target.title}»: публикация снята в макете. Ученики больше не видят песню.`
       : `«${target.title}» опубликована в макете и доступна ученикам по ссылке на список.`);
   }
-  function issueLink(replacing?: number) {
-    const nextId = Math.max(0, ...links.map(l => l.id)) + 1;
-    setLinks(current => [...current.map(l => l.id === replacing ? { ...l, active: false } : l), { id: nextId, scope, active: true }]);
-    setShareURLs(current => ({ ...current, [scope]: `https://example.invalid/?${selected ? 'song' : 'list'}=storybook-${nextId}` }));
-    setConfirm(null); setNotice(replacing ? 'Старая ссылка отключена. Передайте ученикам новый адрес.' : 'Ссылка создана. Скопируйте и отправьте ученикам.');
-  }
-  async function copy() {
-    try { await navigator.clipboard.writeText(url ?? ''); setNotice('Ссылка скопирована. Можно отправить ученикам.'); }
-    catch { setNotice('Не удалось скопировать автоматически. Выделите адрес в поле и скопируйте вручную.'); }
-  }
-  const heading = screen === 'accounts' ? 'Аккаунты' : screen === 'account' ? accountMode === 'create' ? 'Новый преподаватель' : accountMode === 'reset' ? 'Сбросить пароль' : 'Аккаунт' : screen === 'share' ? selected ? 'Ссылка на песню' : 'Ссылка на список' : 'Песни';
-
+  const heading = screen === 'accounts' ? 'Аккаунты' : screen === 'account' ? accountMode === 'create' ? 'Новый преподаватель' : accountMode === 'reset' ? 'Сбросить пароль' : 'Аккаунт' : 'Песни';
   if (screen === 'editor') return <div className={styles.root}>
     <div className={styles.editorBack}><small>Макет: файлы не отправляются</small></div>
     <CreateSong key={selected ?? 'new'} live {...(piece ? { initialSong: defaultForm(piece) } : {})}
@@ -109,27 +96,28 @@ export function WorkflowPrototype({ role = 'teacher', initialScreen = 'songs', s
 
   return <div className={styles.root}><div className={styles.shell}>
     {screen !== 'guest' && <nav className={styles.nav} aria-label="Разделы">
-      <div><Button variant="tab" aria-current={screen === 'songs' || screen === 'share' ? 'page' : undefined} onClick={() => go('songs')}>Песни</Button>
+      <div><Button variant="tab" aria-current={screen === 'songs' ? 'page' : undefined} onClick={() => go('songs')}>Песни</Button>
       {role === 'admin' && <Button variant="tab" aria-current={screen === 'accounts' || screen === 'account' ? 'page' : undefined} onClick={() => go('accounts')}>Аккаунты</Button>}</div>
       <span>{role === 'admin' ? 'Администратор' : 'Преподаватель'}</span>
     </nav>}
-    {screen === 'share' && <Button variant="text" size="small" className={styles.back} onClick={() => go('songs')}>‹ К песням</Button>}
-    {screen === 'guest' && <Button variant="text" size="small" className={styles.back} onClick={() => go('share')}>‹ Завершить предпросмотр</Button>}
+    {screen === 'guest' && <Button variant="text" size="small" className={styles.back} onClick={() => go('songs')}>‹ Завершить предпросмотр</Button>}
     {screen === 'account' && <Button variant="text" size="small" className={styles.back} onClick={() => { setAccountMode('detail'); go('accounts'); }}>‹ К аккаунтам</Button>}
     <main>
       <header className={styles.header}>
         <div><h1>{heading}{screen === 'songs' && <span className={styles.count}>{pieces.length}</span>}</h1>
           {screen === 'songs' && <p>Подготовьте партии и передайте песни ученикам.</p>}
           {screen === 'accounts' && <p>Доступ преподавателей к песням и работе с хором.</p>}
-          {screen === 'share' && <p>{selected ? piece?.title : 'Все ваши опубликованные песни, готовые к прослушиванию.'}</p>}
           {screen === 'guest' && <p>Так выглядит список для ученика. Вход не нужен.</p>}
         </div>
         {screen === 'songs' && <div className={styles.headerActions}>
-          <Button size="small" className={styles.secondary} onClick={() => openShare(null)}><LibraryIcon name="link" />Ссылка на список</Button>
-          <Button variant="primary" size="small" className={styles.primary} onClick={() => { setSelected(null); go('editor'); }}><LibraryIcon name="add" />Песня</Button>
+          <Button size="small" onClick={() => { setSelected(null); go('editor'); }}><LibraryIcon name="add" />Песня</Button>
         </div>}
         {screen === 'accounts' && <Button variant="primary" size="small" className={styles.primary} onClick={() => { setAccountEmail(null); setAccountMode('create'); go('account'); }}><LibraryIcon name="add" />Преподаватель</Button>}
       </header>
+      {screen === 'songs' && <div className={styles.sharing}>
+        {role === 'admin' && <label className={styles.field}>Чей репертуар передать<Select name="shareOwner" value={owner} onChange={event => setOwner(event.target.value)}><option value="">Выберите преподавателя</option>{accounts.map(item => <option key={item.email} value={item.email}>{item.email}</option>)}</Select></label>}
+        <ShareActions kind="list" service={sharing} target={owner ? { scope: { kind: 'list', ownerId: owner }, ownerLabel: owner, empty: owner !== 'elena@example.invalid' || !pieces.some(p => p.state === 'published' && readyToPublish(p)) } : null} onPreview={() => { setSelected(null); setGuestOwner(owner); go('guest'); }} />
+      </div>}
       {notice && <Message tone="info" variant="banner" className={styles.notice} role="status">{notice}</Message>}
 
       {(screen === 'songs' || screen === 'guest') && <>
@@ -161,45 +149,13 @@ export function WorkflowPrototype({ role = 'teacher', initialScreen = 'songs', s
               </div>
                 <div className={styles.rowActions}>
                   <Button size="icon" title="Редактировать" aria-label={`Редактировать: ${p.title}`} onClick={() => { setSelected(p.id); go('editor'); }}><LibraryIcon name="edit" /></Button>
-                  <Button size="small" className={styles.linkButton} aria-label={`Ссылка: ${p.title}`} onClick={() => openShare(p.id)}><LibraryIcon name="link" /><span>Ссылка</span></Button>
+                  <ShareActions kind="song" service={sharing} target={{ scope: { kind: 'song', songId: p.id }, title: p.title, ownerLabel: 'elena@example.invalid', unavailable: p.state === 'processing' ? 'Дождитесь обработки всех партий.' : !readyToPublish(p) ? 'Подготовьте все партии в редакторе.' : p.state !== 'published' ? 'Сначала опубликуйте её в редакторе.' : undefined, onEdit: () => { setSelected(p.id); go('editor'); } }} onPreview={() => { setSelected(p.id); go('guest'); }} />
                 </div></>}
             </li>)}
           </ul>
           {!(screen === 'guest' ? publicPieces : pieces).some(p => p.title.toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru'))) && <div className={styles.empty}><h2>{query ? 'Ничего не найдено' : 'Пока нет песен'}</h2><p>{query ? 'Попробуйте другое название.' : 'Начните с названия и голосовых партий. Черновик можно сохранить без файлов.'}</p>{query ? <Button size="small" className={styles.secondary} onClick={() => setQuery('')}>Сбросить поиск</Button> : screen !== 'guest' && <Button variant="primary" size="small" className={styles.primary} onClick={() => { setSelected(null); go('editor'); }}>Создать первую песню</Button>}</div>}
           {screen === 'songs' && pieces.some(p => p.state !== 'published') && <p className={styles.footnote}>Черновики и песни с неготовым аудио ученики не увидят.</p>}
         </>}
-      </>}
-
-      {screen === 'share' && <>
-        <section className={styles.shareContents} aria-labelledby={`${id}-contents`}>
-          <div className={styles.sectionHeading}><h2 id={`${id}-contents`}>Что откроется ученику</h2><span>Песен: {publicPieces.length}</span></div>
-          {publicPieces.length ? <><ul className={styles.previewList}>{publicPieces.map(p => <li key={p.id}><span>{p.title}</span><span>Партий: {p.parts}</span></li>)}</ul>
-            <Button variant="text" size="small" onClick={() => go('guest')}>Посмотреть как ученик</Button></> :
-            <div className={styles.empty}><h3>{piece?.state === 'processing' ? 'Дождитесь обработки аудио' : 'Сначала подготовьте песню'}</h3><p>{piece?.state === 'processing' ? 'Когда все партии будут готовы, песню можно опубликовать.' : 'Добавьте аудио к партиям и опубликуйте сохранённую песню. После этого её можно передать ученикам.'}</p><Button size="small" className={styles.secondary} onClick={() => go(piece ? 'editor' : 'songs')}>{piece ? 'Открыть редактор' : 'К песням'}</Button></div>}
-          {!selected && <p className={styles.help}>Список обновляется автоматически: новые опубликованные песни появятся по этой же ссылке.</p>}
-        </section>
-        {publicPieces.length > 0 && <section className={styles.delivery} aria-label="Передать ссылку">
-          <h2>{url ? 'Ссылка готова' : 'Передать ученикам'}</h2>
-          <p>Любой, кому перешлют ссылку, сможет слушать песни. Редактирование недоступно.</p>
-          {url ? <><label className={styles.field}>Адрес для учеников<Input id={`${id}-url`} name="shareUrl" readOnly value={url} onFocus={e => e.target.select()} /></label><Button variant="primary" size="small" className={styles.primary} onClick={() => void copy()}>Копировать ссылку</Button><p className={styles.help}>Сохраните адрес у себя: после перезагрузки он больше не отображается.</p></> :
-            <Button variant="primary" size="small" className={styles.primary} onClick={() => issueLink()}><LibraryIcon name="link" />Создать ссылку</Button>}
-        </section>}
-        <section className={styles.history} aria-label="Выданные ссылки"><h2>Выданные ссылки <span className={styles.count}>{activeLinks.length}</span></h2>
-          {!activeLinks.length && <p className={styles.help}>Действующих ссылок пока нет.</p>}
-          {activeLinks.length > 0 && <p className={styles.help}>Ранее выданный адрес нельзя показать повторно. Создайте дополнительную ссылку или замените старую.</p>}
-          {activeLinks.map(l => <div className={styles.linkRow} key={l.id}><div><strong>Ссылка №{l.id}</strong><span className={styles.published}>Действует</span></div><div className={styles.rowActions}>
-            <Button variant="text" size="small" disabled={!publicPieces.length} onClick={() => setConfirm({ kind: 'rotate', link: l.id })}>Заменить</Button>
-            <Button variant="dangerText" size="small" onClick={() => setConfirm({ kind: 'revoke', link: l.id })}>Отключить</Button>
-          </div></div>)}
-          {url && <Button variant="text" size="small" onClick={() => issueLink()}>Создать ещё одну ссылку</Button>}
-        </section>
-        {confirm && confirm.kind !== 'block' && <Message as="section" tone="error" variant="confirmation" className={styles.confirm} role="alert" aria-label="Подтверждение действия со ссылкой">
-          <h2>{confirm.kind === 'rotate' ? 'Заменить ссылку?' : 'Отключить ссылку?'}</h2><p>Старый адрес перестанет открываться у всех, кому вы его отправили. Другие ссылки продолжат работать.</p>
-          <div className={styles.actions}><Button variant="danger" size="small" onClick={() => {
-            if (confirm.kind === 'rotate') issueLink(confirm.link);
-            else { setLinks(current => current.map(l => l.id === confirm.link ? { ...l, active: false } : l)); setShareURLs(current => url?.endsWith(`-${confirm.link}`) ? { ...current, [scope]: '' } : current); setConfirm(null); setNotice('Ссылка отключена.'); }
-          }}>{confirm.kind === 'rotate' ? 'Заменить ссылку' : 'Отключить ссылку'}</Button><Button size="small" className={styles.secondary} onClick={() => setConfirm(null)}>Отмена</Button></div>
-        </Message>}
       </>}
 
       {screen === 'accounts' && <>

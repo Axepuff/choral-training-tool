@@ -61,7 +61,7 @@ ADR: [`../decisions/0001-mvp-contract.md`](../decisions/0001-mvp-contract.md).
 | `tracks` | `id`, `song_id` FK, `position` UNIQUE(song,position), `name`, `gain` default 1, `active_asset_id`, `pending_asset_id` | 1–32, произвольные UUID, порядок 0-based; активный asset не меняется до успеха замены |
 | `assets` | `id`, `track_id` FK, `source_path`, `source_name` nullable, `playback_path`, `peaks_path`, `source_bytes`, `source_sha256`, `duration_ms`, `mime`, `sample_rate`, `channels`, `state`, timestamps | внутренние пути из ID; `pending`/`processing`/`ready`/`failed`/`retired`; ready только после проверки артефактов |
 | `jobs` | `id`, `asset_id` FK, `state`, `attempts`, `error_code`, `lease_until`, timestamps | `queued`/`processing`/`succeeded`/`failed`/`canceled`; просроченная lease возвращается в очередь |
-| `shares` | `id`, `kind`, `owner_id` FK, `song_id` nullable FK, `token_hash` UNIQUE, `disabled_at`, timestamps | `song`: song_id задан и owner совпадает; `list`: song_id NULL, динамический каталог owner; rotate заменяет hash в одной транзакции |
+| `shares` | `id`, `kind`, `owner_id` FK, `song_id` nullable FK, `token_hash` UNIQUE, `disabled_at`, timestamps; #70: `permanent`, `version`, `token_ciphertext`, `token_nonce` | `song`: song_id задан и owner совпадает; `list`: song_id NULL; одна постоянная запись на ресурс, включая отключённую; rotate атомарно заменяет hash/ciphertext и версию |
 | `idempotency_records` | scope(method, URL, actor, key) UNIQUE, request digest, status, headers, encrypted response, nonce, key ID, expires_at | TTL 24 ч; секретный ответ в БД только зашифрован |
 | `page_snapshots` | `id`, scope hash, ordered resource IDs, `expires_at` | TTL 15 минут; состав и порядок страниц заморожены, права проверяются повторно |
 
@@ -117,10 +117,16 @@ songs/sharing/media не читают role или owner из клиентско�
 
 ## Публикация и публичные URL
 
-- `POST /shares` создаёт ссылку `song` или `list` (для list задаётся ownerId).
+- Основной UI #70 использует `GET/POST /shares/permanent`: одну постоянную
+  song/list-ссылку можно получать повторно после restart и вне replay TTL.
+  Состояние содержит `current:{share,version,url}|null` и `legacy:Share[]`.
+  Отключение требует явного создания нового адреса; действующие legacy — явного
+  согласия на переход. Rotate/delete постоянной записи требуют `If-Match`.
+  Хранение, миграция и ошибки: [sharing.md](../sharing.md) и OpenAPI.
+- Совместимый `POST /shares` создаёт legacy ссылку `song` или `list` (для list задаётся ownerId).
   Одному owner можно создать несколько независимых ссылок. В JSON токен и URL
   возвращаются при создании/перевыпуске и идемпотентном повторе создания в
-  течение 24 часов; затем доступен лишь статус. В `shares` остаётся только hash
+  течение 24 часов; затем доступен лишь статус. У legacy в `shares` остаётся только hash
   токена, временная зашифрованная копия ответа находится в `idempotency_records`.
 - `GET /public/shares/{token}` для song возвращает один объект в `songs` и
   `nextCursor=null`, для list — страницу текущих published/ready песен owner.
@@ -301,6 +307,11 @@ method/route/actor/key, TTL 24 часа. Digest вычисляется посл�
 записи replay/cursor. Ключи секретных ответов sharing остаются областью #6.
 
 ## Реализация sharing в Issue #6
+
+Дополнение #70: постоянные адреса, migration `0006_permanent_shares.sql` и
+read-only `GET /admin/users` реализованы; см. [sharing.md](../sharing.md).
+Account cursor использует тот же защищённый key с отдельным AAD для route/actor;
+остальные операции управления аккаунтами не входят в это дополнение.
 
 Share/public/media endpoints выше реализованы в `internal/sharing`; DTO строго
 ограничены PublicSong/PublicTrack. Ротация включает отключённую ссылку с новым

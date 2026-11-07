@@ -51,6 +51,10 @@ func TestDatabaseLifecycle(t *testing.T) {
 	if err = tx.Rollback(); err != nil {
 		t.Fatal(err)
 	}
+	var appliedBeforeReopen int
+	if err = db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&appliedBeforeReopen); err != nil || appliedBeforeReopen == 0 {
+		t.Fatalf("initial migrations: %d %v", appliedBeforeReopen, err)
+	}
 	db.Close()
 	db, err = OpenDatabase(ctx, dir)
 	if err != nil {
@@ -62,7 +66,7 @@ func TestDatabaseLifecycle(t *testing.T) {
 		t.Fatalf("persistence/rollback: %s %v", role, err)
 	}
 	var count int
-	if err = db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != 5 {
+	if err = db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&count); err != nil || count != appliedBeforeReopen {
 		t.Fatalf("migration repeated: %d %v", count, err)
 	}
 	// Force a new connection to verify connection-level pragmas survive reconnect.

@@ -288,6 +288,71 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/MediaNotReady'}
+  /shares/permanent:
+    get:
+      tags: [Shares]
+      summary: Текущая постоянная ссылка владельца/песни и история прежних ссылок
+      description: |
+        Только владелец или admin; живые session/role/owner проверяются в транзакции.
+        Для kind=list обязателен только ownerId, для song только songId; owner песни
+        определяет сервер. Чужая/удалённая песня даёт 404, чужой owner списка — 403.
+        current=null означает отсутствие постоянной ссылки. Отключённая current
+        сохраняется с url=null. Активный адрес восстанавливается после restart и
+        истечения replay TTL; повреждение ciphertext/AAD даёт 503 без замены токена.
+      parameters:
+        - name: kind
+          in: query
+          required: true
+          schema: {type: string, enum: [song, list]}
+        - name: ownerId
+          in: query
+          schema: {$ref: '#/components/schemas/Id'}
+        - name: songId
+          in: query
+          schema: {$ref: '#/components/schemas/Id'}
+      responses:
+        '200': {$ref: '#/components/responses/PermanentShareState'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/SharingUnavailable'}
+    post:
+      tags: [Shares]
+      summary: Получить существующую или впервые создать постоянную ссылку
+      description: |
+        Одна постоянная запись на owner списка или song, включая отключённую.
+        Повторный и одновременный запросы возвращают тот же адрес; Idempotency-Key
+        не нужен. 201 при первом создании, 200 при существующей активной ссылке.
+        409 share_disabled не включает отключённый адрес. Если есть действующие
+        прежние ссылки, без acceptLegacy=true возвращается 409 legacy_transition_required.
+        Это согласие создать новую постоянную ссылку, без отзыва прежних.
+        До публикации/ready song URL не открывает песню публично. List может быть пустым.
+        JSON до 8192 байт; лишние поля/вторая JSON-сущность отклоняются.
+      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EnsurePermanentShare'}
+      responses:
+        '200': {$ref: '#/components/responses/PermanentShareState'}
+        '201': {$ref: '#/components/responses/PermanentShareState'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: share_disabled или legacy_transition_required; состояние не изменено
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '413':
+          description: JSON больше 8192 байт (payload_too_large)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '503': {$ref: '#/components/responses/SharingUnavailable'}
   /shares:
     get:
       tags: [Shares]
@@ -315,6 +380,7 @@ paths:
     post:
       tags: [Shares]
       summary: Создать независимую song/list ссылку
+      description: Совместимый прежний контракт. Создаёт legacy-ссылку; основной UI использует /shares/permanent.
       parameters:
         - {$ref: '#/components/parameters/Csrf'}
         - {$ref: '#/components/parameters/IdempotencyKey'}
@@ -340,23 +406,35 @@ paths:
     post:
       tags: [Shares]
       summary: Атомарно перевыпустить токен одной ссылки (включая отключённую)
-      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      description: |
+        Для постоянной ссылки обязателен If-Match с current.version; версия растёт.
+        Старая ссылка перестаёт работать, отключённая включается с новым адресом.
+        После потери ответа или 412 клиент перечитывает /shares/permanent и не
+        повторяет изменение автоматически. Другие song/list/legacy ссылки не меняются.
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/ShareVersion'}]
       responses:
         '200': {$ref: '#/components/responses/ShareSecret'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/ShareVersionConflict'}
+        '428': {$ref: '#/components/responses/PreconditionRequired'}
+        '503': {$ref: '#/components/responses/SharingUnavailable'}
   /shares/{shareId}:
     parameters: [{$ref: '#/components/parameters/ShareId'}]
     delete:
       tags: [Shares]
       summary: Отключить одну ссылку
-      parameters: [{$ref: '#/components/parameters/Csrf'}]
+      description: Постоянная запись остаётся отключённой, current.url=null, версия растёт; только явно указанный адрес отзывается.
+      parameters: [{$ref: '#/components/parameters/Csrf'}, {$ref: '#/components/parameters/ShareVersion'}]
       responses:
         '204': {description: Ссылка отключена; уже загруженные байты остаются у клиента}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/ShareVersionConflict'}
+        '428': {$ref: '#/components/responses/PreconditionRequired'}
+        '503': {$ref: '#/components/responses/SharingUnavailable'}
   /public/shares/{token}:
     parameters: [{$ref: '#/components/parameters/Token'}]
     get:
@@ -420,6 +498,12 @@ paths:
     get:
       tags: [Admin]
       summary: Admin получает список аккаунтов без паролей и сессий
+      description: |
+        Реализованный read-only endpoint. Email ASC, id ASC; membership/order снимка
+        фиксируются на 15 минут, User-поля читаются актуальные. Живой admin проверяется
+        на каждой странице. Opaque AES-GCM cursor привязан к admin+маршруту; поддельный
+        или чужой даёт 400, подлинный истёкший после очистки snapshot — 410.
+        Использует постоянный share-responses.key с отдельным AAD-доменом admin-users.
       parameters:
         - {$ref: '#/components/parameters/Limit'}
         - {$ref: '#/components/parameters/Cursor'}
@@ -512,6 +596,12 @@ components:
       name: __Host-choral_session
       description: Серверная сессия; mutating requests требуют CSRF и same-origin Origin.
   parameters:
+    ShareVersion:
+      name: If-Match
+      in: header
+      description: Обязателен для постоянной ссылки, необязателен для legacy; точное значение current.version в двойных кавычках.
+      schema: {type: string, pattern: '^"[1-9][0-9]*"$'}
+      example: '"1"'
     Csrf:
       name: X-CSRF-Token
       in: header
@@ -756,6 +846,41 @@ components:
           properties:
             kind: {const: list}
             ownerId: {$ref: '#/components/schemas/Id'}
+    EnsurePermanentShare:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [kind, songId]
+          properties:
+            kind: {const: song}
+            songId: {$ref: '#/components/schemas/Id'}
+            acceptLegacy: {type: boolean, default: false}
+        - type: object
+          additionalProperties: false
+          required: [kind, ownerId]
+          properties:
+            kind: {const: list}
+            ownerId: {$ref: '#/components/schemas/Id'}
+            acceptLegacy: {type: boolean, default: false}
+    PermanentShareState:
+      type: object
+      additionalProperties: false
+      required: [current, legacy]
+      properties:
+        current:
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [share, version, url]
+              properties:
+                share: {$ref: '#/components/schemas/Share'}
+                version: {type: integer, minimum: 1}
+                url: {type: [string, 'null'], description: 'Активный относительный /?song=<token> или /?list=<token>; null при отключении.'}
+        legacy:
+          type: array
+          description: Прежние независимые ссылки, только метаданные; наличие не означает согласие на отзыв.
+          items: {$ref: '#/components/schemas/Share'}
     ShareSecret:
       type: object
       additionalProperties: false
@@ -838,6 +963,21 @@ components:
                   field: {type: string, description: JSON Pointer; пустая строка для всего запроса}
                   code: {type: string}
   responses:
+    PermanentShareState:
+      description: Текущее состояние ссылки; private/no-store, no-referrer, Vary Cookie
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PermanentShareState'}
+    ShareVersionConflict:
+      description: If-Match устарел или имеет неверный формат; precondition_failed, перечитать состояние без автоматического повторения мутации
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    SharingUnavailable:
+      description: Ошибка хранилища/шифрования; unavailable, без создания подменяющего токена
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     SongOk:
       description: Песня; ETag содержит версию
       headers:

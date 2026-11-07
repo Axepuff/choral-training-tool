@@ -1,0 +1,33 @@
+.root { min-width: 0; }
+.controls { display: flex; align-items: center; gap: var(--space-1); }
+.repertoire .controls > button { flex: 1; }
+.repertoire { width: 100%; }
+.song { max-width: 100%; }
+.feedback { margin: var(--space-2) 0 0; max-width: 34rem; overflow-wrap: anywhere; }
+.menuRoot { position: relative; flex: none; }
+.menu { position: absolute; z-index: 5; right: 0; top: calc(100% + var(--space-1)); width: max-content; max-width: calc(100vw - var(--space-6)); padding: var(--space-1); background: var(--color-surface); border: 1px solid var(--color-control-border); border-radius: var(--radius-control); box-shadow: var(--shadow-card); }
+.dialog { box-sizing: border-box; width: min(480px, calc(100% - var(--space-4))); max-width: calc(100% - var(--space-4)); max-height: calc(100dvh - var(--space-6)); margin: auto; padding: var(--space-5); border: 1px solid var(--color-control-border); border-radius: var(--radius-lg); background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-card); overflow-y: auto; overscroll-behavior: contain; font-family: var(--font-family); font-size: var(--font-sm); }
+.dialog::backdrop { background: var(--color-dialog-backdrop); }
+.header { display: flex; align-items: flex-start; gap: var(--space-2); justify-content: space-between; }
+.header h2 { margin: var(--space-2) 0 0; min-width: 0; font-size: var(--font-lg); font-weight: 300; letter-spacing: .01em; line-height: 1.3; }
+.header > button { flex: none; }
+.context { display: grid; gap: var(--space-1); overflow-wrap: anywhere; color: var(--color-text-muted); margin: var(--space-2) 0 var(--space-5); }
+.context strong { font-weight: 500; color: var(--color-text); }
+.body { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-4); }
+.body p { margin: 0; }
+.field { display: grid; gap: var(--space-2); font-size: var(--font-control); font-weight: 500; }
+.field input { min-width: 0; width: 100%; box-sizing: border-box; }
+.body > a { display: flex; align-items: center; justify-content: center; min-height: var(--touch-target); text-align: center; }
+.help { color: var(--color-text-muted); font-size: var(--font-xs); }
+.state { font-weight: 500; }
+.settings { display: flex; flex-wrap: wrap; gap: var(--space-2); padding-top: var(--space-4); border-top: 1px solid var(--color-border); }
+.confirmButtons { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+.legacy { border-top: 1px solid var(--color-border); padding-top: var(--space-2); color: var(--color-text-muted); font-size: var(--font-xs); }
+.legacy summary { cursor: pointer; min-height: var(--touch-target); display: list-item; align-content: center; }
+.legacyRow { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) 0; }
+.legacyRow > div { display: grid; gap: var(--space-1); }
+@media (max-width: 639px) {
+  .dialog { margin: auto var(--space-2) max(var(--space-2), env(safe-area-inset-bottom)); width: calc(100% - var(--space-4)); max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--space-4)); padding: var(--space-4); }
+  .repertoire .controls > button { text-align: left; }
+  .confirmButtons { grid-template-columns: 1fr; }
+}

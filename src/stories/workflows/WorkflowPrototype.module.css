@@ -9,6 +9,8 @@
 .count { font-size: 13px; font-weight: 400; color: var(--color-text-muted); margin-left: 10px; letter-spacing: 0; }
 .headerActions, .rowActions, .actions { display: flex; align-items: center; gap: 8px; }
 .headerActions { flex-shrink: 0; }
+.sharing { display: grid; gap: var(--space-3); margin-bottom: var(--space-5); }
+.sharing .field { margin: 0; }
 .back { margin: -12px 0 14px; }
 .filters { display: grid; grid-template-columns: minmax(0, 1fr) 155px; gap: 10px; margin-bottom: 8px; }
 .search { display: flex; align-items: center; position: relative; min-width: 0; }
@@ -32,7 +34,7 @@
 .shareContents { border-top: 1px solid var(--color-border); padding: 20px 0; }
 .sectionHeading { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; }
 .sectionHeading > span { font-size: 13px; color: var(--color-text-muted); }
-.shell h2 { font-weight: 300; letter-spacing: 0.01em; font-size: 16px; margin: 0 0 10px; line-height: 1.4; }
+.shell :where(h2) { font-weight: 300; letter-spacing: 0.01em; font-size: 16px; margin: 0 0 10px; line-height: 1.4; }
 .previewList { list-style: none; padding: 0; margin: 4px 0 0; }
 .previewList li { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; min-height: 44px; padding: 10px 0; font-size: 14px; }
 .previewList li > span:last-child { color: var(--color-text-muted); font-size: 12px; flex-shrink: 0; }
@@ -72,7 +74,7 @@
   .song { grid-template-columns: minmax(0,1fr) auto; gap: 3px 8px; padding: 12px 8px; }
   .songInfo { grid-column: 1; }
   .song > .publication { grid-column: 1 / -1; grid-row: 2; }
-  .song > .rowActions { grid-column: 2; grid-row: 1; }
+  .song > .rowActions { grid-column: 1 / -1; grid-row: 3; justify-content: flex-end; }
   .linkButton > span { display: none; }
   .delivery { padding: 16px; }
   .delivery > .primary { width: 100%; }

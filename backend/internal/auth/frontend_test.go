@@ -79,7 +79,7 @@ func TestFrontendBrowser(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	s, err := auth.New(db, origin, true)
+	s, err := auth.New(db, origin, true, dir)
 	if err != nil {
 		t.Fatal(err)
 	}

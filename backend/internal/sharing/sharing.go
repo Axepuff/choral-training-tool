@@ -41,6 +41,8 @@ func New(db *sql.DB, i platform.IdentityProvider, a platform.Authorizer, storage
 func (s *Service) Register(m *http.ServeMux) {
 	m.HandleFunc("GET /api/v1/shares", s.list)
 	m.HandleFunc("POST /api/v1/shares", s.write)
+	m.HandleFunc("GET /api/v1/shares/permanent", s.permanent)
+	m.HandleFunc("POST /api/v1/shares/permanent", s.permanent)
 	m.HandleFunc("POST /api/v1/shares/{shareId}/rotate", s.write)
 	m.HandleFunc("DELETE /api/v1/shares/{shareId}", s.write)
 	m.HandleFunc("GET /api/v1/public/shares/{token}", s.public)
@@ -298,8 +300,26 @@ func (s *Service) write(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	permanent := false
+	if !create {
+		var ok bool
+		permanent, ok = permanentVersion(w, r, tx, v.ID)
+		if !ok {
+			return
+		}
+		if permanent && v.Disabled == nil {
+			in := permanentInput{Kind: v.Kind, Owner: v.Owner}
+			if v.Song != nil {
+				in.Song = *v.Song
+			}
+			if _, e := s.permanentState(ctx, tx, in); e != nil {
+				fail(w, 503, "unavailable")
+				return
+			}
+		}
+	}
 	if r.Method == "DELETE" {
-		_, err = tx.ExecContext(ctx, `UPDATE shares SET disabled_at=COALESCE(disabled_at,?),updated_at=? WHERE id=?`, now, now, v.ID)
+		_, err = tx.ExecContext(ctx, `UPDATE shares SET disabled_at=COALESCE(disabled_at,?),updated_at=?,version=version+1,token_ciphertext=NULL,token_nonce=NULL WHERE id=?`, now, now, v.ID)
 		if err != nil || tx.Commit() != nil {
 			fail(w, 503, "unavailable")
 			return
@@ -316,7 +336,15 @@ func (s *Service) write(w http.ResponseWriter, r *http.Request) {
 	if create {
 		_, err = tx.ExecContext(ctx, `INSERT INTO shares(id,kind,owner_id,song_id,token_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`, v.ID, v.Kind, v.Owner, v.Song, hash(raw), now, now)
 	} else {
-		_, err = tx.ExecContext(ctx, `UPDATE shares SET token_hash=?,disabled_at=NULL,updated_at=? WHERE id=?`, hash(raw), now, v.ID)
+		var ciphertext, nonce []byte
+		if permanent {
+			ciphertext, nonce, err = s.encryptToken(v, raw)
+			if err != nil {
+				fail(w, 503, "unavailable")
+				return
+			}
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE shares SET token_hash=?,disabled_at=NULL,updated_at=?,version=version+1,token_ciphertext=?,token_nonce=? WHERE id=?`, hash(raw), now, ciphertext, nonce, v.ID)
 	}
 	if err != nil {
 		fail(w, 503, "unavailable")

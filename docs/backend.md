@@ -321,6 +321,11 @@ commit/push/PR/merge не выполнялись.
 
 ## Публичные ссылки и media (Issue #6)
 
+Этот раздел описывает исходные legacy endpoints. Постоянная выдача и read-only
+список владельцев добавлены в #70; актуальное дополнение —
+[sharing.md](sharing.md). В частности, у постоянной записи теперь есть
+зашифрованный токен вне replay TTL, а rotate/delete требуют версию.
+
 `internal/sharing` подключён в server. Реализованы:
 
 - `GET/POST /api/v1/shares`: свои метаданные ссылок без токенов; admin может
@@ -342,8 +347,8 @@ commit/push/PR/merge не выполнялись.
   session endpoint, но не по public URL. Media/peaks используют тот же grant и
   published/ready контракт, что публичная выдача метаданных.
 
-Токен — 32 случайных байта (base64url без padding, 43 символа); в shares только
-SHA-256. Создание и AES-256-GCM replay фиксируются вместе. Неизменная ссылка
+Токен — 32 случайных байта (base64url без padding, 43 символа); у legacy в shares
+только SHA-256. Создание и AES-256-GCM replay фиксируются вместе. Неизменная ссылка
 повторно возвращается 24 часа; после disable/rotate — `409 idempotency_stale`,
 другое тело — `409 idempotency_conflict`. После истечения TTL возможна новая
 операция. Неверный ciphertext/недоступный ключ — ошибка 503, без создания дубля.
