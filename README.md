@@ -303,8 +303,9 @@ npm run build-storybook
 ## Просмотр через GitHub Pages
 
 Workflow `.github/workflows/storybook-pages.yml` проверяет и публикует Storybook
-при каждом push в `main`. Его также можно запустить вручную из вкладки Actions
-(workflow **Publish Storybook**, кнопка **Run workflow**).
+только по ручному запуску из вкладки Actions: выберите **Publish Storybook** →
+**Run workflow** и ветку `main`. Push в `main` не обновляет Pages автоматически;
+до следующего ручного запуска сайт показывает предыдущую опубликованную версию.
 
 При первой настройке в репозитории GitHub выберите **Settings → Pages →
 Build and deployment → Source → GitHub Actions**. Затем запустите workflow.
