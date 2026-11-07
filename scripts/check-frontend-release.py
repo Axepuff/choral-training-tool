@@ -208,6 +208,14 @@ class Releases(unittest.TestCase):
                     urlopen(base + '/api/v1/auth/me')
                 self.assertEqual(unauthorized.exception.code, 401)
                 self.assertEqual(unauthorized.exception.headers['Cache-Control'], 'no-store')
+                # Delivery smoke consumes the actual published archive; no rebuild.
+                subprocess.run([sys.executable, str(repo_script := Path(__file__).with_name('frontend-delivery.py')),
+                                'smoke', '--origin', base, '--artifact', str(self.two), '--sha256', self.sum2,
+                                '--previous-artifact', str(self.one)], check=True)
+                # A healthy server serving the wrong release must not pass admission smoke.
+                wrong = subprocess.run([sys.executable, str(repo_script), 'smoke', '--origin', base,
+                                        '--artifact', str(self.one), '--sha256', self.sum1], capture_output=True)
+                self.assertNotEqual(wrong.returncode, 0)
                 f.rollback(self.root, self.a, f.API)
                 self.assertEqual(urlopen(base + '/listen/deep').read(), self.files1['index.html'])
                 after = {p.relative_to(private): (f.digest(p.read_bytes()), p.stat().st_mtime_ns)

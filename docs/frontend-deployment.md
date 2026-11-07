@@ -212,3 +212,51 @@ go test ./internal/platform -run TestFrontend -count=1
 Полный backend/restore/browser suite не является условием каждого frontend deploy.
 Изменения backup helpers проверяются отдельно их профильными сценариями. Приёмка
 Compose и открытой вкладки описана в [QA #65](qa/2026-11-02-frontend-deploy.md).
+
+## Артефакт из CI — Issue #66
+
+Для обычной доставки используйте архив уже прошедшего проверки push main.
+[Карта CI и правила допуска](ci.md) объясняют происхождение артефакта, обязательный
+check и проверку совместимости. PR #68 отдельно документирует первый production
+переход и ручную сборку; его инструкция сборки остаётся процедурой подготовки
+нового кандидата, а не заменой допуска CI в этом пути доставки.
+
+На Linux-машине оператора нужны Python 3, авторизованный `gh` с чтением Actions
+и полный checkout с commit frontend/backend (`git fetch origin`). Не использовать
+production backend checkout `/opt/choral` для переключения на новый main.
+Получить фактический backend commit/image из журнала установки/хоста, проверить
+изменения frontend относительно установленного API. Значения ниже — placeholders:
+
+```sh
+python3 scripts/frontend-delivery.py prepare \
+  --run-id <successful-main-push-run-id> \
+  --commit <40-hex-frontend-commit> \
+  --backend-commit <40-hex-installed-backend-commit> \
+  --backend-image sha256:<64-hex-installed-image> \
+  --confirm-compatible --output /absolute/new-delivery-directory
+```
+
+Результат: `frontend.tar`, `frontend.tar.sha256`, `admission.json` с точными
+commit/checksum/run/attempt/API и установленным backend. Каталог должен быть новым.
+Никакой npm/build/test suite при получении не запускается. Нет успешного admission,
+архив истёк или backend/API несовместим — остановиться, не собирать замену вручную.
+
+Передать эти три файла на хост приватно, сохранить предыдущий release ID для
+rollback и доверенный архив предыдущего релиза. После отдельно разрешённой
+публикации использовать существующий publish из этого runbook с checksum/commit
+из admission, затем короткий smoke:
+
+```sh
+python3 scripts/frontend-delivery.py smoke \
+  --origin https://choral-train.ru \
+  --artifact /absolute/new-delivery-directory/frontend.tar \
+  --sha256 <64-hex-checksum-from-admission> \
+  --previous-artifact /absolute/saved-previous-release.tar
+```
+
+Smoke сверяет байты index/deep link, всех текущих и прежних assets, readiness,
+401 для anonymous auth и 404 для неизвестных API/assets. Каждый запрос ограничен
+15 секундами. Проверка не отправляет credentials и не создаёт данные. Вход,
+прослушивание и действие в ранее открытой вкладке остаются короткой ручной
+браузерной приёмкой. При ошибке — существующий rollback, затем smoke со старым
+архивом. Разработка #66 не выполняет production deploy или изменение сервера.
