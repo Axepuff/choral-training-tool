@@ -38,8 +38,8 @@ INSERT INTO songs VALUES('{song}','{owner}','Fictional restore fixture',120,4,4,
 INSERT INTO tracks VALUES('{track}','{song}',0,'Test',1,NULL,NULL,NULL);
 INSERT INTO assets(id,track_id,source_path,playback_path,peaks_path,source_bytes,source_sha256,duration_ms,mime,sample_rate,channels,state,created_at,updated_at) VALUES('{asset}','{track}','original-{asset}','{playback}','{peaks}',256,X'00',1000,'audio/mp4',48000,1,'ready','{stamp}','{stamp}');
 UPDATE tracks SET active_asset_id='{asset}' WHERE id='{track}';
-INSERT INTO shares VALUES('{share1}','song','{owner}','{song}',X'{hashlib.sha256(songtoken.encode()).hexdigest()}',NULL,'{stamp}','{stamp}');
-INSERT INTO shares VALUES('{share2}','list','{owner}',NULL,X'{hashlib.sha256(listtoken.encode()).hexdigest()}',NULL,'{stamp}','{stamp}');
+INSERT INTO shares(id,kind,owner_id,song_id,token_hash,disabled_at,created_at,updated_at) VALUES('{share1}','song','{owner}','{song}',X'{hashlib.sha256(songtoken.encode()).hexdigest()}',NULL,'{stamp}','{stamp}');
+INSERT INTO shares(id,kind,owner_id,song_id,token_hash,disabled_at,created_at,updated_at) VALUES('{share2}','list','{owner}',NULL,X'{hashlib.sha256(listtoken.encode()).hexdigest()}',NULL,'{stamp}','{stamp}');
 """
   run(['run','--rm','--no-deps','-T','--entrypoint','sqlite3','app','/data/choral.sqlite'],input=sql.encode())
   media=b'fictional-media-bytes'*32

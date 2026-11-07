@@ -16,7 +16,10 @@
 .search { display: flex; align-items: center; position: relative; min-width: 0; }
 .search > svg { position: absolute; left: 12px; pointer-events: none; color: var(--color-text-muted); }
 .list { margin: 0; padding: 0; list-style: none; }
-.song { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; gap: 12px; align-items: center; padding: 14px 12px; border-bottom: 1px solid var(--color-border); }
+.song { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); align-items: center; padding: 14px 12px; border-bottom: 1px solid var(--color-border); }
+.editableSong { grid-template-columns: minmax(0, 1fr) 150px auto auto; }
+.song > .rowActions { display: contents; }
+.song > .rowActions > button { grid-column: -3 / -2; }
 .songInfo { min-width: 0; }
 .titleLine { display: flex; align-items: center; gap: 4px; }
 .songMetadata { margin: 0; font-size: 12px; color: var(--color-text-muted); }
@@ -71,10 +74,10 @@
   .headerActions { width: 100%; }
   .headerActions .secondary { flex: 1; }
   .filters { grid-template-columns: minmax(0,1fr) 138px; gap: 8px; }
-  .song { grid-template-columns: minmax(0,1fr) auto; gap: 3px 8px; padding: 12px 8px; }
-  .songInfo { grid-column: 1; }
+  .song { padding: 12px 8px; }
+  .editableSong { grid-template-columns: minmax(0,1fr) auto auto; }
+  .songInfo { grid-column: 1 / -1; }
   .song > .publication { grid-column: 1 / -1; grid-row: 2; }
-  .song > .rowActions { grid-column: 1 / -1; grid-row: 3; justify-content: flex-end; }
   .linkButton > span { display: none; }
   .delivery { padding: 16px; }
   .delivery > .primary { width: 100%; }

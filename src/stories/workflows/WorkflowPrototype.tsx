@@ -127,7 +127,7 @@ export function WorkflowPrototype({ role = 'teacher', initialScreen = 'songs', s
         </div>
         {screen === 'songs' && status === 'loading' ? <Message tone="muted" className={styles.empty} role="status">Загружаем песни…</Message> : screen === 'songs' && status === 'error' ? <Message as="div" tone="error" className={styles.empty} role="alert"><h2>Не удалось загрузить песни</h2><p>Проверьте подключение и попробуйте ещё раз.</p><Button size="small" className={styles.secondary} onClick={() => setStatus('ready')}>Повторить загрузку</Button></Message> : <>
           <ul className={styles.list} aria-label="Песни">
-            {(screen === 'guest' ? publicPieces : pieces).filter(p => p.title.toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru'))).sort((a,b) => sort === 'title' ? a.title.localeCompare(b.title, 'ru') : 0).map(p => <li className={`${styles.song} ${screen === 'songs' && p.state === 'published' ? styles.songPublished : ''}`} key={p.id}>
+            {(screen === 'guest' ? publicPieces : pieces).filter(p => p.title.toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru'))).sort((a,b) => sort === 'title' ? a.title.localeCompare(b.title, 'ru') : 0).map(p => <li className={`${styles.song} ${screen !== 'guest' ? styles.editableSong : ''} ${screen === 'songs' && p.state === 'published' ? styles.songPublished : ''}`} key={p.id}>
               <div className={styles.songInfo}>
                 <div className={styles.titleLine}>
               <Button variant="title" data-published={p.state === 'published'} onClick={() => { if (p.state === 'published') { setPlayingPiece(p); setPlayerReturn(screen === 'guest' ? 'guest' : 'songs'); go('player'); } else { setSelected(p.id); go('editor'); } }}>

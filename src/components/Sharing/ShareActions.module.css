@@ -2,7 +2,9 @@
 .controls { display: flex; align-items: center; gap: var(--space-1); }
 .repertoire .controls > button { flex: 1; }
 .repertoire { width: 100%; }
-.song { max-width: 100%; }
+.song { display: contents; }
+.song > .controls { grid-column: -2 / -1; gap: var(--space-2); }
+.song > .feedback { grid-column: 1 / -1; min-width: 0; max-width: none; margin: 0; }
 .feedback { margin: var(--space-2) 0 0; max-width: 34rem; overflow-wrap: anywhere; }
 .menuRoot { position: relative; flex: none; }
 .menu { position: absolute; z-index: 5; right: 0; top: calc(100% + var(--space-1)); width: max-content; max-width: calc(100vw - var(--space-6)); padding: var(--space-1); background: var(--color-surface); border: 1px solid var(--color-control-border); border-radius: var(--radius-control); box-shadow: var(--shadow-card); }

@@ -32,6 +32,28 @@ async function settings(canvasElement: HTMLElement, name = 'elena@example.invali
 }
 export const Teacher: Story = {};
 export const Administrator: Story = { args: { admin: true } };
+// A long copy receipt must not resize the title or split the three row actions.
+export const CopiedSong: Story = { name: 'Песня · после копирования', args: { admin: true }, play: async ({ canvasElement }) => {
+  const canvas = within(canvasElement);
+  const row = canvas.getByRole('listitem');
+  const song = within(row);
+  const title = song.getByRole('link');
+  const titleWidth = title.getBoundingClientRect().width;
+  const copy = song.getByRole('button', { name: /^Скопировать ссылку:/ });
+  const clipboard = spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+  try {
+    await userEvent.click(copy);
+    await expect(await song.findByRole('status')).toHaveTextContent('скопирована');
+    await waitFor(() => expect(copy).toBeEnabled());
+    await expect(Math.abs(title.getBoundingClientRect().width - titleWidth)).toBeLessThan(1);
+    const buttons = song.getAllByRole('button').map(button => button.getBoundingClientRect());
+    await expect(Math.max(...buttons.map(button => button.top)) - Math.min(...buttons.map(button => button.top))).toBeLessThan(1);
+    const receipt = song.getByRole('status').getBoundingClientRect();
+    await expect(receipt.top).toBeGreaterThanOrEqual(Math.max(...buttons.map(button => button.bottom)));
+    await expect(receipt.right).toBeLessThanOrEqual(row.getBoundingClientRect().right + 1);
+    await expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
+  } finally { clipboard.mockRestore(); }
+} };
 export const Settings: Story = { name: 'Репертуар · настройки', play: async ({ canvasElement }) => { await settings(canvasElement); } };
 export const Song: Story = { name: 'Песня · длинное название', play: async ({ canvasElement }) => { await settings(canvasElement, 'Тихий вечер — переложение для смешанного хора и фортепиано'); } };
 export const FirstUse: Story = { name: 'Первое создание', args: { scenario: 'first' }, play: async ({ canvasElement }) => { await settings(canvasElement); } };
