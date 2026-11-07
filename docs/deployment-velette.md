@@ -1,9 +1,8 @@
 # choral-train.ru на velette — подготовка Issue #16
 
-Независимые frontend-релизы подготовлены в [runbook #65](frontend-deployment.md).
-Переход на внешний root требует отдельного согласованного пересоздания app и
-обновления установленных backup helpers. Исторические записи ниже не подтверждают,
-что этот переход уже выполнен; production в рамках реализации #65 не меняется.
+Независимые frontend-релизы подключены 2 ноября 2026 после отдельного запроса
+владельца на деплой. [Ручное обновление и откат](frontend-deployment.md#вручную-на-velette-после-первого-перехода).
+Подробности первого перехода приведены в дополнении в конце этого документа.
 
 Этот план дополняет [общий runbook](deployment.md) для фактического Debian-хоста.
 После повторного независимого ревью и разрешения владельца выполнен первый запуск
@@ -617,3 +616,47 @@ sudo sh -c 'cd /mnt/storage/choral-backups/20261030T030005Z && sha256sum -c SHA2
 curl --noproxy '*' --fail https://choral-train.ru/readyz
 curl --noproxy '*' --fail http://127.0.0.1:18082/readyz
 ```
+
+## Первый независимый frontend release — 2 ноября 2026
+
+По запросу владельца опубликован main `c1710dd6e9381522cea61075f29e67d08ee1b0a4`
+(PR #67), включая ранее влитые визуальные изменения. API и миграции по сравнению
+с production `902ca0b` не менялись; в Go изменён только static handler.
+
+- Backend image: `sha256:22809fa95f3ec4727ef5ad7a1a30cde36aebb224c80677988e8c59a700a81efc`.
+- Frontend tar SHA-256: `279f378c12c2c547786e37757b1a004b44c7f88125f2753e14340cf5dc865fdb`.
+- `/opt/choral` закреплён на этом backend commit; Compose подключает
+  `compose.frontend.yaml`, `/srv/choral-frontend:/frontend:ro` и прежний private volume.
+- Текущий frontend: `/srv/choral-frontend/current`; предыдущий релиз для отката:
+  `902ca0b9b0be6ded0a5c443ca7884c46d4ba9a93`. Его ассеты перенесены из прежнего
+  image в общий пул для открытых вкладок.
+- Оба tar сохранены в `/var/lib/choral-frontend-artifacts/<commit>.tar`.
+- Предпереходная private-копия: `/var/backups/choral/20261102T205707Z-before-frontend`,
+  проверенная вторая копия — одноимённый каталог `/mnt/storage/choral-backups`.
+- Конфигурация и прежние helpers:
+  `/var/backups/choral-operations/20261102T205707Z-before-frontend`.
+- Обновлены установленные backup helpers; backup monitor перезапущен, timer
+  остаётся active. Node 24.19.0 для ручных сборок сохранён отдельно в
+  `/opt/choral-tools/node-v24.19.0-linux-x64` (SHA-256 дистрибутива проверен).
+
+Первый переход пересоздал app. Две начальные попытки штатно откатились из-за
+операторского сценария: сначала monitor проверялся до открытия порта, затем —
+до копирования нового backup на HDD. После добавления ожидания и переноса mirror
+перед проверкой monitor переход завершился успешно. Предыдущие копии сохранены;
+production БД не восстанавливалась и не удалялась. Соседние контейнеры не менялись.
+
+Перед переходом прошли production build/typecheck, Go TestFrontend, Chrome с
+новым артефактом на изолированном сервере, профильные scheduled-backup/health/retention
+проверки и старт нового image на временных данных без сети. В GitHub проверки PR
+#67 frontend/backend/e2e завершились успешно. Полные suites локально не повторялись.
+После перехода app healthy, HTTPS `/readyz` отвечает ready, monitor — backup_ready.
+Проверка с этого хоста не заменяет внешний мобильный доступ и ручную проверку
+входа/воспроизведения под реальным аккаунтом.
+
+Дополнительно HTTPS через локальный Caddy с проверкой сертификата подтвердил
+хеши всех текущих и прежних assets, SPA deep link, ETag/304, 404 служебных путей
+и 401 anonymous auth. Внешний маршрут через унаследованный proxy дал TLS timeout;
+финальный Chrome HTTPS smoke завершился page-load timeout. Поэтому успешный
+браузерный результат выше относится только к изолированному запуску сборки,
+а не к браузерной приёмке production. Ручной вход и прослушивание остаются
+непроверенными в этой сессии.
