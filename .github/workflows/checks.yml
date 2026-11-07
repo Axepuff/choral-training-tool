@@ -169,7 +169,8 @@ jobs:
           docker build -t choral:ci-frontend .
           python3 scripts/check-frontend-container.py --image choral:ci-frontend --server "$RUNNER_TEMP/choral-server"
           image=$(docker image inspect choral:ci-frontend --format '{{.Id}}')
-          python3 scripts/check-restore-acceptance.py "$image" --frontend
+          # nsenter reads the network-isolated disposable container; it requires root.
+          sudo python3 scripts/check-restore-acceptance.py "$image" --frontend
 
   queue:
     needs: changes
