@@ -23,7 +23,12 @@ let ws;
 let next = 0;
 let acceptDialog = false;
 let dialogs = 0;
-let failOneJob = false;
+let failJobCount = 0;
+let acceptedUploadJob;
+let limitedPath = '';
+let isolatedJob = '';
+let isolatedChecks = 0;
+let isolatedStatus = 0;
 let failedJobs = 0;
 const pending = new Map();
 const loadedDocuments = new Set();
@@ -91,8 +96,11 @@ try {
  ws=new WebSocket(targets.find(t=>t.type==='page').webSocketDebuggerUrl);
  await new Promise((resolve,reject)=>{ws.onopen=resolve;ws.onerror=reject;});
  ws.onmessage=message=>{const data=JSON.parse(message.data);if(data.method==='Page.lifecycleEvent' && data.params.name==='load') loadedDocuments.add(data.params.loaderId);if(data.method==='Network.requestWillBeSent' && data.params.request.url.endsWith('/uploads')){uploadKeys.push(data.params.request.headers['Idempotency-Key']);}if(data.method==='Fetch.requestPaused'){
-   if(failOneJob && data.params.request.url.includes('/jobs/')){failOneJob=false;failedJobs++;void send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});}
+   if(limitedPath && data.params.request.url.endsWith(limitedPath)) void send('Fetch.fulfillRequest',{requestId:data.params.requestId,responseCode:429,responseHeaders:[{name:'Content-Type',value:'application/json'}],body:Buffer.from(JSON.stringify({error:{code:'upload_busy',message:'Временный отказ проверки'}})).toString('base64')});
+   else if(isolatedJob && data.params.request.url.endsWith('/jobs/'+isolatedJob)){isolatedChecks++;void send(isolatedStatus?'Fetch.fulfillRequest':'Fetch.failRequest',isolatedStatus?{requestId:data.params.requestId,responseCode:isolatedStatus,responseHeaders:[{name:'Content-Type',value:'application/json'}],body:Buffer.from(JSON.stringify({error:{code:'not_found',message:'Нет доступа к заданию'}})).toString('base64')}:{requestId:data.params.requestId,errorReason:'ConnectionReset'});}
+   else if(failJobCount > 0 && data.params.request.url.includes('/jobs/')){failJobCount--;failedJobs++;void send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});}
    else if(data.params.request.url.includes('/jobs/')) void send('Fetch.continueRequest',{requestId:data.params.requestId});
+   else if(data.params.responseStatusCode===202 && data.params.request.url.endsWith('/uploads')) void send('Fetch.getResponseBody',{requestId:data.params.requestId}).then(response=>{acceptedUploadJob=JSON.parse(response.base64Encoded?atob(response.body):response.body).id;return send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});});
    else void send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});
   }if(data.method==='Page.javascriptDialogOpening'){dialogs++;void send('Page.handleJavaScriptDialog',{accept:data.params.type==='beforeunload' || acceptDialog});}const entry=pending.get(data.id);if(entry){pending.delete(data.id);if(data.error)entry.reject(new Error(data.error.message));else entry.resolve(data.result);}};
  await send('Page.enable');await send('Page.setLifecycleEventsEnabled',{enabled:true});await send('Runtime.enable');await send('Network.enable');
@@ -142,15 +150,63 @@ try {
  await selectFile(file);await save();await expectText('Загрузка не подтверждена');
  const networkKey=uploadKeys.at(-1);assert.ok(networkKey);
  await send('Fetch.disable');
- await save();await expectText('Изменения сохранены на сервере.');
+ await input('title','Несохранённое поле повтора');
+ await click('Проверить ещё раз');
+ await poll(()=>evaluate(`!document.querySelector('fieldset').disabled && document.body.textContent.includes('Готово к воспроизведению')`),'Per-file retry did not finish');
  assert.equal(uploadKeys.at(-1),networkKey,'Unknown network outcome must retain the idempotency key');
+ assert.equal((await api('/songs/'+id)).body.title,'Реальная песня','Per-file retry must not write unrelated metadata');
+ assert.equal(await evaluate(`document.querySelector('[name=title]').value`),'Несохранённое поле повтора');
+ await input('title','Реальная песня');await save();await expectText('Изменения сохранены на сервере.');
+ // Lose the upload response after commit; checking replays the same operation, not a new job.
+ await send('Fetch.enable',{patterns:[{urlPattern:'*/uploads',requestStage:'Response'}]});
+ await selectFile(file);await save();await expectText('Не удалось проверить результат');
+ const lostResponseKey=uploadKeys.at(-1);assert.ok(acceptedUploadJob);
+ await send('Fetch.disable');
+ await poll(async()=>(await api('/jobs/'+acceptedUploadJob)).body.state==='succeeded','Accepted upload did not finish');
+ const committedVersion=(await api('/songs/'+id)).body.version;
+ for(const path of ['/api/v1/songs/'+id,'/uploads']) {
+   limitedPath=path;await send('Fetch.enable',{patterns:[{urlPattern:'*'+path,requestStage:'Request'}]});
+   await click('Проверить ещё раз');
+   await poll(()=>evaluate(`!document.querySelector('fieldset').disabled`),'Temporary check did not finish');
+   assert.equal(await bodyIncludes('Не удалось проверить результат'),true,'Temporary read/replay 429 must retain unknown outcome');
+   await send('Fetch.disable');limitedPath='';
+ }
+ await input('title','Черновик после прослушивания');await input('notes','Не терять эти поля',true);
+ await click('Слушать песню');await click('К редактированию');
+ assert.equal(await evaluate(`document.querySelector('[name=title]').value`),'Черновик после прослушивания','Listening must preserve unsaved fields and selected replacement');
+ assert.equal(await bodyIncludes('Не удалось проверить результат'),true,'Listening must not hide the unknown upload');
+ assert.equal(await evaluate(`document.querySelector('[aria-label="Заменить файл трека 1"]').disabled`),true,'Unknown upload must stay locked after listening');
+
+ await click('Проверить ещё раз');
+ await poll(()=>evaluate(`!document.querySelector('fieldset').disabled && !document.body.textContent.includes('Не удалось проверить результат')`),'Lost upload response did not reconcile');
+ assert.equal(uploadKeys.at(-1),lostResponseKey,'Lost response retry must replay the original key');
+ assert.equal((await api('/songs/'+id)).body.version,committedVersion,'Checking accepted upload must not create another job or write metadata');
+ assert.equal(await evaluate(`document.querySelector('[name=notes]').value`),'Не терять эти поля');
+ await input('title','Реальная песня');await input('notes','Заметка 🌼',true);await save();await expectText('Изменения сохранены на сервере.');
  media=(await api('/songs/'+id)).body.tracks[0].mediaUrl;
  // Accepted upload, one failed status request, then real background recovery.
- failOneJob=true;await send('Fetch.enable',{patterns:[{urlPattern:'*/api/v1/jobs/*',requestStage:'Request'}]});
+ failJobCount=2;await send('Fetch.enable',{patterns:[{urlPattern:'*/api/v1/jobs/*',requestStage:'Request'}]});
  await selectFile(file);await save();await expectText('Нет соединения с сервером');
- await poll(()=>evaluate(`!document.querySelector('fieldset').disabled && [...document.querySelectorAll('form [role=status]')].some(e=>e.textContent==='Готово')`),'Background job did not replace the stale row error');
- assert.equal(failedJobs,1);await send('Fetch.disable');
+ await poll(()=>evaluate(`!document.querySelector('fieldset').disabled && [...document.querySelectorAll('form [role=status]')].some(e=>e.textContent.includes('Готово к воспроизведению'))`),'Background job did not replace the stale row error');
+ assert.equal(failedJobs,2);await send('Fetch.disable');
  media=(await api('/songs/'+id)).body.tracks[0].mediaUrl;
+ const recoveredUploads = uploadKeys.length;
+ await save();await expectText('Изменения сохранены на сервере.');
+ assert.equal(uploadKeys.length,recoveredUploads,'Saving after background recovery must not upload the completed File again');
+ // A real worker rejection keeps the old audio and permits retry of the same File.
+ await writeFile(process.env.CHORAL_TEST_WORKER_MARKER,'fail');
+ await selectFile(file);await save();await expectText('Не удалось подготовить аудио');
+ const workerKey=uploadKeys.at(-1);
+ await click('Повторить загрузку');
+ await poll(()=>evaluate(`!document.querySelector('fieldset').disabled && !document.body.textContent.includes('Не удалось подготовить аудио')`),'Worker retry failed');
+ assert.notEqual(uploadKeys.at(-1),workerKey,'Confirmed worker failure must start a new attempt');
+ // Reload while the real worker is still processing: no local File survives.
+ await writeFile(process.env.CHORAL_TEST_WORKER_MARKER,'delay');
+ await selectFile(file);await save();await expectText('Подготавливаем аудио');
+ const pendingReload=(await api('/songs/'+id)).body.tracks[0].pendingJobId;assert.ok(pendingReload);
+ await navigate('?page=edit-song&id='+id);await expectText('Редактировать песню');
+ await poll(()=>evaluate(`document.body.textContent.includes('Готово к воспроизведению') && !document.body.textContent.includes('Подготавливаем аудио')`),'Reload did not recover server processing');
+ assert.equal((await api('/jobs/'+pendingReload)).body.state,'succeeded');
  // Reload after background recovery to use the committed editor/file inputs.
  await navigate('?page=edit-song&id='+id);await expectText('Редактировать песню');await expectText('synthetic.wav');
  // Replace with invalid bytes: old media survives, no success UI.
@@ -268,7 +324,7 @@ try {
  for(const [width,height] of [[320,640],[360,800],[800,360],[1280,900]]){await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<900});assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,`Overflow ${width}`);assert.equal(await evaluate(`[...document.querySelectorAll('form button, form input:not([hidden]), form select, form textarea')].every(e=>(e.tagName==='BUTTON' || e.id && e.name) && e.getBoundingClientRect().height>=44)`),true);}
  await input('title','Несохранённое название');await click('Отмена');assert.equal(dialogs,1);assert.equal(await evaluate(`document.querySelector('[name=title]').value`),'Несохранённое название');
  acceptDialog=true;await click('Отмена');await expectText('Мои изменения');assert.equal((await api('/songs/'+id)).body.title,'Мои изменения');
- // Partial multi-file success keeps server identity/name when local selection is removed.
+ // Partial multi-file success keeps confirmed files distinct from removable failed selections.
  await navigate('?page=create-song');await expectText('Новая песня');await input('title','Частичное сохранение');
  for(const count of [2,4]) {
    await evaluate(`(() => {const s=document.querySelector('[name=trackCount]');s.value='${count}';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
@@ -276,11 +332,28 @@ try {
    const partialId=await evaluate(`new URLSearchParams(location.search).get('id')`);
    const partial=(await api('/songs/'+partialId)).body;
    assert.equal(partial.tracks[count-2].sourceName,'synthetic.wav');
-   await evaluate(`document.querySelector('[aria-label="Убрать файл трека ${count-1}"]').click()`);
-   assert.equal(await evaluate(`document.querySelector('[name="tracks[${count-2}].name"]').closest('div').textContent.includes('synthetic.wav')`),true,'Saved source name must survive removing the local File after partial success');
+   assert.equal(await evaluate(`!!document.querySelector('[aria-label="Отменить выбор файла трека ${count-1}"]')`),false,'Completed replacement must not remain selected as pending');
+   assert.equal(await evaluate(`document.querySelector('[name="tracks[${count-2}].name"]').closest('div').textContent.includes('synthetic.wav')`),true,'Completed source name must remain visible after partial success');
    assert.equal(await evaluate(`document.querySelector('[name="tracks[${count-2}].name"]').closest('div').textContent.includes('Файл не выбран')`),false);
-   await evaluate(`document.querySelector('[aria-label="Убрать файл трека ${count}"]').click()`);
+   await evaluate(`document.querySelector('[aria-label="Отменить выбор файла трека ${count}"]').click()`);
    await save();await expectText('Изменения сохранены на сервере.');
+ }
+ // One unavailable job must not exhaust another job's polling budget.
+ for(const failureStatus of [0,404]) {
+   const pollSong=(await api('/songs','POST',{title:'Независимый опрос',bpm:84,beatsPerBar:4,beatUnit:4,notes:'',publication:'draft',tracks:[{name:'Проблемная',position:0,gain:1},{name:'Исправная',position:1,gain:1}]},{'Idempotency-Key':crypto.randomUUID()})).body;
+   await writeFile(process.env.CHORAL_TEST_WORKER_MARKER,'long');
+   const jobIds=[];
+   for(const track of pollSong.tracks) {
+     const fresh=(await api('/songs/'+pollSong.id)).body;
+     const job=await evaluate(`(async()=>{const me=await(await fetch('/api/v1/auth/me')).json();const form=new FormData();form.append('file',new File([Uint8Array.from(atob(${JSON.stringify(wav.toString('base64'))}),c=>c.charCodeAt(0))],'poll.wav',{type:'audio/wav'}));const r=await fetch('/api/v1/songs/${pollSong.id}/tracks/${track.id}/uploads',{method:'POST',headers:{'X-CSRF-Token':me.csrfToken,'Idempotency-Key':crypto.randomUUID(),'If-Match':'"${fresh.version}"'},body:form});if(r.status!==202)throw new Error('Fixture upload failed');return r.json();})()`);
+     jobIds.push(job.id);
+   }
+   isolatedJob=jobIds[0];isolatedChecks=0;isolatedStatus=failureStatus;
+   await send('Fetch.enable',{patterns:[{urlPattern:'*/api/v1/jobs/*',requestStage:'Request'}]});
+   await navigate('?page=edit-song&id='+pollSong.id);await expectText('Редактировать песню');
+   await poll(()=>evaluate(`document.querySelector('[name="tracks[1].name"]').closest('div').textContent.includes('Готово к воспроизведению')`),'Healthy job stopped polling when another job failed',25000);
+   assert.equal(isolatedChecks,failureStatus?1:3,'Unavailable job must stop at its own retry limit');
+   await send('Fetch.disable');isolatedJob='';
  }
  console.log('Real Go/SQLite/FFmpeg + Chrome: background job recovery, partial multi-file saves for new and appended tracks, lost creation response/edit/replay without duplicate or File loss, draft, upload/ready, probe timeout/retry, network key retention, failed replacement, persistence, conflict/retry, offline, publication conflict/retry, search, share rotation/revocation, anonymous song/list, admin, Unicode and responsive checks passed.');
 } finally {

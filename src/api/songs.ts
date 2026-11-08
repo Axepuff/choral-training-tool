@@ -31,6 +31,6 @@ export function writeSong(value: SongFormValue, current: Song | null, key: strin
   });
 }
 export function songForm(song: Song): SongFormValue {
-  return { ...song, tracks: song.tracks.map(t => ({ id: t.id, name: t.name, gain: t.gain,
+  return { ...song, tracks: song.tracks.map(t => ({ id: t.id, name: t.name, gain: t.gain, audioReady: !!t.mediaUrl,
     ...((t.mediaUrl || t.sourceName) ? { existingFileName: t.sourceName ?? 'Исходное имя недоступно' } : {}) })) };
 }

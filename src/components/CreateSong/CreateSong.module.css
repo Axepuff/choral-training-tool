@@ -14,13 +14,34 @@
 .sectionHeader label { font-size: 13px; color: var(--color-text-muted); }
 .sectionHeader select { margin-left: 6px; }
 .help { color: var(--color-text-muted); font-size: 12px; margin: 8px 0 12px; }
-.trackList { display: grid; gap: 12px; }
+.trackList { display: grid; gap: var(--space-5); }
 .track { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; gap: 4px 8px; align-items: center; }
+.track:focus { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
 .number { font-size: 12px; color: var(--color-text-muted); }
 .trackName { min-width: 0; }
-.fileInfo { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--color-text-muted); font-size: 11px; }
-.fileInfo > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fileRemove { margin-left: auto; flex-shrink: 0; }
+.fileInfo { grid-column: 2 / -1; min-width: 0; color: var(--color-text-muted); font-size: var(--font-sm); overflow-wrap: anywhere; }
+.fileInfo p { margin: var(--space-1) 0; }
+.fileLabel { color: var(--color-text-muted); }
+.fileStatus { color: var(--color-text); font-weight: 500; }
+.ready { color: var(--color-published-text); }
+.problem { color: var(--color-mute); }
+.fileActions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.chooseFile { grid-column: 3; }
+.uploadSummary { margin-block: var(--space-3) var(--space-5); font-size: var(--font-sm); }
+.uploadSummary p { margin: var(--space-1) 0; }
+.uploadSummary p:first-child { font-weight: 500; }
+.summaryProblem { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); color: var(--color-mute); }
+.transfer { display: flex; align-items: center; gap: var(--space-3); }
+.transfer > span { flex-shrink: 0; white-space: nowrap; }
+.progress { appearance: none; display: block; min-width: 0; width: 100%; height: var(--space-3); margin-block: var(--space-2); border: 0; border-radius: var(--radius-full); overflow: hidden; background: var(--color-surface-soft); box-shadow: var(--shadow-inset); accent-color: var(--color-accent); }
+.progress::-webkit-progress-bar { background: var(--color-surface-soft); border-radius: var(--radius-full); box-shadow: var(--shadow-inset); }
+.progress::-webkit-progress-value { background: var(--color-accent); border-radius: var(--radius-full); }
+.progress::-moz-progress-bar { background: var(--color-accent); border-radius: var(--radius-full); }
+.progress:indeterminate { background: linear-gradient(90deg, var(--color-surface-soft) 0 30%, var(--color-accent) 30% 60%, var(--color-surface-soft) 60%); background-size: 200% 100%; animation: transfer 1.5s linear infinite; }
+.progress:indeterminate::-webkit-progress-bar { background: transparent; }
+@keyframes transfer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .progress:indeterminate { animation: none; } }
+@media (max-width: 479px) { .track { grid-template-columns: 18px minmax(0, 1fr); } .chooseFile { grid-column: 2; justify-self: start; margin-top: var(--space-1); } }
 .formats { font-size: 12px; color: var(--color-text-muted); }
 .formats summary { cursor: pointer; min-height: 44px; padding: 12px 0; color: var(--color-accent-strong); }
 .formats p { margin: 4px 0 12px; }
@@ -35,7 +56,6 @@
 
 .fields { border: 0; padding: 0; margin: 0; min-width: 0; }
 
-.trackStatus { grid-column: 2 / -1; min-width: 0; margin: 0; }
 .actions { display: grid; gap: 8px; }
 .actions .cancel { margin-top: 0; }
 

@@ -123,7 +123,7 @@ export const PublishedEditFlow: Story = { name: 'Проверка · негот�
   const canvas = within(canvasElement);
   await userEvent.click(canvas.getByRole('button', { name: 'Редактировать: Тихий вечер' }));
   await userEvent.selectOptions(canvas.getByRole('combobox', { name: 'Количество треков' }), '6');
-  await expect(canvas.getByText('Выбрано файлов: 5 из 6')).toBeVisible();
+  await expect(canvas.getByText('Готовых партий: 5 из 6')).toBeVisible();
   await userEvent.click(canvas.getByRole('button', { name: 'Сохранить изменения' }));
   const dialog = await listSettings(canvasElement);
   await userEvent.click(dialog.getByRole('button', { name: 'Посмотреть как ученик' }));

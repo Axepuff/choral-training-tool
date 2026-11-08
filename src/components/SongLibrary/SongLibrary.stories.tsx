@@ -80,7 +80,7 @@ export const Editing: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Редактировать: Тихий вечер' }));
     await expect(canvas.getByRole('heading', { name: 'Редактировать песню' })).toBeVisible();
     await expect(canvas.getByRole('textbox', { name: 'Название песни' })).toHaveValue('Тихий вечер');
-    await expect(canvas.getByText('Выбрано файлов: 5 из 5')).toBeVisible();
+    await expect(canvas.getByText('Готовых партий: 5 из 5')).toBeVisible();
   },
 };
 export const SaveChanges: Story = {
