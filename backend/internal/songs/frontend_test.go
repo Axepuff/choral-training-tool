@@ -48,7 +48,7 @@ func TestSongsFrontendBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 	workerMarker := filepath.Join(probeDir, "worker-once")
-	workerScript := "#!/bin/sh\nif [ -f " + strconv.Quote(workerMarker) + " ]; then\nmode=$(cat " + strconv.Quote(workerMarker) + ")\nrm -- " + strconv.Quote(workerMarker) + "\nif [ \"$mode\" = fail ]; then exit 1; fi\nsleep 3\nfi\nexec " + strconv.Quote(realFFmpeg) + " \"$@\"\n"
+	workerScript := "#!/bin/sh\nif [ -f " + strconv.Quote(workerMarker) + " ]; then\nmode=$(cat " + strconv.Quote(workerMarker) + ")\nrm -- " + strconv.Quote(workerMarker) + "\nif [ \"$mode\" = fail ]; then exit 1; fi\nif [ \"$mode\" = long ]; then sleep 8; else sleep 3; fi\nfi\nexec " + strconv.Quote(realFFmpeg) + " \"$@\"\n"
 	if err := os.WriteFile(filepath.Join(probeDir, "ffmpeg"), []byte(workerScript), 0700); err != nil {
 		t.Fatal(err)
 	}

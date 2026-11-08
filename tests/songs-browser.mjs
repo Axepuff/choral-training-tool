@@ -25,6 +25,10 @@ let acceptDialog = false;
 let dialogs = 0;
 let failJobCount = 0;
 let acceptedUploadJob;
+let limitedPath = '';
+let isolatedJob = '';
+let isolatedChecks = 0;
+let isolatedStatus = 0;
 let failedJobs = 0;
 const pending = new Map();
 const loadedDocuments = new Set();
@@ -92,7 +96,9 @@ try {
  ws=new WebSocket(targets.find(t=>t.type==='page').webSocketDebuggerUrl);
  await new Promise((resolve,reject)=>{ws.onopen=resolve;ws.onerror=reject;});
  ws.onmessage=message=>{const data=JSON.parse(message.data);if(data.method==='Page.lifecycleEvent' && data.params.name==='load') loadedDocuments.add(data.params.loaderId);if(data.method==='Network.requestWillBeSent' && data.params.request.url.endsWith('/uploads')){uploadKeys.push(data.params.request.headers['Idempotency-Key']);}if(data.method==='Fetch.requestPaused'){
-   if(failJobCount > 0 && data.params.request.url.includes('/jobs/')){failJobCount--;failedJobs++;void send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});}
+   if(limitedPath && data.params.request.url.endsWith(limitedPath)) void send('Fetch.fulfillRequest',{requestId:data.params.requestId,responseCode:429,responseHeaders:[{name:'Content-Type',value:'application/json'}],body:Buffer.from(JSON.stringify({error:{code:'upload_busy',message:'Временный отказ проверки'}})).toString('base64')});
+   else if(isolatedJob && data.params.request.url.endsWith('/jobs/'+isolatedJob)){isolatedChecks++;void send(isolatedStatus?'Fetch.fulfillRequest':'Fetch.failRequest',isolatedStatus?{requestId:data.params.requestId,responseCode:isolatedStatus,responseHeaders:[{name:'Content-Type',value:'application/json'}],body:Buffer.from(JSON.stringify({error:{code:'not_found',message:'Нет доступа к заданию'}})).toString('base64')}:{requestId:data.params.requestId,errorReason:'ConnectionReset'});}
+   else if(failJobCount > 0 && data.params.request.url.includes('/jobs/')){failJobCount--;failedJobs++;void send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});}
    else if(data.params.request.url.includes('/jobs/')) void send('Fetch.continueRequest',{requestId:data.params.requestId});
    else if(data.params.responseStatusCode===202 && data.params.request.url.endsWith('/uploads')) void send('Fetch.getResponseBody',{requestId:data.params.requestId}).then(response=>{acceptedUploadJob=JSON.parse(response.base64Encoded?atob(response.body):response.body).id;return send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});});
    else void send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});
@@ -158,10 +164,25 @@ try {
  await send('Fetch.disable');
  await poll(async()=>(await api('/jobs/'+acceptedUploadJob)).body.state==='succeeded','Accepted upload did not finish');
  const committedVersion=(await api('/songs/'+id)).body.version;
+ for(const path of ['/api/v1/songs/'+id,'/uploads']) {
+   limitedPath=path;await send('Fetch.enable',{patterns:[{urlPattern:'*'+path,requestStage:'Request'}]});
+   await click('Проверить ещё раз');
+   await poll(()=>evaluate(`!document.querySelector('fieldset').disabled`),'Temporary check did not finish');
+   assert.equal(await bodyIncludes('Не удалось проверить результат'),true,'Temporary read/replay 429 must retain unknown outcome');
+   await send('Fetch.disable');limitedPath='';
+ }
+ await input('title','Черновик после прослушивания');await input('notes','Не терять эти поля',true);
+ await click('Слушать песню');await click('К редактированию');
+ assert.equal(await evaluate(`document.querySelector('[name=title]').value`),'Черновик после прослушивания','Listening must preserve unsaved fields and selected replacement');
+ assert.equal(await bodyIncludes('Не удалось проверить результат'),true,'Listening must not hide the unknown upload');
+ assert.equal(await evaluate(`document.querySelector('[aria-label="Заменить файл трека 1"]').disabled`),true,'Unknown upload must stay locked after listening');
+
  await click('Проверить ещё раз');
  await poll(()=>evaluate(`!document.querySelector('fieldset').disabled && !document.body.textContent.includes('Не удалось проверить результат')`),'Lost upload response did not reconcile');
  assert.equal(uploadKeys.at(-1),lostResponseKey,'Lost response retry must replay the original key');
  assert.equal((await api('/songs/'+id)).body.version,committedVersion,'Checking accepted upload must not create another job or write metadata');
+ assert.equal(await evaluate(`document.querySelector('[name=notes]').value`),'Не терять эти поля');
+ await input('title','Реальная песня');await input('notes','Заметка 🌼',true);await save();await expectText('Изменения сохранены на сервере.');
  media=(await api('/songs/'+id)).body.tracks[0].mediaUrl;
  // Accepted upload, one failed status request, then real background recovery.
  failJobCount=2;await send('Fetch.enable',{patterns:[{urlPattern:'*/api/v1/jobs/*',requestStage:'Request'}]});
@@ -316,6 +337,23 @@ try {
    assert.equal(await evaluate(`document.querySelector('[name="tracks[${count-2}].name"]').closest('div').textContent.includes('Файл не выбран')`),false);
    await evaluate(`document.querySelector('[aria-label="Отменить выбор файла трека ${count}"]').click()`);
    await save();await expectText('Изменения сохранены на сервере.');
+ }
+ // One unavailable job must not exhaust another job's polling budget.
+ for(const failureStatus of [0,404]) {
+   const pollSong=(await api('/songs','POST',{title:'Независимый опрос',bpm:84,beatsPerBar:4,beatUnit:4,notes:'',publication:'draft',tracks:[{name:'Проблемная',position:0,gain:1},{name:'Исправная',position:1,gain:1}]},{'Idempotency-Key':crypto.randomUUID()})).body;
+   await writeFile(process.env.CHORAL_TEST_WORKER_MARKER,'long');
+   const jobIds=[];
+   for(const track of pollSong.tracks) {
+     const fresh=(await api('/songs/'+pollSong.id)).body;
+     const job=await evaluate(`(async()=>{const me=await(await fetch('/api/v1/auth/me')).json();const form=new FormData();form.append('file',new File([Uint8Array.from(atob(${JSON.stringify(wav.toString('base64'))}),c=>c.charCodeAt(0))],'poll.wav',{type:'audio/wav'}));const r=await fetch('/api/v1/songs/${pollSong.id}/tracks/${track.id}/uploads',{method:'POST',headers:{'X-CSRF-Token':me.csrfToken,'Idempotency-Key':crypto.randomUUID(),'If-Match':'"${fresh.version}"'},body:form});if(r.status!==202)throw new Error('Fixture upload failed');return r.json();})()`);
+     jobIds.push(job.id);
+   }
+   isolatedJob=jobIds[0];isolatedChecks=0;isolatedStatus=failureStatus;
+   await send('Fetch.enable',{patterns:[{urlPattern:'*/api/v1/jobs/*',requestStage:'Request'}]});
+   await navigate('?page=edit-song&id='+pollSong.id);await expectText('Редактировать песню');
+   await poll(()=>evaluate(`document.querySelector('[name="tracks[1].name"]').closest('div').textContent.includes('Готово к воспроизведению')`),'Healthy job stopped polling when another job failed',25000);
+   assert.equal(isolatedChecks,failureStatus?1:3,'Unavailable job must stop at its own retry limit');
+   await send('Fetch.disable');isolatedJob='';
  }
  console.log('Real Go/SQLite/FFmpeg + Chrome: background job recovery, partial multi-file saves for new and appended tracks, lost creation response/edit/replay without duplicate or File loss, draft, upload/ready, probe timeout/retry, network key retention, failed replacement, persistence, conflict/retry, offline, publication conflict/retry, search, share rotation/revocation, anonymous song/list, admin, Unicode and responsive checks passed.');
 } finally {
