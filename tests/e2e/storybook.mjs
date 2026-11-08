@@ -82,6 +82,20 @@ try {
     const results = await evaluate('window.storyResults');
     assert.ok(results.every(r => r.event === 'storyFinished' && r.status === 'success'), `Story failed: ${story.id}; ${JSON.stringify(results)}`);
     assert.ok(results.some(r => r.id === story.id && r.status === 'success'), `Story incomplete: ${story.id}`);
+    if (story.id === 'ui-rangeslider--faders') {
+      // Synthetic story events cannot exercise the native thumb's drag target.
+      const slider = `document.querySelector('input[aria-label="Альт"]')`;
+      const box = await evaluate(`(() => { const e = ${slider}; e.scrollIntoView({block: 'center'}); const b = e.getBoundingClientRect(); return {x:b.x, y:b.y, width:b.width, height:b.height, value:+e.value}; })()`);
+      // The accepted target is a 44px square: grab its corner, outside the small visible knob.
+      const x = box.x + box.width / 2 + 20;
+      const y = box.y + 22 + (box.height - 44) * (1 - box.value / 100) + 16;
+      await send('Input.dispatchMouseEvent', {type:'mousePressed', button:'left', clickCount:1, x, y});
+      assert.equal(await evaluate(`${slider}.valueAsNumber`), box.value, 'Near-thumb grab must keep the current volume');
+      await send('Input.dispatchMouseEvent', {type:'mouseMoved', buttons:1, x, y:y - 24});
+      await send('Input.dispatchMouseEvent', {type:'mouseReleased', button:'left', clickCount:1, x, y:y - 24});
+      assert.ok(await evaluate(`${slider}.valueAsNumber`) > box.value, 'Near-thumb drag must change the volume');
+      assert.equal(await evaluate(`document.querySelector('input[aria-label="Тенор — Mute"]').valueAsNumber`), 60, 'Adjacent channel must not move');
+    }
     completed++;
     console.log(`PASS ${story.id}`);
     await fetch(`http://127.0.0.1:${port}/json/close/${target.id}`);

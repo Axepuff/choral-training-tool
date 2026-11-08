@@ -47,3 +47,26 @@
 .volume[data-orientation='vertical']::-moz-range-progress { width: var(--track-size); background: linear-gradient(to top, var(--slider-color), var(--slider-light)); }
 .slider[data-orientation='vertical']::-webkit-slider-thumb { margin: 0 0 0 calc((var(--track-size) - var(--thumb-width)) / 2); }
 .slider[data-orientation='vertical']::-moz-range-track { width: var(--track-size); height: 100%; }
+
+/* Keep the native drag target large without enlarging the visible 18px knob. */
+.volume[data-orientation='vertical']::-webkit-slider-thumb {
+  width: var(--touch-target);
+  height: var(--touch-target);
+  padding: 0;
+  border-radius: 0;
+  border: 0;
+  margin-left: calc((var(--track-size) - var(--touch-target)) / 2);
+  background: var(--background-fader-touch-thumb);
+  box-shadow: none;
+  filter: var(--filter-fader-thumb);
+}
+.volume[data-orientation='vertical']::-moz-range-thumb {
+  width: var(--touch-target);
+  height: var(--touch-target);
+  padding: 0;
+  border-radius: 0;
+  border: 0;
+  background: var(--background-fader-touch-thumb);
+  box-shadow: none;
+  filter: var(--filter-fader-thumb);
+}

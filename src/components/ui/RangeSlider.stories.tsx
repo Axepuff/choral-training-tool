@@ -20,10 +20,14 @@ export const Controlled: Story = {
   },
 };
 export const Faders: Story = {
-  render: () => <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24 }}>
+  render: function Faders() {
+    const [volume, setVolume] = useState(60);
+    const [mutedVolume, setMutedVolume] = useState(60);
+    return <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24 }}>
     <RangeSlider aria-label="Громкость" value={75} onChange={() => {}} />
-    <RangeSlider aria-label="Альт" orientation="vertical" value={60} onChange={() => {}} />
-    <RangeSlider aria-label="Тенор — Mute" orientation="vertical" value={60} muted onChange={() => {}} />
+    <RangeSlider aria-label="Альт" orientation="vertical" value={volume} onChange={event => setVolume(event.currentTarget.valueAsNumber)} />
+    <RangeSlider aria-label="Тенор — Mute" orientation="vertical" value={mutedVolume} muted onChange={event => setMutedVolume(event.currentTarget.valueAsNumber)} />
     <RangeSlider aria-label="Бас" orientation="vertical" value={30} disabled />
-  </div>,
+  </div>;
+  },
 };

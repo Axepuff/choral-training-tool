@@ -83,7 +83,6 @@
 @media (max-width: 359px) {
   .mixer { padding: calc(var(--space-1) / 2); }
 }
-.trackState { display: block; }
 .diagnostics { min-width: 0; margin-block: 8px; font-size: 12px; }
 .diagnostics summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
 .diagnostics pre { white-space: pre-wrap; overflow-wrap: anywhere; }

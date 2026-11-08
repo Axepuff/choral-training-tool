@@ -1,3 +1,4 @@
+import { TrackStatus } from './TrackStatus';
 import { Message } from '../ui/Message';
 import { RangeSlider } from '../ui/RangeSlider';
 import { Button } from '../ui/Button';
@@ -318,7 +319,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
                   onMuteChange={(muted) => updateTrack(track.id, { muted })}
                   onSoloChange={(solo) => updateTrack(track.id, { solo })}
                 />
-                {song && <Message as="small" tone="muted" size="micro" className={styles.trackState} role="status">{audio.states[track.id] ?? "Ожидание…"}</Message>}
+                {song && <TrackStatus name={track.name} state={audio.states[track.id]} />}
               </div>
             ))}
           </div>
