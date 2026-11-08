@@ -97,7 +97,7 @@ export function useAudio(song: AudioSong | undefined, publicAccess: boolean) {
     const audio = engine.current;
     if (!audio) return;
     try {
-      if (!audio.buffers.size && !audio.streams.size) throw new Error('Нет загруженных дорожек');
+      if (!audio.buffers.size && !audio.streams.size) throw new Error(error || 'Нет доступных дорожек. Обновите страницу, чтобы повторить загрузку.');
       await action(audio); setError('');
     } catch (e) { audio.pause(); setError(e instanceof Error ? e.message : 'Не удалось запустить звук. Нажмите воспроизведение ещё раз.'); }
   }

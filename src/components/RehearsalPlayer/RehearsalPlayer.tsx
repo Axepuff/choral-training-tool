@@ -301,7 +301,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
 
         {loopError && <Message tone="error" role="alert">{loopError}</Message>}
         {audio.error && <Message tone="error" role="alert">{audio.error}</Message>}
-        {import.meta.env.DEV && Object.keys(audio.diagnostics).length > 0 && <details className={styles.diagnostics}>
+        {Object.keys(audio.diagnostics).length > 0 && <details className={styles.diagnostics}>
           <summary>Диагностика воспроизведения</summary>
           <pre>{JSON.stringify(Object.values(audio.diagnostics), null, 2)}</pre>
         </details>}

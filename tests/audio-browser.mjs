@@ -101,16 +101,18 @@ try {
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('p')).some(p => p.textContent === ${JSON.stringify(song.notes)})`), true, 'full API notes are rendered');
   const chunkDecode = await evaluate(`(async () => {
     const {MP4Reader} = await import('/src/audio/mp4.ts');
-    const context = new AudioContext({sampleRate:48000});
     const read = async (a,b) => new Uint8Array(await (await fetch('/api/v1/media/0', {credentials:'omit',headers:{Range:'bytes='+a+'-'+b}})).arrayBuffer());
     const reference = new Float32Array(await (await fetch('/api/v1/reference-pcm', {credentials:'omit'})).arrayBuffer());
-    if (context.sampleRate !== 48000 || reference.length !== 8 * 48000) throw new Error('Invalid reference PCM');
-    const nativeDecoder = globalThis.AudioDecoder, nativeDecode = context.decodeAudioData.bind(context);
+    if (reference.length !== 8 * 48000) throw new Error('Invalid reference PCM');
+    const nativeDecoder = globalThis.AudioDecoder;
     const support = await nativeDecoder.isConfigSupported({codec:'mp4a.40.2',sampleRate:48000,numberOfChannels:1,description:new Uint8Array([0x11,0x88])});
     if (!support.supported) throw new Error('This browser must support AAC WebCodecs for the packet regression');
-    const errors = [];
-    for (const decoder of ['webcodecs','decodeAudioData']) {
-    globalThis.AudioDecoder = decoder === 'webcodecs' ? nativeDecoder : undefined;
+    const errors = [], nativeWorker = globalThis.Worker;
+    let failedWorkerStarts = 0;
+    for (const decoder of ['webcodecs','decodeAudioData','recovery']) {
+    const context = new AudioContext({sampleRate:48000}), nativeDecode = context.decodeAudioData.bind(context);
+    globalThis.AudioDecoder = decoder === 'decodeAudioData' ? undefined : nativeDecoder;
+    globalThis.Worker = decoder === 'recovery' ? new Proxy(nativeWorker, { construct() { failedWorkerStarts++; throw new Error('synthetic worker decoder failure'); } }) : nativeWorker;
     // The packet path must work even when the MP4 decoder fails, as on the iPhone.
     context.decodeAudioData = decoder === 'webcodecs' ? async () => { throw new Error('broken short-MP4 decode'); } : nativeDecode;
     const reader = await MP4Reader.open(read);
@@ -122,9 +124,11 @@ try {
       for (let i=0;i<actual.length;i++) { const difference = actual[i]-reference[offset+i]; max=Math.max(max,Math.abs(difference)); rms += difference*difference; }
       errors.push({decoder,start,length:part.length,max,rms:Math.sqrt(rms/part.length)});
     }
+    await context.close();
     }
-    globalThis.AudioDecoder = nativeDecoder;
-    await context.close(); return errors;
+    globalThis.AudioDecoder = nativeDecoder; globalThis.Worker = nativeWorker;
+    if (failedWorkerStarts !== 1) throw new Error('Recovered reader must remember the working decoder');
+    return errors;
   })()`);
   console.log('Window decode comparison', chunkDecode);
   assert.ok(chunkDecode.every(p => Number.isFinite(p.max) && Number.isFinite(p.rms) && p.max < .001), 'window decode must match independent full PCM');
@@ -520,7 +524,10 @@ try {
   assert.equal(diagnostic[0].decodedRate, 48000);
   assert.ok(diagnostic[0].decodedSamples < diagnostic[0].offset + diagnostic[0].requiredSamples);
   assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
-  console.log('PASS dev-only decoder diagnostics: actual rate/length/offset reported after an intentionally shortened decode.');
+  const originalPlaybackError = await evaluate(`document.querySelector('[role=alert]').textContent`);
+  await clickPlayback('Воспроизвести');
+  assert.equal(await evaluate(`document.querySelector('[role=alert]').textContent`), originalPlaybackError, 'repeat Play preserves the original failure');
+  console.log('PASS decoder diagnostics: actual rate/length/offset reported; repeat Play preserves the failure.');
   if (process.env.CHORAL_STORYBOOK_URL) {
     await send('Page.addScriptToEvaluateOnNewDocument', {source: `
       window.storyResults = [];
