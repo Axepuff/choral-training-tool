@@ -23,6 +23,7 @@ export interface AudioDecodeDiagnostics {
   code: 'AAC_SAMPLE_RATE' | 'AAC_SHORT_PCM' | 'AAC_EMPTY_WINDOW' | 'AAC_PACKET_DECODE';
   readerVersion: 2; decoder: 'webcodecs' | 'decodeAudioData';
   packetFailure?: string;
+  fallbackFailure?: string;
   contextRate: number; decodedRate: number; channels: number;
   encodedSamples: number; decodedSamples: number; offset: number; requiredSamples: number;
   start: number; end: number;
@@ -106,17 +107,9 @@ export class MP4Reader {
     const bytes = await this.read(this.offsets[first]!, this.offsets[last - 1]! + sizes.at(-1)! - 1);
     const offset = sampleStart - first * 1024;
     const samples = Math.round((end - start) * 48000);
-    const decoder = await (this.packetSupport ??= supportsPackets()) ? 'webcodecs' : 'decodeAudioData';
-    let decoded: Pick<AudioBuffer, 'sampleRate' | 'numberOfChannels' | 'length' | 'getChannelData'>;
-    if (decoder === 'webcodecs') {
-      try { decoded = await decodePacketWindow(context, bytes, sizes); }
-      catch (error) {
-        throw new AudioDecodeError({ code: 'AAC_PACKET_DECODE', readerVersion: 2, decoder,
-          packetFailure: error instanceof Error ? `${error.name}: ${error.message}`.slice(0, 240) : 'unknown',
-          contextRate: context.sampleRate, decodedRate: 0, channels: 0,
-          encodedSamples: length, decodedSamples: 0, offset, requiredSamples: samples, start, end });
-      }
-    } else {
+    let decoder: AudioDecodeDiagnostics['decoder'] = await (this.packetSupport ??= supportsPackets()) ? 'webcodecs' : 'decodeAudioData';
+    let packetFailure: string | undefined;
+    const nativeDecode = async () => {
       const full = new Uint8Array(4);
       // Compatibility path for browsers without an AAC WebCodecs decoder.
       // The zero edit describes the full packet window; some Safari versions
@@ -142,14 +135,35 @@ export class MP4Reader {
           return type === 'tkhd' ? [box(type, payload), edit] : [box(type, payload)];
         }));
       const segment = join(this.ftyp, box('mdat', bytes), box('moov', rewrite(this.moov, 'moov')));
-      decoded = await context.decodeAudioData(segment.buffer as ArrayBuffer);
-    }
+      return context.decodeAudioData(segment.buffer as ArrayBuffer);
+    };
+    let decoded: Pick<AudioBuffer, 'sampleRate' | 'numberOfChannels' | 'length' | 'getChannelData'>;
+    if (decoder === 'webcodecs') {
+      try { decoded = await decodePacketWindow(context, bytes, sizes); }
+      catch (error) {
+        packetFailure = error instanceof Error ? `${error.name}: ${error.message}`.slice(0, 240) : 'unknown';
+        const diagnostics: AudioDecodeDiagnostics = { code: 'AAC_PACKET_DECODE', readerVersion: 2, decoder,
+          packetFailure, contextRate: context.sampleRate, decodedRate: 0, channels: 0,
+          encodedSamples: length, decodedSamples: 0, offset, requiredSamples: samples, start, end };
+        // Capability probing cannot guarantee that the device/worker can decode.
+        // Retry the same bounded window, never an entire recording or a closed context.
+        if (context.state === 'closed') throw new AudioDecodeError(diagnostics);
+        try { decoded = await nativeDecode(); }
+        catch (fallbackError) {
+          throw new AudioDecodeError({ ...diagnostics, fallbackFailure: fallbackError instanceof Error
+            ? `${fallbackError.name}: ${fallbackError.message}`.slice(0, 240) : 'unknown' });
+        }
+        decoder = 'decodeAudioData';
+      }
+    } else decoded = await nativeDecode();
     const code = decoded.sampleRate !== 48000 ? 'AAC_SAMPLE_RATE'
       : samples <= 0 ? 'AAC_EMPTY_WINDOW'
         : decoded.length - offset < samples || (decoder === 'webcodecs' && decoded.length !== length) ? 'AAC_SHORT_PCM' : null;
-    if (code) throw new AudioDecodeError({ code, readerVersion: 2, decoder, contextRate: context.sampleRate, decodedRate: decoded.sampleRate,
+    if (code) throw new AudioDecodeError({ code, readerVersion: 2, decoder, ...(packetFailure ? { packetFailure } : {}), contextRate: context.sampleRate, decodedRate: decoded.sampleRate,
       channels: decoded.numberOfChannels, encodedSamples: length, decodedSamples: decoded.length,
       offset, requiredSamples: samples, start, end });
+    // Remember recovery only after the fallback passed the PCM guards.
+    if (packetFailure) this.packetSupport = Promise.resolve(false);
     const output = context.createBuffer(1, samples, 48000);
     output.copyToChannel(decoded.getChannelData(0).subarray(offset, offset + samples), 0);
     return output;

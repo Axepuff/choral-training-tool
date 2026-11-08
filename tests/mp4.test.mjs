@@ -259,3 +259,46 @@ test('worker routes concurrent replies by request ID and rejects all pending job
     assert.equal(instances.length, 1, 'a closed context never creates another worker');
   } finally { if (original === undefined) delete globalThis.Worker; else globalThis.Worker = original; }
 });
+
+for (const mode of ['error', 'gap']) {
+  test(`failed WebCodecs (${mode}) retries a bounded native window and remembers recovery`, async () => {
+    await withPackets(mode, async ({ instances }) => {
+      const reader = await open(await fixture(44100)), context = packetContext();
+      let nativeCalls = 0;
+      context.decodeAudioData = async buffer => {
+        nativeCalls++;
+        const b = Buffer.from(buffer);
+        const stsz = payloadOffset(b, ['moov', 'trak', 'mdia', 'minf', 'stbl', 'stsz']);
+        const length = b.readUInt32BE(stsz + 8) * 1024;
+        assert.ok(length < 5 * 48000, 'fallback remains a short window');
+        return { sampleRate: 48000, numberOfChannels: 1, length,
+          getChannelData: () => Float32Array.from({ length }, (_, i) => i) };
+      };
+      for (const [start, end, length, firstSample] of windows) {
+        const pcm = await reader.decode(context, start, end);
+        assert.equal(pcm.length, length);
+        assert.equal(pcm.getChannelData(0)[0], firstSample);
+        assert.equal(pcm.getChannelData(0).at(-1), firstSample + length - 1);
+      }
+      assert.equal(instances.length, 1, 'failed packet decoder is not retried each window');
+      assert.equal(nativeCalls, windows.length);
+    });
+  });
+}
+test('native recovery rejects short PCM and retains the packet failure', async () => {
+  await withPackets('error', async () => {
+    const reader = await open(await fixture(44100)), context = packetContext();
+    context.decodeAudioData = async () => ({ sampleRate: 48000, length: 192448, numberOfChannels: 1 });
+    await assert.rejects(reader.decode(context, 0, 4), error =>
+      error instanceof AudioDecodeError && error.diagnostics.code === 'AAC_SHORT_PCM' &&
+      error.diagnostics.decoder === 'decodeAudioData' && /flush failed/.test(error.diagnostics.packetFailure));
+  });
+});
+test('both decoder failures remain available for diagnosis', async () => {
+  await withPackets('error', async () => {
+    const reader = await open(await fixture(44100));
+    await assert.rejects(reader.decode(packetContext(), 0, 4), error =>
+      error instanceof AudioDecodeError && /flush failed/.test(error.diagnostics.packetFailure) &&
+      /must not use/.test(error.diagnostics.fallbackFailure));
+  });
+});
