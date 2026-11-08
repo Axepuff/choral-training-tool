@@ -2,7 +2,7 @@ import { Message } from '../ui/Message';
 import { RangeSlider } from '../ui/RangeSlider';
 import { Button } from '../ui/Button';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { TrackControls } from '../TrackControls/TrackControls';
 import type { TrackTone } from '../TrackControls/TrackControls';
 import { barDuration, formatTime, mockScore, mockTracks } from './mockScore';
@@ -18,6 +18,8 @@ import styles from './RehearsalPlayer.module.css';
 export interface RehearsalPlayerProps {
   song?: AudioSong;
   publicAccess?: boolean;
+  /** Действия текущего маршрута; права и переходы задаёт вызывающая страница. */
+  navigation?: ReactNode;
   /** Дорожки только для беззвучного деморежима; при наличии song игнорируются. */
   demoTracks?: MockTrack[];
   /** Название выбранной песни в демонстрационной библиотеке. */
@@ -34,7 +36,7 @@ export interface RehearsalPlayerProps {
 }
 
 /** Мобильный макет репетиции. Приложение и Storybook используют этот же компонент. */
-export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initialLoop = false, initialLoopRange = [1, 1], bars = 4, pieceTitle = mockScore.title, song, publicAccess = false, demoTracks = mockTracks }: RehearsalPlayerProps) {
+export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initialLoop = false, initialLoopRange = [1, 1], bars = 4, pieceTitle = mockScore.title, song, publicAccess = false, demoTracks = mockTracks, navigation }: RehearsalPlayerProps) {
   const positionId = useId();
   const timelineRef = useRef<HTMLDivElement>(null);
   const bpm = song?.bpm ?? mockScore.bpm;
@@ -324,6 +326,7 @@ export function RehearsalPlayer({ initialTime = 0, initialPlaying = false, initi
 
       </section>
       {song?.notes && <p>{song.notes}</p>}
+      {navigation && <nav className={styles.navigation} aria-label="Навигация песни">{navigation}</nav>}
     </main>
   );
 }

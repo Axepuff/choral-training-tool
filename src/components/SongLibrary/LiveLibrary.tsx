@@ -123,9 +123,10 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
     } finally { setBusy(false); }
   }
   if (!loaded) return <main className={styles.page}>{error ? <Message tone="error" role="alert">{error}</Message> : <Message tone="muted" role="status">Загрузка песни…</Message>}<Button className={styles.shareAction} onClick={close}>Песни</Button></main>;
-  if (song && (listen || (user.role !== 'admin' && song.ownerId !== user.id))) return <>
-    <RehearsalPlayer key={song.id} song={song} />{(user.role === "admin" || song.ownerId === user.id) && <Button className={styles.shareAction} onClick={() => setListen(false)}>К редактированию</Button>}<Button className={styles.shareAction} onClick={close}>Песни</Button>
-  </>;
+  if (song && (listen || (user.role !== 'admin' && song.ownerId !== user.id))) return <RehearsalPlayer key={song.id} song={song} navigation={<>
+    {(user.role === "admin" || song.ownerId === user.id) && <Button onClick={() => setListen(false)}>К редактированию</Button>}
+    <Button onClick={close}>Песни</Button>
+  </>} />;
   return <>
     <CreateSong key={epoch} live busy={busy} status={status} error={error} {...(song ? { initialSong: songForm(song) } : {})} onSave={save} onCancel={close}
       trackStates={song?.tracks.map((t, index) => uploadStates[index] ?? (t.pendingJobId && jobs[t.pendingJobId] === 'failed' ? 'Ошибка обработки. Сохранённый файл не изменён.' : t.pendingJobId && ['queued', 'processing'].includes(jobs[t.pendingJobId] ?? '') ? 'Обработка…' : t.status === 'ready' ? 'Готово' : t.status === 'failed' ? 'Ошибка обработки — повторите или замените файл' : t.status === 'empty' ? 'Файл не загружен' : 'Обработка…'))}

@@ -22,8 +22,8 @@ export function PublicRoute({ token, songId, single }: { token: string; songId: 
   if (single || songId) {
     const song = single ? result.songs[0] : result.songs.find((s) => s.id === songId);
     if (!song) return <Message tone="error" role="alert">Песня недоступна по этой ссылке.</Message>;
-    return <><RehearsalPlayer key={song.id} song={song} publicAccess />
-      {!single && <a href={appUrl(`?list=${encodeURIComponent(token)}`)}>Песни</a>}</>;
+    return <RehearsalPlayer key={song.id} song={song} publicAccess
+      navigation={!single && <a href={appUrl(`?list=${encodeURIComponent(token)}`)}>Песни</a>} />;
   }
   return <SongLibrary role="guest" songs={result.songs.map((s, index) => ({
     id: s.id, title: s.title, bpm: s.bpm, meter: `${s.beatsPerBar}/${s.beatUnit}`,
