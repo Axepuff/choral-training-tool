@@ -23,7 +23,8 @@ let ws;
 let next = 0;
 let acceptDialog = false;
 let dialogs = 0;
-let failOneJob = false;
+let failJobCount = 0;
+let acceptedUploadJob;
 let failedJobs = 0;
 const pending = new Map();
 const loadedDocuments = new Set();
@@ -91,8 +92,9 @@ try {
  ws=new WebSocket(targets.find(t=>t.type==='page').webSocketDebuggerUrl);
  await new Promise((resolve,reject)=>{ws.onopen=resolve;ws.onerror=reject;});
  ws.onmessage=message=>{const data=JSON.parse(message.data);if(data.method==='Page.lifecycleEvent' && data.params.name==='load') loadedDocuments.add(data.params.loaderId);if(data.method==='Network.requestWillBeSent' && data.params.request.url.endsWith('/uploads')){uploadKeys.push(data.params.request.headers['Idempotency-Key']);}if(data.method==='Fetch.requestPaused'){
-   if(failOneJob && data.params.request.url.includes('/jobs/')){failOneJob=false;failedJobs++;void send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});}
+   if(failJobCount > 0 && data.params.request.url.includes('/jobs/')){failJobCount--;failedJobs++;void send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});}
    else if(data.params.request.url.includes('/jobs/')) void send('Fetch.continueRequest',{requestId:data.params.requestId});
+   else if(data.params.responseStatusCode===202 && data.params.request.url.endsWith('/uploads')) void send('Fetch.getResponseBody',{requestId:data.params.requestId}).then(response=>{acceptedUploadJob=JSON.parse(response.base64Encoded?atob(response.body):response.body).id;return send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});});
    else void send('Fetch.failRequest',{requestId:data.params.requestId,errorReason:'ConnectionReset'});
   }if(data.method==='Page.javascriptDialogOpening'){dialogs++;void send('Page.handleJavaScriptDialog',{accept:data.params.type==='beforeunload' || acceptDialog});}const entry=pending.get(data.id);if(entry){pending.delete(data.id);if(data.error)entry.reject(new Error(data.error.message));else entry.resolve(data.result);}};
  await send('Page.enable');await send('Page.setLifecycleEventsEnabled',{enabled:true});await send('Runtime.enable');await send('Network.enable');
@@ -142,15 +144,48 @@ try {
  await selectFile(file);await save();await expectText('Загрузка не подтверждена');
  const networkKey=uploadKeys.at(-1);assert.ok(networkKey);
  await send('Fetch.disable');
- await save();await expectText('Изменения сохранены на сервере.');
+ await input('title','Несохранённое поле повтора');
+ await click('Проверить ещё раз');
+ await poll(()=>evaluate(`!document.querySelector('fieldset').disabled && document.body.textContent.includes('Готово к воспроизведению')`),'Per-file retry did not finish');
  assert.equal(uploadKeys.at(-1),networkKey,'Unknown network outcome must retain the idempotency key');
+ assert.equal((await api('/songs/'+id)).body.title,'Реальная песня','Per-file retry must not write unrelated metadata');
+ assert.equal(await evaluate(`document.querySelector('[name=title]').value`),'Несохранённое поле повтора');
+ await input('title','Реальная песня');await save();await expectText('Изменения сохранены на сервере.');
+ // Lose the upload response after commit; checking replays the same operation, not a new job.
+ await send('Fetch.enable',{patterns:[{urlPattern:'*/uploads',requestStage:'Response'}]});
+ await selectFile(file);await save();await expectText('Не удалось проверить результат');
+ const lostResponseKey=uploadKeys.at(-1);assert.ok(acceptedUploadJob);
+ await send('Fetch.disable');
+ await poll(async()=>(await api('/jobs/'+acceptedUploadJob)).body.state==='succeeded','Accepted upload did not finish');
+ const committedVersion=(await api('/songs/'+id)).body.version;
+ await click('Проверить ещё раз');
+ await poll(()=>evaluate(`!document.querySelector('fieldset').disabled && !document.body.textContent.includes('Не удалось проверить результат')`),'Lost upload response did not reconcile');
+ assert.equal(uploadKeys.at(-1),lostResponseKey,'Lost response retry must replay the original key');
+ assert.equal((await api('/songs/'+id)).body.version,committedVersion,'Checking accepted upload must not create another job or write metadata');
  media=(await api('/songs/'+id)).body.tracks[0].mediaUrl;
  // Accepted upload, one failed status request, then real background recovery.
- failOneJob=true;await send('Fetch.enable',{patterns:[{urlPattern:'*/api/v1/jobs/*',requestStage:'Request'}]});
+ failJobCount=2;await send('Fetch.enable',{patterns:[{urlPattern:'*/api/v1/jobs/*',requestStage:'Request'}]});
  await selectFile(file);await save();await expectText('Нет соединения с сервером');
- await poll(()=>evaluate(`!document.querySelector('fieldset').disabled && [...document.querySelectorAll('form [role=status]')].some(e=>e.textContent==='Готово')`),'Background job did not replace the stale row error');
- assert.equal(failedJobs,1);await send('Fetch.disable');
+ await poll(()=>evaluate(`!document.querySelector('fieldset').disabled && [...document.querySelectorAll('form [role=status]')].some(e=>e.textContent.includes('Готово к воспроизведению'))`),'Background job did not replace the stale row error');
+ assert.equal(failedJobs,2);await send('Fetch.disable');
  media=(await api('/songs/'+id)).body.tracks[0].mediaUrl;
+ const recoveredUploads = uploadKeys.length;
+ await save();await expectText('Изменения сохранены на сервере.');
+ assert.equal(uploadKeys.length,recoveredUploads,'Saving after background recovery must not upload the completed File again');
+ // A real worker rejection keeps the old audio and permits retry of the same File.
+ await writeFile(process.env.CHORAL_TEST_WORKER_MARKER,'fail');
+ await selectFile(file);await save();await expectText('Не удалось подготовить аудио');
+ const workerKey=uploadKeys.at(-1);
+ await click('Повторить загрузку');
+ await poll(()=>evaluate(`!document.querySelector('fieldset').disabled && !document.body.textContent.includes('Не удалось подготовить аудио')`),'Worker retry failed');
+ assert.notEqual(uploadKeys.at(-1),workerKey,'Confirmed worker failure must start a new attempt');
+ // Reload while the real worker is still processing: no local File survives.
+ await writeFile(process.env.CHORAL_TEST_WORKER_MARKER,'delay');
+ await selectFile(file);await save();await expectText('Подготавливаем аудио');
+ const pendingReload=(await api('/songs/'+id)).body.tracks[0].pendingJobId;assert.ok(pendingReload);
+ await navigate('?page=edit-song&id='+id);await expectText('Редактировать песню');
+ await poll(()=>evaluate(`document.body.textContent.includes('Готово к воспроизведению') && !document.body.textContent.includes('Подготавливаем аудио')`),'Reload did not recover server processing');
+ assert.equal((await api('/jobs/'+pendingReload)).body.state,'succeeded');
  // Reload after background recovery to use the committed editor/file inputs.
  await navigate('?page=edit-song&id='+id);await expectText('Редактировать песню');await expectText('synthetic.wav');
  // Replace with invalid bytes: old media survives, no success UI.
@@ -268,7 +303,7 @@ try {
  for(const [width,height] of [[320,640],[360,800],[800,360],[1280,900]]){await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<900});assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,`Overflow ${width}`);assert.equal(await evaluate(`[...document.querySelectorAll('form button, form input:not([hidden]), form select, form textarea')].every(e=>(e.tagName==='BUTTON' || e.id && e.name) && e.getBoundingClientRect().height>=44)`),true);}
  await input('title','Несохранённое название');await click('Отмена');assert.equal(dialogs,1);assert.equal(await evaluate(`document.querySelector('[name=title]').value`),'Несохранённое название');
  acceptDialog=true;await click('Отмена');await expectText('Мои изменения');assert.equal((await api('/songs/'+id)).body.title,'Мои изменения');
- // Partial multi-file success keeps server identity/name when local selection is removed.
+ // Partial multi-file success keeps confirmed files distinct from removable failed selections.
  await navigate('?page=create-song');await expectText('Новая песня');await input('title','Частичное сохранение');
  for(const count of [2,4]) {
    await evaluate(`(() => {const s=document.querySelector('[name=trackCount]');s.value='${count}';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
@@ -276,10 +311,10 @@ try {
    const partialId=await evaluate(`new URLSearchParams(location.search).get('id')`);
    const partial=(await api('/songs/'+partialId)).body;
    assert.equal(partial.tracks[count-2].sourceName,'synthetic.wav');
-   await evaluate(`document.querySelector('[aria-label="Убрать файл трека ${count-1}"]').click()`);
-   assert.equal(await evaluate(`document.querySelector('[name="tracks[${count-2}].name"]').closest('div').textContent.includes('synthetic.wav')`),true,'Saved source name must survive removing the local File after partial success');
+   assert.equal(await evaluate(`!!document.querySelector('[aria-label="Отменить выбор файла трека ${count-1}"]')`),false,'Completed replacement must not remain selected as pending');
+   assert.equal(await evaluate(`document.querySelector('[name="tracks[${count-2}].name"]').closest('div').textContent.includes('synthetic.wav')`),true,'Completed source name must remain visible after partial success');
    assert.equal(await evaluate(`document.querySelector('[name="tracks[${count-2}].name"]').closest('div').textContent.includes('Файл не выбран')`),false);
-   await evaluate(`document.querySelector('[aria-label="Убрать файл трека ${count}"]').click()`);
+   await evaluate(`document.querySelector('[aria-label="Отменить выбор файла трека ${count}"]').click()`);
    await save();await expectText('Изменения сохранены на сервере.');
  }
  console.log('Real Go/SQLite/FFmpeg + Chrome: background job recovery, partial multi-file saves for new and appended tracks, lost creation response/edit/replay without duplicate or File loss, draft, upload/ready, probe timeout/retry, network key retention, failed replacement, persistence, conflict/retry, offline, publication conflict/retry, search, share rotation/revocation, anonymous song/list, admin, Unicode and responsive checks passed.');

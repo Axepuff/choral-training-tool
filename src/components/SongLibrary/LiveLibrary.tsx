@@ -10,7 +10,7 @@ import { listShareOwners, sharingService } from '../../api/shares';
 import { ShareActions } from '../Sharing/ShareActions';
 import { Select } from '../ui/Select';
 import { CreateSong } from '../CreateSong/CreateSong';
-import type { SongFormValue } from '../CreateSong/CreateSong';
+import type { SongFormValue, TrackUploadState } from '../CreateSong/CreateSong';
 import { RehearsalPlayer } from '../RehearsalPlayer/RehearsalPlayer';
 import { SongLibrary } from './SongLibrary';
 import styles from './SongLibrary.module.css';
@@ -28,39 +28,115 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
   const [epoch, setEpoch] = useState(0);
   const key = useRef(crypto.randomUUID());
   const creation = useRef<SongFormValue | null>(null);
-  const attempts = useRef(new Map<File, string>());
+  const attempts = useRef(new Map<string, { file: File; key: string; jobId?: string; done?: boolean }>());
   const assigned = useRef<string[]>([]);
-  const completed = useRef(new Set<File>());
+
   useEffect(() => { if (!id) return; let active = true; void getSong(id).then(s => { if (active) { setSong(s); setLoaded(true); } }, e => { if (active) setError(message(e)); }); return () => { active = false; }; }, [id]);
   const currentId = song?.id;
-  const [uploadJobs, setUploadJobs] = useState<Record<number, string>>({});
-  const pending = JSON.stringify(song?.tracks.map((t, index) => t.pendingJobId ?? uploadJobs[index] ?? null) ?? []);
-  const [uploadStates, setUploadStates] = useState<Record<number, string>>({});
-  const [jobs, setJobs] = useState<Record<string, string>>({});
+  const [uploadStates, setUploadStates] = useState<Record<string, TrackUploadState>>({});
+  const pending = JSON.stringify(song?.tracks.flatMap(t => {
+    const state = uploadStates[t.id];
+    const attempt = attempts.current.get(t.id);
+    const jobId = attempt ? attempt.jobId : t.pendingJobId;
+    return jobId && state?.phase !== 'ready' && state?.phase !== 'error' ? [[t.id, jobId]] : [];
+  }) ?? []);
   useEffect(() => {
-    const jobIds = JSON.parse(pending) as (string | null)[];
-    if (!currentId || !jobIds.some(Boolean) || busy) return;
+    const entries = JSON.parse(pending) as [string, string][];
+    if (!currentId || !entries.length || busy) return;
     let active = true;
     let timer: number;
+    let failures = 0;
     async function check() {
-      try {
-        const results = await Promise.all(jobIds.filter((id): id is string => !!id).map(async id => [id, (await getJob(id)).state] as const));
-        if (!active) return;
-        setJobs(Object.fromEntries(results));
-        // A confirmed job state supersedes a transient upload/status request error.
-        setUploadStates(states => Object.fromEntries(Object.entries(states).filter(([index]) => !results.some(([id]) => jobIds[Number(index)] === id))));
-        if (results.some(([, state]) => state === 'succeeded')) setSong(await getSong(currentId!));
-        if (results.some(([, state]) => state === 'queued' || state === 'processing')) timer = window.setTimeout(() => void check(), 1500);
-      } catch (e) { if (active) setError(message(e)); }
+      let again = false;
+      let failed = false;
+      await Promise.all(entries.map(async ([trackId, jobId]) => {
+        const attempt = attempts.current.get(trackId);
+        try {
+          const job = await getJob(jobId);
+          if (!active) return;
+          if (job.state === 'succeeded') {
+            const fresh = await getSong(currentId!);
+            if (!active) return;
+            if (attempt?.jobId === jobId) attempt.done = true;
+            setSong(fresh); setStatus('');
+            setUploadStates(states => ({ ...states, [trackId]: { phase: 'ready', file: attempt?.file } }));
+          } else if (job.state === 'failed' || job.state === 'canceled') {
+            setUploadStates(states => ({ ...states, [trackId]: { phase: 'error', file: attempt?.file, detail: attempt ? 'Не удалось подготовить аудио. Выберите другой файл или повторите загрузку.' : 'Не удалось подготовить аудио. Выберите файл на устройстве, чтобы загрузить его снова.' } }));
+          } else {
+            again = true;
+            setUploadStates(states => ({ ...states, [trackId]: { phase: job.state === 'queued' ? 'queued' : 'processing', file: attempt?.file, locked: true } }));
+          }
+        } catch (e) {
+          if (!active) return;
+          failed = true;
+          if (!(e instanceof ApiError && [401, 403, 404].includes(e.status))) again = true;
+          setUploadStates(states => ({ ...states, [trackId]: { phase: 'unknown', file: attempt?.file, locked: true, detail: message(e) } }));
+        }
+      }));
+      failures = failed ? failures + 1 : 0;
+      if (active && again && failures < 3) timer = window.setTimeout(() => void check(), 1500);
     }
     void check();
     return () => { active = false; window.clearTimeout(timer); };
   }, [currentId, pending, busy]);
+
+  async function transfer(songId: string, trackId: string, file?: File): Promise<boolean> {
+    let attempt = attempts.current.get(trackId);
+    if (file && (attempt?.file !== file || uploadStates[trackId]?.phase === 'error')) {
+      attempt = { file, key: crypto.randomUUID() }; attempts.current.set(trackId, attempt);
+    }
+    if (attempt?.done) return true;
+    const update = (state: TrackUploadState) => setUploadStates(states => ({ ...states, [trackId]: { ...state, file: attempt?.file } }));
+    let accepted = !!attempt?.jobId;
+    try {
+      const fresh = await getSong(songId); setSong(fresh);
+      const target = fresh.tracks.find(t => t.id === trackId);
+      if (!target) throw new Error('Партия удалена на сервере. Откройте песню заново.');
+      let job;
+      if (attempt?.jobId) job = await getJob(attempt.jobId);
+      else if (attempt) {
+        update({ phase: 'uploading', locked: true }); setStatus('Загружаем файлы…');
+        job = await uploadFile(songId, trackId, fresh.version, attempt.file, attempt.key, progress => update({ phase: 'uploading', progress, locked: true }));
+        attempt.jobId = job.id; accepted = true;
+      } else if (target.pendingJobId) { job = await getJob(target.pendingJobId); accepted = true; }
+      else {
+        update({ phase: target.mediaUrl ? 'ready' : target.status === 'failed' ? 'error' : 'empty', detail: target.mediaUrl ? undefined : 'Выберите файл на устройстве, чтобы загрузить его.' });
+        return !!target.mediaUrl;
+      }
+      while (job.state === 'queued' || job.state === 'processing') {
+        update({ phase: job.state, locked: true }); setStatus('Подготавливаем аудио…');
+        await new Promise(resolve => window.setTimeout(resolve, 1000));
+        job = await getJob(job.id);
+      }
+      if (job.state !== 'succeeded') {
+        update({ phase: 'error', detail: attempt ? 'Не удалось подготовить аудио. Выберите другой файл или повторите загрузку.' : 'Не удалось подготовить аудио. Выберите файл на устройстве, чтобы загрузить его снова.' });
+        return false;
+      }
+      const updated = await getSong(songId); setSong(updated);
+      if (attempt) attempt.done = true;
+      update({ phase: 'ready' });
+      return true;
+    } catch (e) {
+      // No response (including a 5xx proxy response) cannot prove rejection.
+      const rejected = !accepted && e instanceof ApiError && e.status >= 400 && e.status < 500;
+      update({ phase: rejected ? 'error' : 'unknown', locked: !rejected, detail: message(e) });
+      try { setSong(await getSong(songId)); } catch { /* Keep the unresolved outcome visible. */ }
+      return false;
+    }
+  }
+  async function retryFile(index: number, file?: File) {
+    if (busy || !song) return;
+    const track = song.tracks[index];
+    if (!track) return;
+    setBusy(true); setStatus('Проверяем результат…');
+    try { await transfer(song.id, track.id, file); }
+    finally { setStatus(''); setBusy(false); }
+  }
   async function save(value: SongFormValue) {
     if (busy) return;
-    setBusy(true); setError(''); setUploadStates({}); setUploadJobs({}); setStatus('Сохраняем данные…');
+    setBusy(true); setError(''); setStatus('Сохраняем данные…');
     let current = song;
-    let uploadingIndex: number | undefined;
+
     try {
       const recovering = creation.current !== null;
       const updating = current !== null;
@@ -82,42 +158,17 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
       }
       assigned.current = current.tracks.map(t => t.id); setSong(current);
       if (!id) window.history.replaceState(null, '', `?page=edit-song&id=${current.id}`);
+      setUploadStates(states => ({ ...states, ...Object.fromEntries(value.tracks.flatMap((track, index) => track.file && !attempts.current.get(current!.tracks[index]!.id)?.done ? [[current!.tracks[index]!.id, { phase: 'waiting' as const, file: track.file }]] : [])) }));
+      let allReady = true;
       for (const [index, track] of value.tracks.entries()) {
-        if (!track.file || completed.current.has(track.file)) continue;
-        uploadingIndex = index;
-        const target = current.tracks[index]!;
-        const file = track.file;
-        let uploadKey = attempts.current.get(file);
-        if (!uploadKey) { uploadKey = crypto.randomUUID(); attempts.current.set(file, uploadKey); }
-        setUploadStates(s => ({ ...s, [index]: 'Загрузка 0%' }));
-        let job;
-        try {
-          job = await uploadFile(current.id, target.id, current.version, file, uploadKey, p => setUploadStates(s => ({ ...s, [index]: `Загрузка ${p}%` })));
-        } catch (e) {
-          // A final probe rejection is replayed by the server for this key.
-          // Keep the key when the network outcome is unknown to avoid duplicate jobs.
-          if (e instanceof ApiError && e.status === 422 && ['corrupt_audio', 'unsupported_codec', 'too_long', 'probe_timeout'].includes(e.problem.code)) attempts.current.delete(file);
-          throw e;
-        }
-        const jobId = job.id;
-        setUploadJobs(jobs => ({ ...jobs, [index]: jobId }));
-        while (job.state === 'queued' || job.state === 'processing') {
-          setUploadStates(s => ({ ...s, [index]: 'Обработка…' }));
-          await new Promise(resolve => window.setTimeout(resolve, 1000));
-          job = await getJob(job.id);
-        }
-        if (job.state !== 'succeeded') { attempts.current.delete(file); throw new Error(`${track.name}: ${job.errorCode ?? job.state}. Выберите другой файл или повторите сохранение. ${target.mediaUrl ? 'Старая готовая дорожка сохранена.' : 'Дорожка ещё не готова.'}`); }
-        setUploadStates(s => ({ ...s, [index]: 'Готово' }));
-        completed.current.add(file);
-        current = await getSong(current.id); setSong(current);
-        uploadingIndex = undefined;
+        if (track.file && !await transfer(current.id, current.tracks[index]!.id, track.file)) allReady = false;
       }
       current = await getSong(current.id); setSong(current);
+      if (!allReady) { setStatus('Данные песни сохранены. Не все файлы готовы — проверьте состояния партий.'); return; }
       setEpoch(e => e + 1);
       setStatus('Изменения сохранены на сервере.');
     } catch (e) {
       setError(message(e)); setStatus('');
-      if (uploadingIndex !== undefined) { const index = uploadingIndex; setUploadStates(s => ({ ...s, [index]: message(e) })); }
       // Refresh only concurrency metadata: leave the user's fields/files mounted.
       if (current) { try { setSong(await getSong(current.id)); } catch { /* Keep original failure visible. */ } }
     } finally { setBusy(false); }
@@ -129,7 +180,13 @@ function SongEditor({ id, close, user }: { id: string | null; close: () => void;
   </>} />;
   return <>
     <CreateSong key={epoch} live busy={busy} status={status} error={error} {...(song ? { initialSong: songForm(song) } : {})} onSave={save} onCancel={close}
-      trackStates={song?.tracks.map((t, index) => uploadStates[index] ?? (t.pendingJobId && jobs[t.pendingJobId] === 'failed' ? 'Ошибка обработки. Сохранённый файл не изменён.' : t.pendingJobId && ['queued', 'processing'].includes(jobs[t.pendingJobId] ?? '') ? 'Обработка…' : t.status === 'ready' ? 'Готово' : t.status === 'failed' ? 'Ошибка обработки — повторите или замените файл' : t.status === 'empty' ? 'Файл не загружен' : 'Обработка…'))}
+      trackStates={song?.tracks.map(t => uploadStates[t.id] ?? { phase: t.pendingJobId ? 'queued' : t.status === 'ready' ? 'ready' : t.status === 'failed' ? 'error' : 'empty', locked: !!t.pendingJobId })}
+      onRetryFile={(index, file) => { void retryFile(index, file); }}
+      onFileChange={index => {
+        const trackId = song?.tracks[index]?.id;
+        if (trackId) { attempts.current.delete(trackId); setUploadStates(states => ({ ...states, [trackId]: { phase: song?.tracks[index]?.mediaUrl ? 'ready' : 'empty' } })); }
+        setStatus('');
+      }}
       publication={song?.publication} audioReady={song?.ready} canListen={song?.tracks.some(t => !!t.mediaUrl)}
       onListen={song ? () => setListen(true) : undefined}
       onPublish={song ? async () => {

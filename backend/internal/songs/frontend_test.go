@@ -42,6 +42,18 @@ func TestSongsFrontendBrowser(t *testing.T) {
 	}
 	t.Setenv("PATH", probeDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("CHORAL_TEST_PROBE_MARKER", marker)
+	// Exercise the existing worker boundary without a production test hook.
+	realFFmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workerMarker := filepath.Join(probeDir, "worker-once")
+	workerScript := "#!/bin/sh\nif [ -f " + strconv.Quote(workerMarker) + " ]; then\nmode=$(cat " + strconv.Quote(workerMarker) + ")\nrm -- " + strconv.Quote(workerMarker) + "\nif [ \"$mode\" = fail ]; then exit 1; fi\nsleep 3\nfi\nexec " + strconv.Quote(realFFmpeg) + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(probeDir, "ffmpeg"), []byte(workerScript), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CHORAL_TEST_WORKER_MARKER", workerMarker)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

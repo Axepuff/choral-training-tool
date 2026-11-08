@@ -7,7 +7,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import styles from './CreateSong.module.css';
 
 const defaultNames = ['Сопрано', 'Альт', 'Тенор', 'Бас', 'Минус'];
-export interface TrackDraft { id?: string; gain?: number; name: string; file?: File; existingFileName?: string }
+export interface TrackDraft { id?: string; gain?: number; name: string; file?: File; existingFileName?: string; audioReady?: boolean }
 export interface SongFormValue {
   title: string;
   bpm: number;
@@ -15,6 +15,23 @@ export interface SongFormValue {
   beatUnit: number;
   tracks: TrackDraft[];
   notes: string;
+}
+export interface TrackUploadState {
+  phase: 'empty' | 'selected' | 'waiting' | 'uploading' | 'queued' | 'processing' | 'ready' | 'error' | 'unknown';
+  file?: File | undefined;
+  progress?: number | undefined;
+  detail?: string | undefined;
+  locked?: boolean | undefined;
+}
+const phaseLabels: Record<TrackUploadState['phase'], string> = {
+  empty: 'Файл не добавлен', selected: 'Будет загружен при сохранении', waiting: 'Ожидает загрузки',
+  uploading: 'Загружаем файл', queued: 'Файл загружен. Ожидает обработки', processing: 'Подготавливаем аудио…',
+  ready: 'Готово к воспроизведению', error: 'Не удалось загрузить новый файл', unknown: 'Не удалось проверить результат',
+};
+function fileState(track: TrackDraft, state?: TrackUploadState): TrackUploadState {
+  if (track.file) return state?.file === track.file ? state : { phase: 'selected', file: track.file };
+  if (state && !state.file) return state;
+  return { phase: (track.audioReady ?? !!track.existingFileName) ? 'ready' : 'empty' };
 }
 export interface CreateSongProps {
   /** Заполненные текстовые поля для демонстрации. Файлы выбираются локально. */
@@ -27,7 +44,9 @@ export interface CreateSongProps {
   status?: string;
   error?: string;
   onCancel?: () => void;
-  trackStates?: string[] | undefined;
+  trackStates?: (TrackUploadState | undefined)[] | undefined;
+  onRetryFile?: ((index: number, file?: File) => void) | undefined;
+  onFileChange?: ((index: number) => void) | undefined;
   publication?: 'draft' | 'published' | undefined;
   audioReady?: boolean | undefined;
   canListen?: boolean | undefined;
@@ -35,45 +54,55 @@ export interface CreateSongProps {
   onPublish?: (() => void) | undefined;
 }
 
-function TrackRow({ track, index, onChange, state }: {
-  state?: string | undefined; track: TrackDraft; index: number; onChange: (track: TrackDraft) => void;
+function TrackRow({ track, index, onChange, state, onRetry, rowId }: {
+  state: TrackUploadState; track: TrackDraft; index: number; onChange: (track: TrackDraft) => void;
+  onRetry?: (() => void) | undefined; rowId: string;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const id = useId();
-  const selectedName = track.file?.name ?? track.existingFileName;
-  return <div className={styles.track}>
+  const selected = !!track.file && state.phase !== 'ready';
+  const problem = state.phase === 'error' || state.phase === 'unknown';
+  const working = ['uploading', 'queued', 'processing'].includes(state.phase);
+  return <div className={styles.track} id={rowId} tabIndex={-1}>
     <span className={styles.number} aria-hidden="true">{index + 1}</span>
     <label className={styles.trackName}>
       <span className="visually-hidden">Название трека {index + 1}</span>
       <Input id={`${id}-name`} name={`tracks[${index}].name`} required value={track.name} placeholder="Название партии"
         onChange={(event) => onChange({ ...track, name: event.target.value })} />
     </label>
-    <Button size="icon" type="button" onClick={() => fileRef.current?.click()}
-      aria-label={`${selectedName ? 'Заменить' : 'Выбрать'} файл трека ${index + 1}`} title={selectedName ? 'Заменить аудиофайл' : 'Выбрать аудиофайл'}>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-        <path d="M9 3H4v18h11V9L9 3ZM9 3v6h6M10 12v5" />
-        <ellipse cx="8" cy="17" rx="2" ry="1.5" />
-        <path d="M20 14V4m-3 3 3-3 3 3" />
-      </svg>
+    <Button className={styles.chooseFile} type="button" disabled={state.locked} onClick={() => fileRef.current?.click()}
+      aria-label={`${track.file || track.existingFileName ? 'Заменить' : 'Выбрать'} файл трека ${index + 1}`}>
+      {track.file || track.existingFileName ? 'Заменить файл' : 'Выбрать файл'}
     </Button>
-    <input id={`${id}-file`} name={`tracks[${index}].file`} ref={fileRef} type="file" hidden aria-label={`Аудиофайл трека ${index + 1}`}
+    <input id={`${id}-file`} name={`tracks[${index}].file`} ref={fileRef} type="file" hidden disabled={state.locked} aria-label={`Аудиофайл трека ${index + 1}`}
       onChange={(event) => {
         const file = event.target.files?.[0];
         if (file) onChange({ ...track, file });
         event.target.value = '';
       }} />
     <div className={styles.fileInfo}>
-      <span title={selectedName}>{selectedName ?? 'Файл не выбран'}</span>
-      {selectedName && (track.file || !track.id) && <Button variant="dangerText" size="small" className={styles.fileRemove} type="button" aria-label={`Убрать файл трека ${index + 1}`}
-        onClick={() => { const { file: _file, ...rest } = track; void _file; onChange(track.id ? rest : { name: track.name }); }}>Убрать</Button>}
+      {selected && track.existingFileName && <p><span className={styles.fileLabel}>{state.phase === 'unknown' ? 'Ранее сохранён: ' : 'Сейчас используется: '}</span>{track.existingFileName}</p>}
+      {(track.file || track.existingFileName) && <p><span className={styles.fileLabel}>{selected ? 'Новый файл: ' : 'Файл: '}</span>{selected ? track.file!.name : track.existingFileName ?? track.file?.name}</p>}
+      <p className={`${styles.fileStatus} ${state.phase === 'ready' ? styles.ready : problem ? styles.problem : ''}`} role="status" aria-atomic="true">
+        <span aria-hidden="true">{state.phase === 'ready' ? '✓ ' : problem ? '! ' : ''}</span>{phaseLabels[state.phase]}
+      </p>
+      {working && <div className={styles.transfer}>
+        <progress className={styles.progress} max={100} value={state.phase === 'uploading' ? state.progress : undefined} aria-label={`Загрузка файла: ${track.name}`} />
+        {state.phase === 'uploading' && state.progress !== undefined && <span aria-hidden="true">{state.progress}%</span>}
+      </div>}
+      {state.detail && <p className={problem ? styles.problem : undefined}>{state.detail}</p>}
+      {state.phase === 'error' && track.audioReady && <p>Предыдущий файл доступен.</p>}
+      {(problem || selected && !state.locked) && <div className={styles.fileActions}>
+        {problem && onRetry && <Button type="button" onClick={onRetry}>{state.phase === 'unknown' ? 'Проверить ещё раз' : 'Повторить загрузку'}</Button>}
+        {selected && !state.locked && <Button variant="dangerText" type="button" aria-label={`Отменить выбор файла трека ${index + 1}`}
+          onClick={() => { const { file: _file, ...rest } = track; void _file; onChange(rest); }}>{track.existingFileName ? 'Отменить замену' : 'Убрать файл'}</Button>}
+      </div>}
     </div>
-    {track.file && track.existingFileName && <Message size="compact" className={styles.trackStatus}>Сохранённый файл: {track.existingFileName}</Message>}
-    {state && <Message tone="muted" size="compact" className={styles.trackStatus} role="status">{state}</Message>}
   </div>;
 }
 
 /** Общая форма приложения и stories; сетевой сценарий передаётся через onSave. */
-export function CreateSong({ initialFilled = false, initialSong, onSave, onCancel, live = false, busy = false, status, error, trackStates, publication, audioReady, canListen, onListen, onPublish }: CreateSongProps) {
+export function CreateSong({ initialFilled = false, initialSong, onSave, onCancel, live = false, busy = false, status, error, trackStates, onRetryFile, onFileChange, publication, audioReady, canListen, onListen, onPublish }: CreateSongProps) {
   const id = useId();
   const [title, setTitle] = useState(initialSong?.title ?? (initialFilled ? 'Тихий вечер' : ''));
   const [bpm, setBpm] = useState(String(initialSong?.bpm ?? 84));
@@ -95,10 +124,16 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
     // Rows can only be appended/trimmed, never reordered. The server assigns IDs
     // in that order while the form is disabled; preserve local fields and Files.
     const saved = track.id ? initialSong?.tracks.find(t => t.id === track.id) : initialSong?.tracks[index];
-    return saved ? { ...track, ...(saved.id ? { id: saved.id } : {}), ...(saved.existingFileName ? { existingFileName: saved.existingFileName } : {}) } : track;
+    return saved ? { ...track, ...(saved.id ? { id: saved.id } : {}), ...(saved.existingFileName ? { existingFileName: saved.existingFileName } : {}), ...(saved.audioReady !== undefined ? { audioReady: saved.audioReady } : {}) } : track;
   });
   const selected = visibleTracks.filter((track) => track.file || track.existingFileName).length;
 
+  const states = visibleTracks.map((track, index) => fileState(track, trackStates?.[index]));
+  const newFiles = visibleTracks.flatMap((track, index) => track.file ? [states[index]!] : []);
+  const ready = newFiles.filter(state => state.phase === 'ready').length;
+  const started = newFiles.some(state => state.phase !== 'selected');
+  const problems = states.filter(state => state.phase === 'error' || state.phase === 'unknown').length;
+  const firstProblem = states.findIndex(state => state.phase === 'error' || state.phase === 'unknown');
   return <main className={styles.shell}>
     <form aria-busy={busy} className={styles.card} onChange={() => { setMessage(''); setDirty(true); }} onSubmit={(event) => {
       event.preventDefault();
@@ -141,15 +176,21 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
           </Select></label>
         </div>
         <p className={styles.help}>Один файл на партию. Можно добавить минус.{live && ' Черновик можно сохранить без файлов.'}</p>
+        <div className={styles.uploadSummary}>
+          <p role="status" aria-atomic="true">{newFiles.length ? started ? `Файлы: готово ${ready} из ${newFiles.length}` : `Выбрано новых файлов: ${newFiles.length}` : `Готовых партий: ${states.filter(state => state.phase === 'ready').length} из ${count}`}</p>
+          {newFiles.length > 0 && (started ? <progress className={styles.progress} max={newFiles.length} value={ready} aria-label="Готовность новых файлов" /> : <p>Загрузка начнётся после сохранения.</p>)}
+          {problems > 0 && <div className={styles.summaryProblem}><span>Требуют внимания: {problems}</span><Button type="button" variant="text" onClick={() => document.getElementById(`${id}-track-${firstProblem}`)?.focus()}>К проблеме</Button></div>}
+        </div>
         <div className={styles.trackList}>
-          {visibleTracks.map((track, index) => <TrackRow key={index} state={trackStates?.[index]} index={index} track={track} onChange={(updated) => {
-            setTracks((current) => current.map((item, position) => position === index ? updated : item)); setMessage('');
+          {visibleTracks.map((track, index) => <TrackRow key={index} rowId={`${id}-track-${index}`} state={states[index]!} index={index} track={track}
+            onRetry={onRetryFile && (track.file || states[index]?.phase === 'unknown') ? () => onRetryFile(index, track.file) : undefined} onChange={(updated) => {
+            if (updated.file !== track.file) onFileChange?.(index);
+            setTracks((current) => current.map((item, position) => position === index ? updated : item)); setMessage(''); setDirty(true);
           }} />)}
         </div>
-        <p className={styles.help}>Выбрано файлов: {selected} из {count}</p>
         <details className={styles.formats}><summary>Какие файлы можно добавить?</summary>
-          <p>Планируем MP3, WAV, FLAC, M4A/AAC, OGG/Opus, AIFF, ALAC, WMA и другие аудиоформаты. Выбор файла не ограничен расширением; совместимость будет проверяться на сервере.</p>
-          <p>В готовом сервисе файл будет преобразован для воспроизведения, а оригинал удалён после успешной обработки. Храните исходники у себя.</p>
+          <p>Можно выбрать MP3, WAV, FLAC, M4A/AAC, OGG/Opus и другие аудиоформаты. Совместимость проверяется при загрузке.</p>
+          <p>Файл преобразуется для воспроизведения, а оригинал удаляется после успешной обработки. Храните исходники у себя.</p>
         </details>
       </section>
       <label className={styles.field}>Заметки <span className={styles.optional}>необязательно</span>
@@ -161,10 +202,10 @@ export function CreateSong({ initialFilled = false, initialSong, onSave, onCance
       {status && <Message tone="muted" role="status">{status}</Message>}
       {error && <Message tone="error" role="alert">{error}</Message>}
       <div className={styles.actions}>
-      <Button variant="primary" size="form" className={styles.submit} type="submit">{initialSong ? 'Сохранить изменения' : 'Создать песню'}</Button>
+      <Button variant="primary" size="form" className={styles.submit} type="submit">{busy ? status || 'Сохраняем…' : initialSong ? 'Сохранить изменения' : 'Создать песню'}</Button>
       {onCancel && <Button className={styles.cancel} type="button" onClick={() => { if (!live || !dirty || window.confirm('Отменить несохранённые изменения? Сохранённый черновик останется на сервере.')) { leaving.current = true; onCancel(); } }}>Отмена</Button>}
       {onListen && <Button className={styles.cancel} type="button" disabled={!canListen} onClick={onListen}>Слушать песню</Button>}
-      {publication && <p className={styles.help}>Публикация: {publication === 'published' ? 'опубликована' : 'черновик'}. {audioReady ? 'Аудио готово.' : 'Есть неготовые дорожки.'}</p>}
+      {publication && <p className={styles.help}>Публикация сохранённой версии: {publication === 'published' ? 'опубликована' : 'черновик'}. {audioReady ? 'Аудио готово.' : 'Есть неготовые дорожки.'}</p>}
       {onPublish && <Button className={styles.cancel} type="button" onClick={onPublish}>{publication === 'draft' ? 'Опубликовать сохранённую песню' : 'Снять публикацию'}</Button>}
       </div>
       </fieldset>
