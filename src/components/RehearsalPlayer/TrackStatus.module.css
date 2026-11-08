@@ -8,7 +8,7 @@
   font-size: var(--font-xs);
   line-height: 1;
   font-weight: 500;
-  box-shadow: var(--shadow-inset);
+  box-shadow: var(--shadow-pressed);
 }
 .indicator[data-tone='ready'] { background: var(--color-published); color: var(--color-control); }
 .indicator[data-tone='pending'] { background: var(--color-solo); color: var(--color-text); }

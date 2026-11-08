@@ -233,3 +233,18 @@ export const PublicListNavigation: Story = {
   name: 'Навигация · публичный список',
   args: { navigation: <a href="?list=fictional-preview">Песни</a> },
 };
+export const UnavailableTracks: Story = {
+  name: 'Недоступные файлы · индикаторы в микшере',
+  args: { song: { id: 'unavailable-tracks', title: 'Проверка недоступных файлов', notes: '', bpm: 90,
+    beatsPerBar: 4, beatUnit: 4, durationMs: 28000,
+    tracks: ['Верхний', 'Средний', 'Нижний'].map((name, i) => ({ id: `unavailable-${i}`, name, gain: 0.8,
+      durationMs: null, mediaUrl: null, peaksUrl: null })) } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const status = await canvas.findByRole('button', { name: 'Состояние: Верхний. Файл ещё не готов' });
+    await expect(canvas.getByRole('slider', { name: 'Громкость: Верхний' })).toBeDisabled();
+    await userEvent.click(status);
+    await expect(canvas.getByRole('dialog', { name: 'Состояние партии: Верхний' })).toHaveTextContent('Файл ещё не готов');
+    await userEvent.click(canvas.getByRole('button', { name: 'Закрыть' }));
+  },
+};

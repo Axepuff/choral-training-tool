@@ -43,7 +43,7 @@
   --color-accent-hover: #f56c00;
   --color-on-accent: #292d35;
   --color-accent-soft: #fbe5d5;
-  --background-fader-touch-thumb: radial-gradient(circle, var(--slider-light) 0, var(--slider-color) 8px, var(--color-control) 8px, var(--color-control) 9px, transparent 9.5px);
+  --background-fader-touch-thumb: radial-gradient(circle, color-mix(in srgb, currentColor, white 45%) 0, currentColor 8px, var(--color-control) 8px, var(--color-control) 9px, transparent 9.5px);
   --filter-fader-thumb: drop-shadow(1px 1px 2px rgb(112 125 145 / 38%)) drop-shadow(-1px -1px 1px #ffffff);
   --color-fader-light: #ffbf8b;
   --color-fader-muted: #a9a4a0;

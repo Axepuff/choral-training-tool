@@ -359,7 +359,7 @@ try {
     };
     history.pushState(null, '', '?song=long-fixture'); window.dispatchEvent(new PopStateEvent('popstate'));
   })()`);
-  await poll(() => evaluate(`document.querySelectorAll('small[role=status]').length === 32 && Array.from(document.querySelectorAll('small[role=status]')).every(e=>e.textContent.startsWith('Готово'))`));
+  await poll(() => evaluate(`document.querySelectorAll('input[aria-label^="Громкость:"]').length === 32 && Array.from(document.querySelectorAll('input[aria-label^="Громкость:"]')).every(e=>!e.disabled)`));
   for (const [width,height] of [[320,640],[360,740],[740,360],[1280,800]]) {
     await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<800});
     await evaluate('new Promise(r=>requestAnimationFrame(r))');
@@ -453,8 +453,8 @@ try {
   await poll(() => evaluate(`document.querySelector('[aria-label="Повторить подключение аудио"]')?.disabled === false`));
   assert.equal(await evaluate(`document.querySelector('[aria-label="Повторить подключение аудио"]').getAttribute('aria-busy')`), 'false');
   assert.equal(await evaluate(`document.body.textContent.includes('Загрузка аудио…')`), false);
-  assert.equal(await evaluate(`document.querySelectorAll('small[role=status]').length`), 1);
-  assert.equal(await evaluate(`Array.from(document.querySelectorAll('small[role=status]')).every(e=>e.textContent==='Аудиоустройство недоступно')`), true);
+  assert.equal(await evaluate(`document.querySelectorAll('[aria-label^="Партия:"] [role=status]').length`), 1);
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('[aria-label^="Партия:"] [role=status]')).every(e=>e.textContent.endsWith(': Аудиоустройство недоступно'))`), true);
   const firstAttempts = await evaluate('window.audioConstructionAttempts');
   await clickPlayback('Повторить подключение аудио');
   await poll(() => evaluate(`window.audioConstructionAttempts > ${firstAttempts} && document.querySelector('[aria-label="Повторить подключение аудио"]')?.disabled === false`));
@@ -475,7 +475,7 @@ try {
   })()`);
   const beforeRecoveryStarts = await evaluate('window.transportSourceStarts');
   await clickPlayback('Повторить подключение аудио');
-  await poll(() => evaluate(`window.deferredPeakRequests > 0 && document.querySelector('small[role=status]')?.textContent.startsWith('Готово') && document.querySelector('[aria-label="Воспроизвести"]')?.disabled === false`));
+  await poll(() => evaluate(`window.deferredPeakRequests > 0 && document.querySelector('input[aria-label^="Громкость:"]')?.disabled === false && document.querySelector('[aria-label="Воспроизвести"]')?.disabled === false`));
   assert.equal(await evaluate(`document.querySelector('[role="alert"]') === null`), true);
   assert.equal(await evaluate('window.transportSourceStarts'), beforeRecoveryStarts, 'retry prepares audio without autoplay');
   await clickPlayback('Воспроизвести');
@@ -498,7 +498,7 @@ try {
     };
     history.pushState(null, '', '?song=decoder-diagnostic'); window.dispatchEvent(new PopStateEvent('popstate'));
   })()`);
-  await poll(() => evaluate(`Array.from(document.querySelectorAll('small[role=status]')).filter(e=>e.textContent.startsWith('Готово')).length === 31 && !document.querySelector('[aria-label="Воспроизвести"]').disabled`));
+  await poll(() => evaluate(`document.querySelectorAll('input[aria-label^="Громкость:"]:not(:disabled)').length === 31 && !document.querySelector('[aria-label="Воспроизвести"]').disabled`));
   await evaluate(`document.querySelector('[aria-label="Воспроизвести"]').click()`);
   try {
     await poll(() => evaluate(`(() => {
