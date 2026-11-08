@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test';
 import { RehearsalPlayer } from './RehearsalPlayer';
+import { Button } from '../ui/Button';
 import { mockTracks } from './mockScore';
 import type { MockTrack } from './mockScore';
 
@@ -221,4 +222,14 @@ export const LongScoreRange: Story = {
     await userEvent.keyboard('{Home}');
     await expect(canvas.getByText('Повтор: такты 1–1')).toBeVisible();
   },
+};
+
+export const EditorNavigation: Story = {
+  name: 'Навигация · редактор',
+  args: { navigation: <><Button>К редактированию</Button><Button>Песни</Button></> },
+};
+
+export const PublicListNavigation: Story = {
+  name: 'Навигация · публичный список',
+  args: { navigation: <a href="?list=fictional-preview">Песни</a> },
 };
