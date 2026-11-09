@@ -218,6 +218,7 @@ unset CHORAL_PASSWORD
 
 Подробности сервера: [velette](docs/deployment-velette.md),
 [deployment](docs/deployment.md), [эксплуатация](docs/operations.md).
+Ручной выпуск frontend + backend одной командой: [choral-deploy](docs/deploy-command.md).
 
 ## Продолжение разработки
 

@@ -1,0 +1,15 @@
+{
+  "checkout": "/opt/choral",
+  "project": "choral",
+  "state": "/var/lib/choral-deploy",
+  "backup_root": "/var/backups/choral",
+  "lock": "/run/lock/choral-maintenance.lock",
+  "origin": "https://choral-train.ru",
+  "candidate_port": 18083,
+  "docker_root": "/var/lib/docker",
+  "minimum_free_bytes": 10737418240,
+  "initial_backend_commit": "REPLACE_WITH_VERIFIED_INSTALLED_BACKEND_COMMIT",
+  "mirror_root": "/mnt/storage/choral-backups",
+  "mirror_mount": "/mnt/storage",
+  "song_fixture": "/etc/choral-deploy-song.json"
+}
