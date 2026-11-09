@@ -1,3 +1,13 @@
 #!/bin/sh
 set -eu
+# sudo changes HOME; select the invoking user's gh config without copying secrets.
+# An explicit GH_CONFIG_DIR still wins, including for nonstandard config locations.
+if [ -z "${GH_CONFIG_DIR:-}" ] && [ "$(id -u)" = 0 ] && [ -n "${SUDO_UID:-}" ]; then
+  choral_invoker_entry=$(getent passwd "$SUDO_UID")
+  choral_invoker_home=$(printf '%s\n' "$choral_invoker_entry" | cut -d: -f6)
+  case "$choral_invoker_home" in
+    /*) export GH_CONFIG_DIR="$choral_invoker_home/.config/gh" ;;
+    *) echo 'Cannot determine the invoking user home for GitHub authentication.' >&2; exit 1 ;;
+  esac
+fi
 exec python3 /usr/local/lib/choral-deploy/deploy.py "$@"
