@@ -46,106 +46,71 @@ Keenetic). Сетевой вопрос вынесен в [#51](https://github.co
 
 ### Обновить приложение
 
-Сначала объедините проверенный PR через GitHub и дождитесь зелёных проверок.
-Выберите **полный SHA коммита** — 40 символов из GitHub. Сам merge ничего на
-сервере не устанавливает. PR #43 объединён: выбирайте проверенный коммит из `main`.
-Не деплойте произвольную вершину ветки без проверки её изменений.
+После объединения PR дождитесь зелёного CI для `main`. Сам merge ничего на
+сервере не устанавливает. После [однократной установки команды](docs/deploy-command.md#однократная-установка)
+запускайте её **на velette из любого каталога**, в том числе через SSH с телефона.
 
-Предупредите преподавателя о коротком перерыве: во время резервного копирования
-и перезапуска сайт несколько секунд/минут может отвечать ошибкой. Сборка до этого
-идёт при работающем приложении и на ноутбуке может занять несколько минут.
-
-Откройте отдельную root-сессию; выполняйте следующие блоки в ней по порядку.
-`set -e` остановит процедуру при ошибке. Не продолжайте после ошибки вслепую.
+**Только фронтенд**, без перезапуска backend:
 
 ```sh
-sudo -i
-set -eu
-cd /opt/choral
-exec 9>/run/lock/choral-maintenance.lock
-flock -n 9
-# Если lock занят — другой оператор/backup работает; повторите позже.
-test -z "$(git status --porcelain)"
-git fetch origin
-read -r -p 'Полный SHA проверенного релиза: ' RELEASE
-[[ "$RELEASE" =~ ^[0-9a-f]{40}$ ]]
-git cat-file -e "$RELEASE^{commit}"
-OLD_RELEASE=$(git rev-parse HEAD)
-OLD_IMAGE=$(docker inspect --format '{{.Config.Image}}' choral-app-1)
+sudo choral-deploy frontend --confirm-compatible
 ```
 
-Создайте отдельный каталог исходников и соберите образ с уникальным тегом. Уже
-настроенный builder `choral-issue16` ограничен 2 CPU/2 GiB RAM и сам запустится.
+Флаг `--confirm-compatible` означает, что использование API новым фронтендом
+проверено на совместимость с установленным backend. Если интерфейс требует нового
+API, нужен согласованный полный релиз. При запуске через sudo команда сама берёт
+GitHub-настройки вашей учётной записи; указывать `GH_CONFIG_DIR` не требуется.
+
+**Фронтенд и backend вместе**, с резервной копией и перезапуском:
 
 ```sh
-BUILD_DIR=$(mktemp -d /tmp/choral-release.XXXXXX)
-git archive "$RELEASE" | tar -x -C "$BUILD_DIR"
-docker buildx build --builder choral-issue16 --load -t "choral:$RELEASE" "$BUILD_DIR"
-docker buildx stop choral-issue16
-rm -rf -- "$BUILD_DIR"
+sudo choral-deploy full
 ```
 
-Перед переключением остановите запись и сохраните **весь** volume. Секреты и
-пароли входят в копию: доступ к каталогу только у root. Не запускайте команды
-управления аккаунтами в другой сессии во время backup.
+Полный релиз требует настройки контрольной песни по
+[инструкции](docs/deploy-command.md#контрольная-песня). Заранее предупредите
+пользователей о перерыве на backup, проверки и перезапуск. Без указания режима
+`choral-deploy` также выбирает полный релиз.
 
-```sh
-install -d -m 700 /var/backups/choral
-BACKUP="/var/backups/choral/$(date -u +%Y%m%dT%H%M%SZ)-before-update"
-# При ошибке до переключения вернуть прежнее приложение.
-trap 'docker compose up -d --no-build --wait --wait-timeout 90 app' EXIT
-docker compose stop app
-test "$(docker inspect -f '{{.State.ExitCode}}' choral-app-1)" = 0
-sh scripts/backup-restore.sh backup "$BACKUP"
-cp -p .env "$BACKUP/env.before"
-printf '%s\n' "$OLD_RELEASE" > "$BACKUP/COMMIT"
-printf '%s\n' "$OLD_IMAGE" > "$BACKUP/IMAGE_TAG"
-docker inspect -f '{{.Image}}' choral-app-1 > "$BACKUP/IMAGE_ID"
-# Копия завершена. Дальнейшая ошибка требует ручного разбора/отката ниже.
-trap - EXIT
-git switch --detach "$RELEASE"
-# В существующей .env меняется только тег образа.
-test "$(grep -c '^CHORAL_IMAGE_TAG=' .env)" = 1
-sed -i "s/^CHORAL_IMAGE_TAG=.*/CHORAL_IMAGE_TAG=$RELEASE/" .env
-chmod 600 .env
-docker compose up -d --no-build --wait --wait-timeout 90 app
-curl --fail http://127.0.0.1:8080/readyz
-curl --fail https://choral-train.ru/readyz
-docker compose ps
-exit
-```
+Обе команды по умолчанию получают последний `main` и проверяют CI для этого
+коммита. Искать SHA вручную не нужно. Если проверки ещё идут или завершились
+ошибкой, публикация не начнётся. Для конкретной версии добавьте `--commit` с её
+полным SHA. При занятом maintenance lock дождитесь окончания другого deploy/backup.
 
-Проверьте вход, список и звук в браузере. Не удаляйте предыдущий образ и backup.
-Нельзя выполнять `docker compose down -v`: это удалит песни и аккаунты.
-Caddy, DNS, роутер, SSH и Tailscale при обычном обновлении менять не требуется.
+Успешный запуск заканчивается строкой `Release completed: <SHA>`. После неё
+обновите сайт и проверьте вход и воспроизведение. Frontend-режим при ошибке
+HTTP-проверки пытается вернуть предыдущий фронтенд; полный релиз не откатывает
+БД автоматически.
+
+Система запускает установленный `/usr/local/bin/choral-deploy`, а путь к проекту
+`/opt/choral` берёт из `/etc/choral-deploy.json`. Исходник команды хранится в
+`deploy/choral-deploy`; изменения в Git сами по себе установленную копию не
+обновляют. Подробности установки, стадий и ограничений — в
+[инструкции choral-deploy](docs/deploy-command.md).
+
+Ручное обслуживание без этой команды описано отдельно:
+[обновление backend и восстановление](docs/operations.md#обновление-rollback-и-диск),
+[публикация и откат фронтенда](docs/frontend-deployment.md#регулярная-публикация-и-откат).
+Не выполняйте ручной сценарий параллельно с `choral-deploy`.
 
 ### Если обновление не работает
 
-Сначала посмотрите `sudo docker compose logs --tail 100 app`. Если релиз **не
-меняет схему БД** и совместимость подтверждена (как исправление лимита #47),
-можно вернуть предыдущий код и `.env`, сохранив текущие песни и пароли:
+Начните с сообщения команды и [инструкции восстановления](docs/deploy-command.md#ошибки-и-восстановление).
+Журнал выпуска — `/var/lib/choral-deploy/<timestamp>-<SHA>/result.json`;
+`active.json` в том же корневом каталоге блокирует повторный запуск после
+незавершённого релиза. Не удаляйте его, чтобы обойти ошибку. Логи приложения:
 
 ```sh
-sudo -i
-set -eu
 cd /opt/choral
-exec 9>/run/lock/choral-maintenance.lock
-flock -n 9
-read -r -p 'Полный путь к backup перед обновлением: ' BACKUP
-OLD_RELEASE=$(cat "$BACKUP/COMMIT")
-docker compose stop app
-git switch --detach "$OLD_RELEASE"
-cp -p "$BACKUP/env.before" .env
-docker compose up -d --no-build --wait --wait-timeout 90 app
-curl --fail https://choral-train.ru/readyz
-exit
+sudo docker compose logs --tail 100 app
 ```
 
-После миграций БД одного старого образа недостаточно. Восстанавливайте старый
-образ и полный backup **в новый пустой volume** по
-[инструкции восстановления](docs/operations.md#восстановление-в-чистый-volume).
-Не распаковывайте архив поверх рабочего volume. Возврат данных из копии теряет
-изменения после её создания; сначала выберите нужную копию и согласуйте это.
+После попытки запуска нового backend схема БД могла измениться. Нельзя просто
+вернуть старый образ: при необходимости восстанавливайте старый образ и backup
+**в новый пустой volume** по
+[инструкции](docs/operations.md#восстановление-в-чистый-volume). Восстановление
+копии теряет изменения после её создания. Сохраняйте предыдущий образ и backup;
+`docker compose down -v` удаляет песни и аккаунты.
 
 ### Сделать резервную копию отдельно
 
