@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise deployment failure boundaries with fictional data and a Docker adapter."""
 import copy
+import errno
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
 import importlib.util
@@ -11,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location('deploy', Path(__file__).with_name('deploy.py'))
@@ -205,6 +207,38 @@ class DeployTests(unittest.TestCase):
                 self.assertEqual(host.frontend.current(host.static), NEW)
                 self.assertFalse(any('--no-recreate' in event for event in host.events))
                 self.assertEqual(json.loads((host.state / 'active.json').read_text())['phase'], 'needs_recovery')
+
+    def test_journal_failure_cannot_skip_emergency_stop(self):
+        for error_code in (errno.ENOSPC, errno.EIO):
+            for journal_file in ('active.json', 'result.json'):
+                for stop_fails in (False, True):
+                    with self.subTest(errno=error_code, file=journal_file, stop_fails=stop_fails), tempfile.TemporaryDirectory() as temp:
+                        host = Host(Path(temp), failure='public-smoke')
+                        write_json = deploy.atomic_json
+                        stop_candidate = host.stop_candidate
+
+                        def fail_journal(path, value):
+                            if value['phase'] == 'needs_recovery' and path.name == journal_file:
+                                raise OSError(error_code, os.strerror(error_code))
+                            write_json(path, value)
+
+                        def stop(candidate):
+                            stop_candidate(candidate)
+                            if stop_fails:
+                                raise RuntimeError('Candidate stop failed')
+
+                        with patch.object(deploy, 'atomic_json', side_effect=fail_journal), patch.object(host, 'stop_candidate', side_effect=stop):
+                            with self.assertRaises((OSError, RuntimeError)):
+                                host.execute('full', NEW)
+                        self.assertIn(('smoke', host.config['origin']), host.events)
+                        self.assertIn(('candidate', 'stop'), host.events)
+                        self.assertEqual(host.events[-1], ('compose', 'stop', 'app'))
+                        self.assertFalse(host.running)
+                        self.assertTrue(host.closed)
+                        self.assertFalse(any('--no-recreate' in event for event in host.events))
+                        self.assertTrue((host.state / 'active.json').exists())
+                        with self.assertRaisesRegex(ValueError, 'Unfinished'):
+                            host.execute('full', NEW)
 
     def test_frontend_success_and_rollback(self):
         for failure in (None, 'smoke'):

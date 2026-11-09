@@ -365,11 +365,14 @@ class Deployment:
         except BaseException:
             if attempted_new_start:
                 # Keep writes closed; never start the old binary on a possibly migrated DB.
-                self.stage('needs_recovery')
                 try:
-                    self.stop_candidate(candidate)
+                    self.stage('needs_recovery')
                 finally:
-                    self.compose('stop', 'app')
+                    # Journal I/O must not prevent either emergency stop attempt.
+                    try:
+                        self.stop_candidate(candidate)
+                    finally:
+                        self.compose('stop', 'app')
             else:
                 # The old container is intact. Restore config/frontend without rewriting Git.
                 atomic_write(self.checkout / '.env', env_before)
