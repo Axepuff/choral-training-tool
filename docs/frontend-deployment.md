@@ -1,5 +1,7 @@
 # Независимый frontend release — Issue #65
 
+Общая команда для полного релиза и frontend-only доставки: [choral-deploy](deploy-command.md).
+
 Один origin и Go-сервис сохраняются. Базовый Dockerfile по-прежнему содержит
 резервную production-сборку `/app`. Опциональный `compose.frontend.yaml` переводит
 раздачу на `CHORAL_STATIC_DIR=/frontend/current`. Backend image, SQLite и FFmpeg

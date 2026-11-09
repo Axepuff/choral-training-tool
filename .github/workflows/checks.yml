@@ -17,6 +17,7 @@ jobs:
       - id: select
         run: python3 scripts/ci.py plan
       - run: python3 scripts/check-ci.py
+      - run: python3 scripts/check-deploy.py
       - name: Whitespace in the tested commit
         run: git show --format= --check HEAD
 
