@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import ts from 'typescript';
 
 const dir = await mkdtemp(join(tmpdir(), 'choral-auth-test-'));
-for (const file of ['api/client', 'api/public', 'auth/session', 'navigation/routes']) {
+for (const file of ['network/requestTimeout', 'api/client', 'api/public', 'auth/session', 'navigation/routes']) {
   const source = await readFile(new URL(`../src/${file}.ts`, import.meta.url), 'utf8');
   const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
     .replace(/from '(\.\.?\/[^']+)'/g, "from '$1.mjs'");
@@ -24,6 +24,22 @@ const problem = (code, status) => json({ error: { code, message: code, requestId
 
 test('API/session/navigation behavior', async (t) => {
   try {
+    await t.test('public links work without modern AbortSignal static methods', async () => {
+      const any = AbortSignal.any, timeout = AbortSignal.timeout;
+      try {
+        AbortSignal.any = undefined;
+        AbortSignal.timeout = undefined;
+        let calls = 0;
+        globalThis.fetch = async (_url, { credentials, signal }) => {
+          calls++;
+          assert.equal(credentials, 'omit');
+          assert.equal(signal.aborted, false);
+          return json({ kind: 'song', songs: [{ id: 'legacy-ios' }], nextCursor: null });
+        };
+        assert.deepEqual(await readPublic('test-token', new AbortController().signal), [{ id: 'legacy-ios' }]);
+        assert.equal(calls, 1);
+      } finally { AbortSignal.any = any; AbortSignal.timeout = timeout; }
+    });
     await t.test('initial network failure offers recovery without a session', async () => {
       globalThis.fetch = async () => { throw new Error('offline'); };
       await auth.restoreSession();
@@ -170,10 +186,10 @@ test('API/session/navigation behavior', async (t) => {
       await assert.rejects(readPublic('revoked', new AbortController().signal));
     });
     await t.test('hanging public requests time out with caller signal and can retry; caller cancellation still works', async () => {
-      const timeout = AbortSignal.timeout;
+      const timeout = globalThis.setTimeout;
       try {
         // Shorten the production deadline without changing client configuration.
-        AbortSignal.timeout = (ms) => { assert.equal(ms, 30_000); return timeout(20); };
+        globalThis.setTimeout = (callback, ms, ...args) => timeout(callback, ms === 30_000 ? 20 : ms, ...args);
         globalThis.fetch = async (_url, { signal }) => new Promise((_resolve, reject) => {
           signal.throwIfAborted();
           signal.addEventListener('abort', () => reject(signal.reason), { once: true });
@@ -189,7 +205,7 @@ test('API/session/navigation behavior', async (t) => {
         } finally { clearTimeout(keepAlive); }
         globalThis.fetch = async () => json({ kind: 'list', songs: [{ id: 'retry' }], nextCursor: null });
         assert.deepEqual(await readPublic('hanging', new AbortController().signal), [{ id: 'retry' }]);
-      } finally { AbortSignal.timeout = timeout; }
+      } finally { globalThis.setTimeout = timeout; }
     });
   } finally { globalThis.fetch = originalFetch; await rm(dir, { recursive: true, force: true }); }
 });

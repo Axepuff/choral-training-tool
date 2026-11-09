@@ -177,8 +177,8 @@ try {
   await expectText('Не удалось открыть ссылку'); assert.equal(await bodyIncludes('Создать песню'), false);
   // Simulate a stalled transport, keeping PublicRoute's own cancellation signal.
   const stalled = await send('Page.addScriptToEvaluateOnNewDocument', { source: `
-    const timeout = AbortSignal.timeout.bind(AbortSignal);
-    AbortSignal.timeout = () => timeout(100);
+    const timeout = window.setTimeout.bind(window);
+    window.setTimeout = (callback, ms, ...args) => timeout(callback, ms === 30000 ? 100 : ms, ...args);
     const original = window.fetch;
     window.fetch = (url, options) => String(url).includes('/public/shares/')
       ? new Promise((resolve, reject) => {
