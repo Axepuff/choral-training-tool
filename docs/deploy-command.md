@@ -8,6 +8,8 @@ sudo choral-deploy
 # Выпустить конкретный проверенный commit:
 sudo choral-deploy full --commit <40-hex-SHA>
 # Только интерфейс, без остановки backend, после проверки совместимости API:
+sudo choral-deploy frontend --confirm-compatible
+# Тот же режим для конкретного commit:
 sudo choral-deploy frontend --commit <40-hex-SHA> --confirm-compatible
 # То же с компьютера оператора:
 ssh velette 'sudo -n choral-deploy'
@@ -66,8 +68,14 @@ Compose project и volume. Перед первым запуском сверит
 Не подставлять текущий development main вместо установленной версии.
 
 Нужны Linux, Python 3.11+, Git с полной историей и доступом fetch, Docker/Compose,
-`gh` с чтением Actions, `tar`, `sha256sum`. `gh` должен быть авторизован именно для
-пользователя, запускающего команду (в примере root). Секреты не записываются в
+`gh` с чтением Actions, `tar`, `sha256sum`. При `sudo choral-deploy` launcher берёт
+`~/.config/gh` пользователя, вызвавшего sudo: домашний каталог определяется по
+`SUDO_UID` через системную базу пользователей. Достаточно авторизации `gh` своей
+обычной учётной записи; отдельный login от root и копирование токена не нужны.
+Явный `GH_CONFIG_DIR` имеет приоритет (для нестандартного каталога настроек).
+Без sudo, в том числе при прямом входе root, сохраняется обычный выбор настроек gh.
+Если sudo-пользователь не найден, launcher завершается до запуска deploy.
+Секреты не записываются в
 репозиторий, параметры команды или журналы. Сборка требует доступов к registry/npm/Go
 и достаточных CPU/RAM; на общем velette выбирать спокойное окно.
 

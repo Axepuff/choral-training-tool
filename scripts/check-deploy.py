@@ -157,6 +157,41 @@ class Host(deploy.Deployment):
 
 
 class DeployTests(unittest.TestCase):
+    def test_launcher_uses_sudo_user_github_config(self):
+        launcher = Path(__file__).resolve().parent.parent / 'deploy/choral-deploy'
+        with tempfile.TemporaryDirectory() as temp:
+            binary = Path(temp)
+            shims = {
+                'id': '#!/bin/sh\nprintf "%s\\n" "$FIXTURE_UID"\n',
+                'getent': '#!/bin/sh\n[ "$1" = passwd ] && [ "$2" = 1234 ] || exit 2\nprintf "%s\\n" "operator:x:1234:1234::/home/test operator:/bin/sh"\n',
+                'python3': '#!/bin/sh\nprintf "%s\\n" "${GH_CONFIG_DIR-unset}" "$@"\n',
+            }
+            for name, content in shims.items():
+                (binary / name).write_text(content)
+                (binary / name).chmod(0o700)
+            cases = [
+                ('0', '1234', None, '/home/test operator/.config/gh', 0),
+                ('0', '1234', '/explicit gh', '/explicit gh', 0),
+                ('0', None, None, 'unset', 0),
+                ('1234', '9999', None, 'unset', 0),
+                ('0', '9999', None, None, 2),
+            ]
+            for uid, sudo_uid, configured, expected, code in cases:
+                with self.subTest(uid=uid, sudo_uid=sudo_uid, configured=configured):
+                    env = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ['PATH'], FIXTURE_UID=uid)
+                    env.pop('GH_CONFIG_DIR', None)
+                    env.pop('SUDO_UID', None)
+                    if sudo_uid is not None: env['SUDO_UID'] = sudo_uid
+                    if configured is not None: env['GH_CONFIG_DIR'] = configured
+                    result = subprocess.run(['sh', str(launcher), 'frontend', '--confirm-compatible'], env=env,
+                                            capture_output=True, text=True)
+                    self.assertEqual(result.returncode, code, result.stderr)
+                    if code == 0:
+                        self.assertEqual(result.stdout.splitlines(), [expected, '/usr/local/lib/choral-deploy/deploy.py',
+                                                                     'frontend', '--confirm-compatible'])
+                    else:
+                        self.assertEqual(result.stdout, '')
+
     def test_full_success(self):
         for external in (False, True):
             with self.subTest(external=external), tempfile.TemporaryDirectory() as temp:
