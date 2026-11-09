@@ -1,3 +1,5 @@
+import { withRequestTimeout } from '../network/requestTimeout';
+
 export interface User {
   id: string;
   email: string;
@@ -37,33 +39,33 @@ export class ApiClient {
     if (access === 'session' && !['GET', 'HEAD', 'OPTIONS'].includes(method) && this.csrfToken) {
       headers.set('X-CSRF-Token', this.csrfToken);
     } else headers.delete('X-CSRF-Token');
-    let response: Response;
-    try {
-      response = await fetch(`/api/v1${path}`, {
-        ...options, method, headers, credentials: access === 'public' ? 'omit' : 'same-origin',
-        cache: 'no-store', redirect: 'error', signal: AbortSignal.any([
-          AbortSignal.timeout(30_000), ...(options.signal ? [options.signal] : []),
-        ]),
-      });
-    } catch {
-      throw new ApiError(0, { code: 'network_error', message: 'Нет соединения с сервером. Попробуйте ещё раз.' });
-    }
-    if (!response.ok) {
-      let problem: ApiProblem = { code: 'invalid_response', message: 'Сервер вернул ошибку. Попробуйте ещё раз.' };
+    return withRequestTimeout(30_000, options.signal, async (signal) => {
+      let response: Response;
       try {
-        const data = await response.json();
-        if (typeof data?.error?.code === 'string' && typeof data.error.message === 'string') problem = data.error;
-      } catch { /* A proxy may return HTML instead of the API envelope. */ }
-      if (response.status === 401 && access === 'session' && this.csrfToken === initialToken) {
-        this.csrfToken = null;
-        this.onUnauthorized();
+        response = await fetch(`/api/v1${path}`, {
+          ...options, method, headers, credentials: access === 'public' ? 'omit' : 'same-origin',
+          cache: 'no-store', redirect: 'error', signal,
+        });
+      } catch {
+        throw new ApiError(0, { code: 'network_error', message: 'Нет соединения с сервером. Попробуйте ещё раз.' });
       }
-      if (problem.code === 'csrf_failed' && access === 'session' && this.csrfToken === initialToken) this.onCSRF();
-      throw new ApiError(response.status, problem, response.headers.get('Retry-After'));
-    }
-    if (response.status === 204) return undefined as T;
-    try { return await response.json() as T; }
-    catch { throw new ApiError(502, { code: 'invalid_response', message: 'Некорректный ответ сервера.' }); }
+      if (!response.ok) {
+        let problem: ApiProblem = { code: 'invalid_response', message: 'Сервер вернул ошибку. Попробуйте ещё раз.' };
+        try {
+          const data = await response.json();
+          if (typeof data?.error?.code === 'string' && typeof data.error.message === 'string') problem = data.error;
+        } catch { /* A proxy may return HTML instead of the API envelope. */ }
+        if (response.status === 401 && access === 'session' && this.csrfToken === initialToken) {
+          this.csrfToken = null;
+          this.onUnauthorized();
+        }
+        if (problem.code === 'csrf_failed' && access === 'session' && this.csrfToken === initialToken) this.onCSRF();
+        throw new ApiError(response.status, problem, response.headers.get('Retry-After'));
+      }
+      if (response.status === 204) return undefined as T;
+      try { return await response.json() as T; }
+      catch { throw new ApiError(502, { code: 'invalid_response', message: 'Некорректный ответ сервера.' }); }
+    });
   }
 
   async session(path: '/auth/me' | '/auth/login', credentials?: { email: string; password: string }): Promise<Session> {

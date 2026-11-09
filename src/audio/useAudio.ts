@@ -1,3 +1,4 @@
+import { withRequestTimeout } from '../network/requestTimeout';
 import { useEffect, useRef, useState } from 'react';
 import { AudioEngine, mediaURL } from './engine';
 import { AudioDecodeError, MP4Reader } from './mp4';
@@ -40,11 +41,11 @@ export function useAudio(song: AudioSong | undefined, publicAccess: boolean) {
       // Peaks may still be loading after the last audio index is ready.
       if (indexed.size === song.tracks.length) setInitialization('complete');
     };
-    const fetchMedia = async (url: string, headers?: HeadersInit) => {
-      const response = await fetch(mediaURL(url), { credentials: publicAccess ? 'omit' : 'same-origin', redirect: 'error', ...(headers ? { headers } : {}), signal: AbortSignal.any([abort.signal, AbortSignal.timeout(60000)]) });
+    const fetchMedia = <T,>(url: string, read: (response: Response) => Promise<T>, headers?: HeadersInit) => withRequestTimeout(60_000, abort.signal, async (signal) => {
+      const response = await fetch(mediaURL(url), { credentials: publicAccess ? 'omit' : 'same-origin', redirect: 'error', ...(headers ? { headers } : {}), signal });
       if (!response.ok) throw new Error('Аудио недоступно. Ссылка могла быть отозвана.');
-      return response;
-    };
+      return read(response);
+    });
     audio.onTrackError = (id, e) => {
       status(id, e instanceof Error ? e.message : 'Ошибка загрузки');
       if (!abort.signal.aborted && e instanceof AudioDecodeError) setDiagnostics(current => ({ ...current, [id]: e.diagnostics }));
@@ -57,8 +58,7 @@ export function useAudio(song: AudioSong | undefined, publicAccess: boolean) {
           if (!track.mediaUrl || !track.durationMs) throw new Error('Файл ещё не готов');
           let etag: string | null = null;
           const url = track.mediaUrl;
-          const reader = await MP4Reader.open(async (start, end) => {
-            const response = await fetchMedia(url, { Range: `bytes=${start}-${end}` });
+          const reader = await MP4Reader.open((start, end) => fetchMedia(url, async (response) => {
             if (response.status !== 206 || !response.headers.get('Content-Range')?.startsWith(`bytes ${start}-${end}/`)) throw new Error('Сервер не поддерживает загрузку фрагментов аудио');
             const version = response.headers.get('ETag');
             if (!version || (etag && version !== etag)) throw new Error('Аудиофайл изменился. Обновите страницу.');
@@ -66,14 +66,14 @@ export function useAudio(song: AudioSong | undefined, publicAccess: boolean) {
             const bytes = new Uint8Array(await response.arrayBuffer());
             if (bytes.length !== end - start + 1) throw new Error('Неполный фрагмент аудио');
             return bytes;
-          });
+          }, { Range: `bytes=${start}-${end}` }));
           if (abort.signal.aborted) return;
           const duration = track.durationMs / 1000;
           audio.streams.set(track.id, { duration, load: (start, end) => reader.decode(context, start, end) });
           status(track.id, 'Готово');
           if (track.peaksUrl) {
             try {
-              const wave: Wave = await (await fetchMedia(track.peaksUrl)).json();
+              const wave: Wave = await fetchMedia(track.peaksUrl, response => response.json());
               if (wave.startMs !== 0 || wave.stepMs !== 100 || wave.points.length !== Math.ceil(wave.durationMs / 100) ||
                 !wave.points.every(p => p.length === 2 && p.every(n => Number.isFinite(n) && Math.abs(n) <= 1))) throw new Error();
               if (!abort.signal.aborted) setWaves(w => ({ ...w, [track.id]: wave }));
