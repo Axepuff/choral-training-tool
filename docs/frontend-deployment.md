@@ -101,6 +101,77 @@ Frontend, требующий нового API, **не допускается** �
 
 ## Регулярная публикация и откат
 
+### Вручную на velette после первого перехода
+
+Собирать из рабочего checkout, а не `/opt/choral`: последний фиксирует версию
+backend для backup и не должен переключаться при frontend-only выпуске.
+Нужны Node 24.19.0 в PATH, npm и Python 3.11+. Перед выпуском проверить, что PR
+прошёл необходимые проверки и frontend совместим с установленным API. Если
+изменился API, backend или схема, остановиться и использовать общий runbook.
+
+1. В отдельной оболочке Bash подготовить чистый main и артефакт:
+
+   ```bash
+   set -euo pipefail
+   export PATH=/opt/choral-tools/node-v24.19.0-linux-x64/bin:$PATH
+   cd /home/axepuff/projects/choral-training-tool
+   test -z "$(git status --porcelain)"
+   git switch main
+   git pull --ff-only
+   node --version  # ожидается v24.19.0
+   npm ci --no-audit --no-fund
+   release=$(git rev-parse HEAD)
+   artifact_dir=$(mktemp -d /tmp/choral-frontend.XXXXXX)
+   python3 scripts/frontend-release.py build --output "$artifact_dir/frontend.tar"
+   checksum=$(awk '{print $1}' "$artifact_dir/frontend.tar.sha256")
+   ```
+
+2. Сохранить предыдущую версию и опубликовать. Выполнять в той же оболочке:
+
+   ```bash
+   previous=$(basename "$(readlink /srv/choral-frontend/current)")
+   printf 'Откат при необходимости: %s\n' "$previous"
+   sudo install -d -m 700 /var/lib/choral-frontend-artifacts
+   # Существующий архив того же commit нельзя заменять другой сборкой.
+   saved=/var/lib/choral-frontend-artifacts/$release.tar
+   if sudo test -e "$saved"; then
+     sudo cmp "$artifact_dir/frontend.tar" "$saved"
+   else
+     sudo install -m 600 "$artifact_dir/frontend.tar" "$saved"
+   fi
+   sudo python3 /usr/local/lib/choral-backup/frontend-release.py publish "$saved" \
+     --root /srv/choral-frontend --sha256 "$checksum" \
+     --approved-commit "$release" --backend-api choral-api-v1
+   ```
+
+3. Проверить результат:
+
+   ```bash
+   test "$(basename "$(readlink /srv/choral-frontend/current)")" = "$release"
+   curl --fail --silent --show-error https://choral-train.ru/readyz
+   curl --fail --silent --show-error https://choral-train.ru/ -o "$artifact_dir/live.html"
+   cmp "$artifact_dir/live.html" /srv/choral-frontend/current/index.html
+   ```
+
+   Открыть сайт, проверить вход и контрольную песню. В ранее открытой вкладке
+   проверить плеер; проверить новые и старые assets по разделу smoke ниже.
+   В журнале выпуска сохранить commit, checksum, previous, backend image ID
+   (`sudo docker inspect -f '{{.Image}}' choral-app-1`) и ссылку на проверки PR.
+   Эти команды не перезапускают контейнер и не запускают backup/миграции.
+
+4. При ошибке откатить фронтенд и повторить smoke:
+
+   ```bash
+   sudo python3 /usr/local/lib/choral-backup/frontend-release.py rollback \
+     --root /srv/choral-frontend --to "$previous" --backend-api choral-api-v1
+   curl --fail --silent --show-error https://choral-train.ru/readyz
+   ```
+
+   В новой оболочке вместо `$previous` указать сохранённый полный commit.
+   Релиз должен оставаться в `/srv/choral-frontend/releases/`; после его очистки
+   сначала восстановить доверенный архив через publish. При занятом lock повторить
+   команду после завершения другой операции, не удалять `.lock`.
+
 Одна команда публикации готового архива (значения из журнала допуска):
 
 ```sh
